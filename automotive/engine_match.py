@@ -19,6 +19,7 @@ BODY_WORDS = {
 }
 MARKER = re.compile(r'\(([A-Z])\)')
 ENGINE_CODE = re.compile(r'\(([A-Z]{1,3}\s\d{3}(?:\.\d{1,3})?|[A-Z]{1,3}\d{3}\.\d{1,3})\)')
+MODEL_SUFFIX = re.compile(r'(.*?\S)[\s-]*(?:class|series)', re.IGNORECASE)
 
 
 def trim_groups(trim: Any) -> list[str]:
@@ -31,12 +32,63 @@ def trim_search_text(trim: Any) -> str:
     return ' '.join(groups) if len(''.join(groups)) >= 3 else ''
 
 
+def model_base(model: Any) -> str:
+    """`E-Class` -> `E`, `3 Series` -> `3`: how Shell and Pakelo start their labels."""
+    text = str(model or '').strip()
+    found = MODEL_SUFFIX.fullmatch(text)
+    return found.group(1) if found else text
+
+
+def search_terms(model: Any, trim: Any) -> list[str]:
+    """Chooser search text, best first: Shell finds `GLE 350 d`, never `GLE-Class GLE 350 d`."""
+    full, base, words = str(model or '').strip(), model_base(model), trim_search_text(trim)
+    if not words:
+        return list(dict.fromkeys(term for term in (full, base) if term))
+    first = words.split(' ', 1)[0].casefold()
+    lead = words if base and first.startswith(base.casefold()) else f'{base} {words}'.strip()
+    return list(dict.fromkeys((lead, f'{full} {words}'.strip())))
+
+
+def _spelled(value: str) -> str | None:
+    """`CR-V` and `crv`, `RX 350` and `RX350` spell one name; `CLE` does not contain `E`."""
+    chars = re.sub(r'[^a-z0-9]+', '', value.casefold())
+    if not chars:
+        return None
+    tail = r'(?![0-9])' if chars[-1].isdigit() else r'(?![a-z])'
+    return r'(?<![a-z0-9-])' + r'[\s./-]*'.join(map(re.escape, chars)) + tail
+
+
+def model_matches(label: Any, model: Any) -> bool:
+    """The supplier's model names this one: `E-Class` is `E-CLASS (W212)` and Shell's
+    `GLE (W166)` is `GLE-Class`, but `CLE-CLASS` is not `E-Class`."""
+    text = str(label or '')
+    full = _spelled(str(model or ''))
+    if full and re.search(full, text, re.IGNORECASE):
+        return True
+    base = model_base(model)
+    lead = _spelled(base) if base != str(model or '').strip() else None
+    return bool(lead and re.match(r'\s*' + lead, text, re.IGNORECASE))
+
+
+def _trim_pattern(groups: list[str]) -> str:
+    # `400` is not the `400kW` in a label.
+    return (r'(?<![A-Za-z0-9])' + r'[\s-]?'.join(re.escape(g) for g in groups)
+            + r'(?![0-9])(?!\s?kw)')
+
+
 def trim_matches(label: Any, trim: Any) -> bool:
     groups = trim_groups(trim)
     if len(''.join(groups)) < 3:
         return False
-    pattern = r'(?<![A-Za-z0-9])' + r'[\s-]?'.join(re.escape(g) for g in groups) + r'(?![0-9])'
-    return bool(re.search(pattern, str(label or ''), re.IGNORECASE))
+    text = str(label or '')
+    if re.search(_trim_pattern(groups), text, re.IGNORECASE):
+        return True
+    # Shell writes `GLE (W166) 350 d`, `IS II 250` and `G Coupe 37`: the letters lead the
+    # label and the number follows later.
+    lead = re.match(r'\s*([A-Za-z]+)', text)
+    return (len(groups) >= 2 and groups[0].isalpha() and groups[1].isdigit()
+            and bool(lead) and lead.group(1).casefold() == groups[0].casefold()
+            and bool(re.search(_trim_pattern(groups[1:]), text, re.IGNORECASE)))
 
 
 def fuel_matches(label: Any, fuel: Any) -> bool:
@@ -57,6 +109,20 @@ def engine_family(code: Any) -> str | None:
     return base if len(trim_groups(base)) >= 2 else None
 
 
+def engine_matches(label: Any, code: Any) -> bool:
+    """The label names the engine family the customer stated (`M276` for `M 276.850`)."""
+    family = engine_family(code)
+    return bool(family) and engine_family(engine_code(label)) == family
+
+
+def by_engine(items: list[dict], label_of: Any, code: Any) -> list[dict]:
+    """Keep labels naming the stated engine family; labels without a code stay as unknown."""
+    if not engine_family(code):
+        return items
+    named = [item for item in items if engine_matches(label_of(item), code)]
+    return named or [item for item in items if engine_code(label_of(item)) is None]
+
+
 def by_body(items: list[dict], label_of: Any, body: Any) -> list[dict]:
     """Keep labels naming the decoded body type; unchanged when no label names it."""
     text = str(body or '').casefold()
@@ -70,6 +136,7 @@ def by_body(items: list[dict], label_of: Any, body: Any) -> list[dict]:
 
 def narrow(items: list[dict], label_of: Any, vehicle: dict) -> list[dict]:
     """Prefer trim matches, then fuel and body, dropping labels that contradict the vehicle."""
+    items = by_engine(items, label_of, vehicle.get('engine_code'))
     by_trim = [item for item in items if trim_matches(label_of(item), vehicle.get('trim'))]
     fuel = vehicle.get('fuel') or vehicle.get('fuel_type')
     if by_trim:

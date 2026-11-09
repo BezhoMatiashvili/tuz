@@ -11,12 +11,23 @@ PATTERNS = {
     # A bundle: engine oil plus oil filter. Listed first so it wins over 'oil'.
     'oil_change': (r'oil[ -]?change|change\s+(my\s+|the\s+)?oil|oil\s+service'
                    r'|ზეთ\S*\s+(შეცვლ|გამოცვლ|ცვლა|შევცვალ|გამოვცვალ)|(შეცვლ|გამოცვლ|შევცვალ)\S*\s+ზეთ'),
+    # Before the brake categories, so a clutch disc is never a brake disc.
+    'clutch': r'(^|\W)clutch(es)?(\W|$)|გადაბმულობ|კლაჩ|ქლაჩ|სცეპლენ',
     'brake_pads': r'(^|\W)(pads?|brake[ -]?pads?)(\W|$)|ხუნდ|კალოდკ',
     'brake_discs': r'(^|\W)(brake[ -]?dis[ck]s?|rotors?)(\W|$)|სამუხრუჭე\s+დისკ|მუხრუჭის\s+დისკ',
     'brakes': r'(^|\W)(brakes?|breaks?|pads?|rotors?)(\W|$)|სამუხრუჭ|მუხრუჭ|ხუნდ|კალოდკ',
     'oil_filter': r'(^|\W)oil[ -]?filters?(\W|$)|ზეთის\s+ფილტრ|ზეთფილტრ',
     'air_filter': r'(^|\W)air[ -]?filters?(\W|$)|ჰაერის\s+ფილტრ',
     'cabin_filter': r'(^|\W)(cabin|pollen)[ -]?filters?(\W|$)|სალონის\s+ფილტრ',
+    'fuel_filter': r'(^|\W)(fuel|diesel|petrol)[ -]?filters?(\W|$)'
+                   r'|საწვავის\s+ფილტრ|ბენზინის\s+ფილტრ|დიზელის\s+ფილტრ',
+    'spark_plugs': r'(^|\W)spark[ -]?plugs?(\W|$)|სანთელ|სანთლ|სვეჩ',
+    'battery': r'(^|\W)(batter(y|ies)|accumulators?)(\W|$)|აკუმულატორ|აკუმლიატორ|ბატარე',
+    'wipers': r'(^|\W)(wipers?|wiper[ -]?blades?)(\W|$)|მინის\s+საწმენდ|დვორნიკ|საწმენდი\s+ჯაგრის',
+    'timing_belt': r'(^|\W)(timing[ -]?(belt|chain|kit)s?|cam[ -]?belts?)(\W|$)'
+                   r'|ტაიმინგ|გრმ|გაზგამანაწილებ',
+    'coolant': r'(^|\W)(coolant|anti-?freeze)(\W|$)|ანტიფრიზ|ტოსოლ|გამაგრილებელი\s+სითხ',
+    'bulbs': r'(^|\W)(bulbs?|headlight\s+bulbs?)(\W|$)|ნათურ',
     'engine_oil': r'(^|\W)(engine\s+oil|motor\s+oil|oil)(\W|$)|ძრავის\s+ზეთ|ზეთი|ზეთები',
     'suspension': r'(^|\W)(suspension|shocks?|struts?)(\W|$)|საკიდარ|ამორტიზატორ',
 }

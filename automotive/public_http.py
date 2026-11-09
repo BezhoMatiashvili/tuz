@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 
 import requests
 
-VIN_IN_TEXT = re.compile(r'\b[A-HJ-NPR-Z0-9]{17}\b', re.IGNORECASE)
+VIN_IN_TEXT = re.compile(r'(?<![A-Za-z0-9])[A-HJ-NPR-Z0-9]{17}(?![A-Za-z0-9])', re.IGNORECASE)
 VISCOSITY = re.compile(r'\b\d{1,2}W-\d{2}\b', re.IGNORECASE)
 SUPPLIER_WARNING = (
     'წყაროს რეკომენდაციაა. ეს ჩვენი მარაგი, ფასი ან დამოუკიდებელი დაშვება არ არის.'

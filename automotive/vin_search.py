@@ -183,6 +183,13 @@ class VINSearchCoordinator:
             for key, job in self._jobs.items():
                 if job['fingerprint'] == fingerprint:
                     return self.get(key)
+            # Finished snapshots make room, oldest first, after a short grace period so a
+            # reader paging a just-finished search keeps it; 20 running searches are refused.
+            finished = sorted((job['expires'], key) for key, job in self._jobs.items()
+                              if job['status'] in TERMINAL
+                              and now - (job['expires'] - self.ttl_seconds) > 30)
+            while len(self._jobs) >= 20 and finished:
+                del self._jobs[finished.pop(0)[1]]
             if len(self._jobs) >= 20:
                 raise RuntimeError('SEARCH_CAPACITY')
             identifier = uuid.uuid4().hex
@@ -406,7 +413,8 @@ class VINSearchCoordinator:
     @staticmethod
     def _filter_codes(job: dict) -> list[tuple[str, str | None]]:
         """Filter part numbers published for this vehicle by the JS Asakashi catalogue."""
-        wanted = {'oil_filter': 'OIL', 'air_filter': 'AIR', 'cabin_filter': 'CABIN'}.get(
+        wanted = {'oil_filter': 'OIL', 'air_filter': 'AIR', 'cabin_filter': 'CABIN',
+                  'fuel_filter': 'FUEL'}.get(
             category_for_query(job['part_query']) if job['part_query'].strip() else '',
         )
         codes: list[tuple[str, str | None]] = []
@@ -583,7 +591,8 @@ class VINSearchCoordinator:
         self._source(identifier, source, status='RUNNING', total_queries=1)
         # Chooser answers depend only on the vehicle, so they are shared for a day.
         cache_key = (source, *(_key(vehicle.get(k)) for k in (
-            'make', 'model', 'model_year', 'trim', 'fuel', 'body')))
+            'make', 'model', 'model_year', 'trim', 'fuel', 'body', 'engine_code',
+            'displacement_l')))
         with self._lock:
             hit = self._reports.get(cache_key)
         try:
@@ -630,7 +639,7 @@ class VINSearchCoordinator:
         category = category_for_query(query)
         if category in ('engine_oil', 'oil_change'):
             return {'fuchs', 'shell', 'pakelo'}
-        if category in ('oil_filter', 'air_filter', 'cabin_filter'):
+        if category in ('oil_filter', 'air_filter', 'cabin_filter', 'fuel_filter'):
             return {'jsfilter'}
         return set()
 

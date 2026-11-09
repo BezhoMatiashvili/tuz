@@ -316,11 +316,48 @@ The interface shows missing inventory/chat configuration explicitly.
 
 ## Claude grounding, privacy and cost bounds
 
-Chat is the main workspace. Ask in Georgian or English, provide a VIN or exact part
-code, and continue with details such as “rear ones.” The composer detects the language
-or accepts an explicit language choice. Ctrl/Cmd+Enter sends; **New chat** clears the
-conversation and selected vehicle. Direct VIN, inventory, evidence and oil controls
-remain available in an expandable section.
+Chat is the main workspace and reads like a messenger. Ask in Georgian or English (Latin-typed
+Georgian such as `gamarjoba` is understood), give a VIN, a part code or the car in words
+(“Honda Accord 2015”, “2015 წლის ჰონდა აკორდი”, “Prius 2012”), and continue with details such
+as “rear ones”, “2015”, “yes” or “is the Brembo one in stock?”. With *Automatic* language the
+server follows the customer's letters and keeps the conversation's language for messages that
+are only a code or a VIN. Enter sends and Shift+Enter starts a new line; tappable chips answer
+the bot's question (front/rear, pads/discs, common parts after a VIN); **New chat** clears the
+conversation and selected vehicle. Direct VIN, inventory, evidence and oil controls remain
+available in an expandable section.
+
+### How replies are written
+
+Replies are built by the backend (`automotive/replies.py`) from the verified answer only: the
+car, how many parts were found, how many are in the store and how many can come from the TUZ 11
+warehouse in 1-2 hours, at most one question, and at most one short note (said once per
+conversation). Phrasing rotates so the customer does not read the same sentence twice. Card
+details (match source, matched codes, observation date, evidence) sit behind a *Details* toggle;
+an unknown price is not shown.
+
+Answered without any model call (`automotive/dialogue.py`, deterministic):
+
+- small talk (greetings, thanks, ok, bye, “are you a bot?”, help) — it never re-runs the search;
+- a car typed in words, a bare year or engine code answering the bot's question, and “yes”/“no”
+  to its offer (“Need the rear ones too?”);
+- a message that is only part codes plus filler (“do you have AP104/2?”), and oil grades
+  (“0W-20 oil?”); years, grades, quantities and car models are never treated as part codes;
+- “the second one”, “the Bosch one” about the cards just shown (each refreshed for stock), or an
+  honest “none of the ones I showed are Brembo” when that brand was not among them;
+- a known car plus a part category, through the existing lookup pipeline.
+
+The model is used only for open questions (cross-references, “does it fit…”) through the same
+read tools and act/result-ID contract as before. A failed source search now says so (“Sorry, I
+couldn't finish that just now”) instead of claiming the car's codes are unknown.
+
+**Optional rewording.** `AUTOMOTIVE_CHAT_REPHRASE=true` lets the model reword result replies
+within `AUTOMOTIVE_CHAT_REPHRASE_SECONDS` (default 1.2 s, thinking disabled).
+`automotive/grounding.py` rejects any rewording that adds a number, code, brand, mid-sentence
+name, price, delivery, guarantee, contact or link claim, an extra question, the wrong language,
+or drops a count or code from the backend sentence; the backend sentence is then shown. It is
+**off by default**: measured live, the call took 1.2-3 s per result reply (Georgian slower),
+usually changed digits to words, and occasionally produced ungrammatical Georgian, for little
+gain over the backend sentences.
 
 Conversation IDs stay only in page memory. Refreshing creates a new conversation;
 the abandoned conversation expires automatically. Each process holds at most 20
@@ -328,9 +365,39 @@ conversations, expires them after 30 idle minutes, and keeps 12 recent exchanges
 One turn runs per conversation; a changed vehicle invalidates earlier turns and code
 associations. No chat history is written to the database or browser storage. Raw VIN
 is held transiently in process memory for provider follow-ups, and is excluded from
-model requests, history, logs, response payloads and URLs. Restarting loses conversations;
+model requests, history, logs, response payloads and URLs. Restarting loses live conversations
+(the local chat log below survives);
 run one application process for local use. These capability IDs do not replace staff
 authentication for public deployment.
+
+### Local chat log
+
+Every conversational turn is recorded to a private SQLite file
+(`data/chat_logs/chat_log.sqlite3`, directory mode 0700, file mode 0600, git-ignored) so
+answers can be reviewed and improved. Set `AUTOMOTIVE_CHAT_LOG_PATH` to another file, or
+to an empty value to disable logging; `AUTOMOTIVE_CHAT_LOG_RETENTION_DAYS` deletes older
+turns at startup (0 keeps everything). Records are written on a background thread, so a
+logging fault never delays or fails a chat turn.
+
+- `sessions`: hashed session ID, start, end and end reason (`deleted`, `expired`, `shutdown`).
+- `turns`: redacted question and answer, status (including `CANCELLED` and timeouts),
+  language, category, duration, vehicle make/model/year/engine, warnings, a summary of up to
+  20 offered parts (code, match source, fitment status), token usage, and rejection
+  diagnostics. Raw provider records and full catalog rows are not stored.
+
+What is never stored: raw VINs (they are masked as `[VIN]`, with only a keyed hash from
+`AUTOMOTIVE_VIN_HMAC_KEY` to group turns by vehicle), configured secrets, and
+conversation IDs (only a SHA-256 hash). Customer wording is still retained, so treat the
+file as confidential and do not copy it off the machine without review.
+
+Export for analysis with `uv run python -m automotive.chat_log --export chat_log.jsonl`
+(`-` writes to stdout), or query the file directly with `sqlite3`, for example the most
+common failed or unanswered questions:
+
+```sql
+SELECT question, status, COUNT(*) FROM turns
+WHERE status != 'COMPLETE' GROUP BY question, status ORDER BY 3 DESC LIMIT 20;
+```
 
 A message with a known vehicle (decoded VIN or make, model and year) and a part category,
 or a VIN with no category, is answered directly from the same read job without a model
@@ -435,8 +502,8 @@ These counts support billing reconciliation; they are not a monetary estimate or
 durable billing ledger. Inference is metered. Model refusals, unavailable credentials,
 authentication failures, timeouts, rate limits and exhausted budgets are explicit statuses.
 
-The model selects conversational acts and known backend result IDs. Georgian/English
-templates and validated backend records supply
+The model selects conversational acts and known backend result IDs. Backend reply
+sentences and validated backend records supply
 technical facts, prices, stock, evidence and uncertainty. Invalid/unreferenced output
 returns an ungrounded-response status. The UI clears dependent results when the vehicle
 or code changes and suppresses stale in-flight responses. No conversation history or
@@ -466,7 +533,18 @@ raw VIN is kept in browser storage.
   car. Stock is read fresh on every answer. When a VIN first appears the car is resolved in the
   background (`prewarm`), so the part question that follows is mostly answered from cache.
 - **Parallel and streaming.** Part groups are fetched four at a time, the page polls every
-  0.4 s at first, and cards appear in a live bubble as sources finish.
+  0.15 s at first (small talk and code answers finish in milliseconds), a typing indicator shows
+  until the first cards, and cards appear in a live bubble as sources finish.
+- **No model on the common paths.** Small talk, typed cars, codes, grades, references and
+  car-plus-part questions never call the model. The system prompt and tool list carry
+  `cache_control`, which takes effect once they reach the provider's minimum cacheable size.
+- **Search capacity.** The source coordinator keeps at most 20 search snapshots; finished ones
+  older than 30 seconds make room oldest-first, so only 20 searches running at the same moment
+  are refused. (Before, 20 searches within five minutes made every further search fail at once,
+  and the chat then wrongly said the car's part codes were unknown.)
+- **Paid catalog quota.** The VIN-to-part-number catalog API (RapidAPI) answers `RATE_LIMITED`
+  once its plan quota is used; the BASIC plan allows 100 requests a month. Its cache lives in
+  process memory, so every restart and every `--evaluate`/`--evaluate-chat live` run asks again.
 - Each source reports `elapsed_ms` in the progress data.
 
 ### Hard rules (always on)
@@ -511,6 +589,23 @@ the result (`OFFERS`, `NONE_IN_STOCK`, `NO_CODES`, `NO_VEHICLE`), the rules that
 and slow or failed sources, then totals per request. VINs appear as `VIN#n`. The misses CSV has
 no VIN (make, model, year, trim, request, reason) so staff can add rules where the bot found
 nothing. The command writes nothing to the database.
+
+### Measuring conversations: `--evaluate-chat`
+
+```bash
+uv run python -m automotive --evaluate-chat mock                       # offline, CI
+uv run python -m automotive --evaluate-chat live --vins vins.csv --judge --report-out r.json
+```
+
+Runs the bilingual multi-turn scripts in `tests/fixtures/conversations/` through the same
+conversation store as the web chat. Hard checks (every number, code, brand and name in a reply is
+backed by the cards, car, requirements or customer's words; reply language; expected behaviour
+such as “thanks does not search”, the category, axle, vehicle and quick replies) must pass. Soft
+checks score natural feel (length, one question, at most one caveat, no repeated reply, names the
+car, says how many). Timings are reported per kind of turn, with routing model calls and rewording
+attempts counted separately. `--judge` (live only) asks the model to rate each transcript from 1 to
+5. Live mode skips expectations tied to the synthetic catalog; `{VIN1}` is the first VIN in the
+file and VINs are never printed. `tests/test_conversation_eval.py` runs the mock suite as a test.
 
 ## Data sources, permission and coverage
 

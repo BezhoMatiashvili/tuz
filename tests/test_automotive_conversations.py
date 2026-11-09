@@ -147,6 +147,8 @@ class ConversationTests(unittest.TestCase):
         self.assertNotIn("front", self.store._category("rear ones", "Front brake pads").lower())
         self.assertEqual(self.store._category("Find AP104/2", "rear brake pads"), "")
         self.assertEqual(self.store._category("engine code B48", "engine oil"), "engine oil")
+        self.assertEqual(self.store._category("Do you have 5W-30?", "front brake pads"),
+                         "engine oil Do you have 5W-30?")
 
     def test_idle_expiry_capacity_and_isolation(self):
         ids = [self.store.create()["conversation_id"] for _ in range(20)]
@@ -175,6 +177,70 @@ class ConversationTests(unittest.TestCase):
         self.assertEqual(result["cards"][0]["product"]["source_product_id"], "partial")
         self.assertIn("TURN_DEADLINE", result["warnings"])
         self.engine.release.set()
+
+    def test_small_talk_keeps_the_request_and_never_searches_again(self):
+        cid = self.store.create()["conversation_id"]
+        self.finish(cid, self.store.submit(cid, "front brake pads", language="en")["turn_id"])
+        self.finish(cid, self.store.submit(cid, "thanks!", language="auto")["turn_id"])
+        message, kwargs = self.engine.calls[-1]
+        self.assertEqual(kwargs["dialogue"]["small_talk"], "thanks")
+        self.assertEqual(self.store._conversations[cid]["category"], "front brake pads")
+        self.assertEqual(len(kwargs["dialogue"]["last_cards"]), 20)  # Shown cards, compact.
+        self.assertEqual(set(kwargs["dialogue"]["last_cards"][0]),
+                         {"id", "brand", "code", "basis", "fitment_status", "matched_via"})
+
+    def test_a_typed_car_answers_the_question_and_keeps_the_part(self):
+        self.engine.respond_conversation = lambda message, **kwargs: (
+            self.engine.calls.append((message, kwargs)) or {
+                "status": "CLARIFICATION", "answer": "Which car?", "vehicle": kwargs["vehicle"],
+                "cards": [], "pending": {"act": "clarify_year", "offer": None}})
+        cid = self.store.create()["conversation_id"]
+        self.finish(cid, self.store.submit(cid, "cabin filter for a Honda Accord")["turn_id"])
+        self.assertEqual(self.engine.calls[-1][1]["vehicle"],
+                         {"make": "HONDA", "model": "Accord"})
+        self.finish(cid, self.store.submit(cid, "2015")["turn_id"])
+        message, kwargs = self.engine.calls[-1]
+        self.assertEqual(kwargs["vehicle"], {"make": "HONDA", "model": "Accord",
+                                             "model_year": 2015})
+        self.assertEqual(kwargs["category"], "cabin filter for a Honda Accord")
+        self.assertTrue(kwargs["dialogue"]["typed_vehicle"])
+
+    def test_a_typed_mercedes_reaches_the_search_as_class_and_trim(self):
+        self.engine.respond_conversation = lambda message, **kwargs: (
+            self.engine.calls.append((message, kwargs)) or {
+                "status": "CLARIFICATION", "answer": "Engine?", "vehicle": kwargs["vehicle"],
+                "cards": [], "pending": {"act": "clarify_engine", "offer": None}})
+        cid = self.store.create()["conversation_id"]
+        self.finish(cid, self.store.submit(
+            cid, "Mercedes Benz E400 2015 ზეთის შეცვლა მინდა")["turn_id"])
+        self.assertEqual(self.engine.calls[-1][1]["vehicle"],
+                         {"make": "MERCEDES-BENZ", "model": "E-Class", "model_year": 2015,
+                          "trim": "E 400"})
+        # An engine size answers the engine question; the car and the request are kept.
+        self.finish(cid, self.store.submit(cid, "3.0 2 ტურბინიანი ძრავია")["turn_id"])
+        message, kwargs = self.engine.calls[-1]
+        self.assertEqual(kwargs["vehicle"]["displacement_l"], "3.0")
+        self.assertEqual(kwargs["vehicle"]["trim"], "E 400")
+        self.assertIn("ზეთის შეცვლა", kwargs["category"])
+        # Another trim of the same model drops the engine details of the previous one.
+        self.finish(cid, self.store.submit(cid, "Mercedes E350 2015")["turn_id"])
+        self.assertEqual(self.engine.calls[-1][1]["vehicle"],
+                         {"make": "MERCEDES-BENZ", "model": "E-Class", "model_year": 2015,
+                          "trim": "E 350"})
+
+    def test_yes_accepts_the_offer_and_language_stays_for_codes(self):
+        self.engine.respond_conversation = lambda message, **kwargs: (
+            self.engine.calls.append((message, kwargs)) or {
+                "status": "OK", "answer": "Found.", "vehicle": {}, "cards": [],
+                "pending": {"act": "results", "offer": {"category": "rear brake pads"}}})
+        cid = self.store.create()["conversation_id"]
+        self.finish(cid, self.store.submit(cid, "წინა ხუნდები", language="auto")["turn_id"])
+        self.finish(cid, self.store.submit(cid, "კი", language="auto")["turn_id"])
+        message, kwargs = self.engine.calls[-1]
+        self.assertEqual(kwargs["category"], "rear brake pads")
+        self.assertIsNone(kwargs["dialogue"]["small_talk"])
+        turn = self.store.submit(cid, "AP104/2", language="auto")
+        self.assertEqual(turn["language"], "ka")
 
     def test_conflicting_vins_rejected_before_work(self):
         cid = self.store.create()["conversation_id"]
@@ -224,3 +290,31 @@ class ConversationApiTests(unittest.IsolatedAsyncioTestCase):
                 await heartbeat
             except asyncio.CancelledError:
                 pass
+
+    async def test_reply_note_quick_replies_and_language_reach_the_browser(self):
+        engine = Engine()
+        engine.respond_conversation = lambda message, **kwargs: {
+            "status": "CLARIFICATION", "act": "clarify_axle", "answer": "წინა თუ უკანა?",
+            "note": "", "quick_replies": ["წინა", "უკანა"], "language": kwargs["language"],
+            "vehicle": {}, "cards": [], "pending": {"act": "clarify_axle", "offer": None},
+            "facts": {"internal": True}}
+        app = create_app(settings=Settings(), repository=SimpleNamespace(),
+                         vin_service=SimpleNamespace(), chat_service=engine,
+                         search_service=SimpleNamespace())
+        self.addCleanup(app.state.conversations.close)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                     base_url="http://localhost:8767") as client:
+            cid = (await client.post("/api/v1/chat/conversations")).json()["conversation_id"]
+            base = "/api/v1/chat/conversations/" + cid
+            posted = await client.post(base + "/messages", json={"message": "ხუნდები"})
+            self.assertEqual(posted.json()["language"], "ka")
+            for _ in range(100):
+                reply = (await client.get(base + "/turns/" + posted.json()["turn_id"])).json()
+                if reply["status"] != "RUNNING":
+                    break
+                await asyncio.sleep(0.01)
+        self.assertEqual((reply["act"], reply["quick_replies"], reply["language"]),
+                         ("clarify_axle", ["წინა", "უკანა"], "ka"))
+        self.assertEqual(reply["note"], "")
+        self.assertNotIn("pending", reply)  # Internal dialogue state stays on the server.
+        self.assertNotIn("facts", reply)

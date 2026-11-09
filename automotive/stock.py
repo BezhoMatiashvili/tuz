@@ -72,15 +72,16 @@ def availability_text(stock: dict | None, language: str = 'ka',
     if state == IN_STORE:
         text = (f'მაღაზიაშია: {_number(store)} ც.' if ka else f'In the store: {_number(store)}')
         if tuz11:
-            text += (f'; TUZ 11: {_number(tuz11)} ც. (1–2 საათში)' if ka
-                     else f'; TUZ 11: {_number(tuz11)} (1-2 hours)')
+            text += (f'; კიდევ {_number(tuz11)} ც. საწყობში (TUZ 11, 1–2 საათში)' if ka
+                     else f'; {_number(tuz11)} more at our warehouse (TUZ 11, 1-2 hours)')
         return text
     if state == WITHIN_HOURS:
-        return (f'მარაგშია TUZ 11-ში: {_number(tuz11)} ც.; მაღაზიაში იქნება 1–2 საათში.' if ka
-                else f'In TUZ 11 stock: {_number(tuz11)}; in the store within 1-2 hours.')
+        return (f'ჩვენს საწყობშია (TUZ 11): {_number(tuz11)} ც.; მაღაზიაში იქნება 1–2 საათში.'
+                if ka else
+                f'At our warehouse (TUZ 11): {_number(tuz11)}; in the store within 1-2 hours.')
     if state == UNAVAILABLE:
-        return ('ახლა არ არის მარაგში (არც მაღაზიაში, არც TUZ 11-ში).' if ka
-                else 'Not available now (none in the store or TUZ 11).')
+        return ('ახლა არ არის მარაგში (არც მაღაზიაში, არც საწყობში).' if ka
+                else 'Not available now (none in the store or our warehouse).')
     return ('ნაპოვნია ჩვენს კატალოგში; მარაგი დაუდასტურებელია.' if ka
             else 'Found in our catalog; stock unconfirmed.')
 

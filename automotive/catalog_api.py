@@ -33,6 +33,10 @@ CATEGORY_TERMS = {
     'air_filter': ['Air Filter'], 'cabin_filter': ['Cabin Air Filter'],
     'brake_pads': ['Brake Pad'], 'brake_discs': ['Brake Disc'],
     'brakes': ['Brake Pad', 'Brake Disc'], 'suspension': ['Shock Absorber'],
+    'fuel_filter': ['Fuel Filter'], 'spark_plugs': ['Spark Plug'],
+    'battery': ['Starter Battery'], 'wipers': ['Wiper Blade'],
+    'timing_belt': ['Timing Belt Kit', 'Timing Belt'], 'clutch': ['Clutch Kit'],
+    'bulbs': ['Bulb, headlight'],
 }
 DEFAULT_BROAD = ['oil_filter', 'air_filter', 'cabin_filter', 'brake_pads', 'brake_discs']
 # Product names that mean the part itself (the group also holds wear sensors and kits).

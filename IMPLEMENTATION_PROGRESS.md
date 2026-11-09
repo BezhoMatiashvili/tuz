@@ -413,3 +413,52 @@ independent supplier/manufacturer validation before treating candidates as confi
   front request and Motorium's 5 s fallback as the main remaining delay on non-European cars.
 - Tests: 386 total, 375 passed, 11 skipped (PostgreSQL/loopback).
 
+### Follow-up — Natural, accurate, fast chat: audit and iterations (2026-11-09)
+- Harness first: `automotive/conversation_eval.py`, 46 bilingual multi-turn scenarios in
+  `tests/fixtures/conversations/`, `--evaluate-chat mock|live [--judge]`. Hard checks: every number,
+  code, brand and name in a reply backed by cards/car/requirements/customer words
+  (`automotive/grounding.py`), language, expected act/category/axle/vehicle, no search on small
+  talk. Soft checks: short, one question, at most one caveat, not repeated, names the car, says
+  how many. Live runs used two private VINs (2003 Honda Accord, 2015 Mercedes E 400), never printed.
+- Changes: deterministic `automotive/dialogue.py` (small talk incl. Latin-typed Georgian, typed
+  cars, short answers, offers, references, sticky language, code vs year/grade/quantity/model);
+  backend-written replies `automotive/replies.py`; direct code/grade/reference turns without the
+  model; 8 new categories; messenger UI (bubbles, typing indicator, chips, Enter sends, compact
+  cards, 5 then more, no unknown price, fixed language `<option>`); optional fact-checked
+  rewording (`AUTOMOTIVE_CHAT_REPHRASE`, off by default — measured 1.2-3 s, rarely better).
+- Bugs found and fixed on the way: "thanks" re-ran the search; typed cars were never understood;
+  years counted as part codes (forcing model calls); the store passed `[VIN]` so VIN-only messages
+  always went to the model; the source coordinator refused all searches after 20 in five minutes
+  and the chat then said the car's codes were unknown; the HTTP model dropped the new reply fields;
+  VINs with an attached Georgian suffix escaped redaction (all VIN patterns now use ASCII
+  boundaries); a failed code lookup said "not in our catalog".
+- Found, not fixed (owner decision): the catalog API key is on RapidAPI BASIC (100 requests/month)
+  and returned `RATE_LIMITED` (quota exhausted, about 30 days to reset); evaluation runs used part
+  of it because its cache is in memory only. Motorium reports a vehicle mismatch for both test
+  VINs after 3-7 s. Most live VIN lookups therefore fall back to name matching and take ~5 s.
+  No `rules.toml` entries were added: no wrong-part evidence was found, only missing source data.
+
+| Round | Mode | Scenarios passing | Hard checks | Naturalness | Judge (1-5) | Small talk | Code | Lookup (median) |
+|---|---|---|---|---|---|---|---|---|
+| 0 baseline | mock | 5/46 | 75.8% | 75.0% | — | — | — | — |
+| 0 baseline | live | 10/46 | 79.6% | 65.3% | 1.45 | 1,048 ms | 4,508 ms | 4,572 ms |
+| 1 | live | 46/46* | 100% | 94.1% | 3.64 | 20 ms | 1,350 ms | 1,778 ms** |
+| 2 | live | 45/46 | 99.7% | 95.2% | 3.83 | 20 ms | 132 ms | 5,206 ms |
+| 3 (pre-review) | live | 41/46 | 98.6% | 96.7% | 3.82 | 20 ms | 122 ms | 4,996 ms |
+| 4 (post-review) | live | 46/46 | 100% | 96.7% | 3.86 | 20 ms | 142 ms | 5,030 ms |
+| 5 (repeat) | live | 46/46 | 100% | 96.7% | — | 20 ms | 122 ms | 5,134 ms |
+| final | mock | 46/46 | 100% | 100% | — | — | — | — |
+
+\* Live mode relaxes catalog-dependent expectations. \** Round 1 lookups were flattered by the
+search-capacity bug (instant failures). Round 3 failures were the checker catching a new note
+("during the day" read as a delivery promise); reworded. Routing model calls fell from 65 per run
+to 0; the remaining soft misses are long name-matched replies.
+- Independent code and security reviews: all HIGH/MEDIUM findings fixed with regression tests
+  (rephrase trusting customer-typed codes, failed lookups reported as missing, vanished reference
+  parts called sold out, make + part number read as a model, grade questions captured by earlier
+  context, Georgian-suffix VIN redaction, checker bypasses, eviction grace period).
+- Verification: 448 Python tests (11 skipped: PostgreSQL/loopback), Ruff on `automotive` and the
+  touched tests, Bandit (warehouse_sync + automotive) clean, both Node UI suites, live browser
+  check with screenshots in `docs/automotive-review/chat-texting-qa.md`. Repo-wide Ruff still
+  reports the 39 pre-existing `db_ui` errors.
+

@@ -20,7 +20,9 @@ from automotive.config import Settings
 from automotive.recommendations import RecommendationService
 
 LOGGER = logging.getLogger(__name__)
-VIN_PATTERN = re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b", re.IGNORECASE)
+# ASCII boundaries: Python's \b treats Georgian letters as word characters, so a VIN
+# typed with a Georgian suffix ("...4352ის") would otherwise escape redaction.
+VIN_PATTERN = re.compile(r"(?<![A-Za-z0-9])[A-HJ-NPR-Z0-9]{17}(?![A-Za-z0-9])", re.IGNORECASE)
 MAX_MODEL_REQUESTS = 4
 MAX_TOOL_EXECUTIONS = 8
 MAX_OUTPUT_TOKENS = 1024
@@ -106,14 +108,15 @@ class ChatService:
                              language: Literal["ka", "en"] = "ka", *,
                              vin: str | None = None, history: Any = (), category: str = "",
                              search_service: Any = None, progress: Any = None,
-                             deadline: float | None = None, cancelled: Any = None) -> dict:
+                             deadline: float | None = None, cancelled: Any = None,
+                             dialogue: dict | None = None) -> dict:
         """Run a bounded conversational turn; identifiers and storage stay with the caller."""
         from automotive.conversational import ConversationTurn
 
         return ConversationTurn(
             self, message, vehicle, language, vin=vin, history=history, category=category,
             search_service=search_service, progress=progress, deadline=deadline,
-            cancelled=cancelled,
+            cancelled=cancelled, dialogue=dialogue,
         ).run()
 
     def _client(self) -> Any:

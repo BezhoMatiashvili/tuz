@@ -11,8 +11,9 @@ from urllib.parse import urljoin
 from automotive.engine_match import (
     engine_code,
     identical,
+    model_matches,
     narrow,
-    trim_search_text,
+    search_terms,
 )
 from automotive.public_http import (
     SUPPLIER_WARNING,
@@ -65,26 +66,38 @@ class OatsCatalog:
             raise PublicSourceError('TIME_LIMIT')
         self.http.reserve()
         token = self._token(deadline)
-        found = self._search(make, model, int(year), token, deadline,
-                             trim_search_text(vehicle.get('trim')))
+        found: list[dict] = []
+        for terms in search_terms(model, vehicle.get('trim')):
+            found = self._search(make, terms, int(year), token, deadline)
+            if found:
+                break
         matched = self._match(found, make, model, int(year), vehicle)
         label = f'{make} {model} {year}'
         if not matched:
             return fluid_report(self.provider, 'EMPTY', label=label,
                                 warnings=['შერჩეულ წელს ცალსახა მანქანა ვერ მოიძებნა.'])
         # Several variants are only read when the trim already identified the engine
-        # family (2WD and 4-matic); otherwise the choice stays ambiguous.
-        decided = len(matched) > 1 and all(self._trim_decided(i, vehicle) for i in matched)
+        # family (2WD and 4-matic), or the stated engine size leaves at most one engine code;
+        # otherwise the choice stays ambiguous. Read variants must still agree.
         codes = {engine_code(i.get('display_name_long')) for i in matched}
-        if len(matched) > 1 and not decided:
+        decided = len(matched) > 1 and (
+            all(self._trim_decided(i, vehicle) for i in matched)
+            or (len(codes - {None}) <= 1
+                and all(self._size_decided(i, vehicle) for i in matched)))
+        if len(matched) > 8 or (len(matched) > 1 and not decided):
             return self._conflict(label, matched)
-        if len(matched) > 3 and not (len(codes) == 1 and None not in codes
-                                     and len(matched) <= 8):
-            return self._conflict(label, matched)
-        # Variants of one engine share a recommendation; verify with a small sample.
+        # Variants of one engine share a recommendation; a small sample verifies it. Without
+        # one engine code, every variant the customer's details name is read (power and
+        # drive variants of `GLE 350 d`), and they must all agree.
+        single = len(codes) == 1 and None not in codes
         sample = list({id(i): i for i in (matched[0], matched[len(matched) // 2],
-                                          matched[-1])}.values()) if len(matched) > 3 else matched
-        reports = [self._equipment(item, token, deadline) for item in sample]
+                                          matched[-1])}.values()) if (
+            single and len(matched) > 3) else matched
+        reports: list[dict] = []
+        for item in sample:
+            reports.append(self._equipment(item, token, deadline))
+            if not identical(reports) and not all(r.get('status') == 'EMPTY' for r in reports):
+                break
         if len(reports) == 1 or all(r.get('status') == 'EMPTY' for r in reports):
             return self._with_engine(reports[0], matched)
         if identical(reports):
@@ -119,10 +132,10 @@ class OatsCatalog:
             raise PublicSourceError('ACCESS_REQUIRED')
         return match.group(1)
 
-    def _search(self, make: str, model: str, year: int, token: str | None,
-                deadline: float | None, trim: str = '') -> list[dict]:
+    def _search(self, make: str, terms: str, year: int, token: str | None,
+                deadline: float | None) -> list[dict]:
         params: dict[str, Any] = {
-            'q': ' '.join(part for part in (make, model, trim, str(year)) if part)[:80],
+            'q': ' '.join(part for part in (make, terms, str(year)) if part)[:80],
             'page': 1, 'page_size': 20,
             'language': self.language,
         }
@@ -146,7 +159,7 @@ class OatsCatalog:
         for item in equipment:
             if identity(item.get('manufacturer')) != identity(make):
                 continue
-            if identity(model) not in identity(item.get('model')):
+            if not model_matches(item.get('model'), model):
                 continue
             start, end = _number(item.get('yearfrom')), _number(item.get('yearto'))
             if start is None or end is None or not start <= year <= end:
@@ -171,10 +184,18 @@ class OatsCatalog:
 
     @staticmethod
     def _trim_decided(item: dict, vehicle: dict) -> bool:
-        from automotive.engine_match import trim_matches
+        """The trim or the engine family the customer stated names this variant."""
+        from automotive.engine_match import engine_matches, trim_matches
 
-        return trim_matches(item.get('display_name_long') or item.get('model'),
-                            vehicle.get('trim'))
+        label = item.get('display_name_long') or item.get('model')
+        return (trim_matches(label, vehicle.get('trim'))
+                or engine_matches(label, vehicle.get('engine_code')))
+
+    @staticmethod
+    def _size_decided(item: dict, vehicle: dict) -> bool:
+        wanted = _number(vehicle.get('displacement_l'))
+        values = item.get('displacement') if isinstance(item.get('displacement'), list) else []
+        return wanted is not None and any(_number(value) == wanted for value in values)
 
     def _equipment(self, summary: dict, token: str | None, deadline: float | None) -> dict:
         identifier = str(summary.get('@id') or '')

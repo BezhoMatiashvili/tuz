@@ -63,6 +63,38 @@ class EngineMatchTests(unittest.TestCase):
         self.assertFalse(engine_match.trim_matches('anything', 'E4'))
         self.assertEqual(engine_match.trim_search_text('E400'), 'E 400')
 
+    def test_trim_after_the_class_and_never_the_power(self):
+        # Shell and Pakelo labels as returned for these cars.
+        self.assertTrue(engine_match.trim_matches('GLE (W166) 350 d 4-matic 183kW', 'GLE 350d'))
+        self.assertTrue(engine_match.trim_matches('IS II 250 149kW', 'IS 250'))
+        self.assertTrue(engine_match.trim_matches('G Coupe 37 235kW', 'G 37'))
+        self.assertTrue(engine_match.trim_matches('3 (F30, F80) 328 i 180kW', '328i'))
+        self.assertFalse(engine_match.trim_matches('GLC (X253) 350 d', 'GLE 350d'))
+        self.assertFalse(engine_match.trim_matches('E-CLASS (W212) E 63 AMG 400kW', 'E 400'))
+
+    def test_supplier_model_names(self):
+        matches = [('E-CLASS (W212)', 'E-Class'), ('GLE (W166)', 'GLE-Class'),
+                   ('GLE-Class Coupé', 'GLE-Class'), ('3 (F30, F80) 328 i', '3 Series'),
+                   ('3 series Gran Turismo', '3 Series'), ('3 Gran Turismo (F34)', '3-Series'),
+                   ('IS II 250 149kW', 'IS'), ('CR-V', 'CRV'), ('RX 350 202kW', 'RX350'),
+                   ('RANGE ROVER SPORT II', 'Range Rover Sport'), ('G25 / G35 / G37 / G', 'G'),
+                   ('3 2.0 110kW', '3')]
+        for label, model in matches:
+            self.assertTrue(engine_match.model_matches(label, model), (label, model))
+        misses = [('CLE-Class', 'E-Class'), ('GLS-Class', 'S-Class'), ('CX-3 2.0', '3'),
+                  ('CX-30 2.0', '3'), ('A45 AMG', 'A4'), ('B-CLASS B 200 c', 'C-Class')]
+        for label, model in misses:
+            self.assertFalse(engine_match.model_matches(label, model), (label, model))
+
+    def test_search_terms_use_the_spelling_in_supplier_labels(self):
+        self.assertEqual(engine_match.search_terms('GLE-Class', 'GLE 350d'),
+                         ['GLE 350 d', 'GLE-Class GLE 350 d'])
+        self.assertEqual(engine_match.search_terms('3 Series', '328i')[0], '328 i')
+        self.assertEqual(engine_match.search_terms('IS', 'IS 250')[0], 'IS 250')
+        self.assertEqual(engine_match.search_terms('Car', 'E400'), ['Car E 400'])
+        self.assertEqual(engine_match.search_terms('3 Series', None), ['3 Series', '3'])
+        self.assertEqual(engine_match.search_terms('Accord', None), ['Accord'])
+
     def test_fuel_marker_must_agree_when_present(self):
         self.assertTrue(engine_match.fuel_matches('E 400 (P)', 'Gasoline'))
         self.assertTrue(engine_match.fuel_matches('E 400 (B)', 'Gasoline'))
@@ -89,6 +121,20 @@ class EngineMatchTests(unittest.TestCase):
         # A trim that exists only as a diesel is a disagreement, not a match.
         self.assertEqual(engine_match.narrow(labels[:1] + [{'l': 'E 400 (D)'}],
                                              lambda item: item['l'], vehicle), [])
+
+    def test_a_stated_engine_code_keeps_only_its_family(self):
+        labels = [{'l': 'E-CLASS (W212) E 350 (M 272.980) (P)'},
+                  {'l': 'E-CLASS (W212) E 400 (M 276.820) (P)'},
+                  {'l': 'E-CLASS (W212) E 300 (P)'}]
+        chosen = engine_match.narrow(labels, lambda item: item['l'], {'engine_code': 'M276'})
+        self.assertEqual([item['l'] for item in chosen], [labels[1]['l']])
+        self.assertTrue(engine_match.engine_matches(labels[1]['l'], 'M 276.850'))
+        self.assertFalse(engine_match.engine_matches(labels[0]['l'], 'M276'))
+        # Labels without a code are unknown, not contradicted; a contradicted code is no match.
+        self.assertEqual(engine_match.narrow(labels[::2], lambda item: item['l'],
+                                             {'engine_code': 'M276'}), [labels[2]])
+        self.assertEqual(engine_match.narrow(labels[:1], lambda item: item['l'],
+                                             {'engine_code': 'M276'}), [])
 
 
 def detail(*products):
@@ -152,6 +198,78 @@ class ChooserResolutionTests(unittest.TestCase):
         result = client.lookup(None, self.vehicle)
         self.assertEqual(result['status'], 'CONFLICTED')
         self.assertEqual(result['items'], [])
+
+    def test_a_typed_class_and_trim_find_the_one_engine_across_body_styles(self):
+        def mercedes(identifier, model, label):
+            return {**item(identifier, label), 'manufacturer': 'MERCEDES-BENZ', 'model': model}
+
+        equipment = [
+            mercedes('sedan1', 'E-CLASS (W212)', 'E-CLASS (W212) E 400 (M 276.820) (P) (2015)'),
+            mercedes('coupe1', 'E-CLASS Coupe (C207)',
+                     'E-CLASS Coupe (C207) E 400 (M 276.820) (P) (2015)'),
+            mercedes('diesel1', 'E-CLASS (W212)', 'E-CLASS (W212) E 250 BlueTEC (D) (2015)'),
+        ]
+        typed = {'make': 'MERCEDES-BENZ', 'model': 'E-Class', 'model_year': 2015,
+                 'trim': 'E 400'}
+        client = self.client(equipment, detail('Helix Ultra 5W-40'), detail('Helix Ultra 5W-40'))
+        result = client.lookup(None, typed)
+        self.assertEqual(result['status'], 'PROVISIONAL')
+        self.assertEqual(result['engine_code'], 'M 276.820')
+        self.assertIn('E 400', client.http.calls[0][2]['q'])
+        # The old reading of "Mercedes Benz E400" matched no chooser model at all.
+        client = self.client(equipment)
+        self.assertEqual(client.lookup(None, {**typed, 'model': 'Benz', 'trim': None})['status'],
+                         'EMPTY')
+
+    def test_a_stated_engine_code_decides_without_a_trim(self):
+        client = self.client(
+            [item('first1', 'Car 350 (M 272.980) (P) (2015)', '3.5'),
+             item('second1', 'Car 400 (M 276.820) (P) (2015)'),
+             item('third1', 'Car 400 4-matic (M 276.820) (P) (2015)')],
+            detail('Helix Ultra 5W-40'), detail('Helix Ultra 5W-40'))
+        vehicle = {'make': 'Example', 'model': 'Car', 'model_year': 2015, 'engine_code': 'M276'}
+        result = client.lookup(None, vehicle)
+        self.assertEqual(result['status'], 'PROVISIONAL')
+        self.assertEqual(result['engine_code'], 'M 276.820')
+
+    def test_a_stated_engine_size_decides_when_one_engine_code_remains(self):
+        client = self.client(
+            [item('first1', 'Car 250 (M 274.920) (P) (2015)', '2.0'),
+             item('second1', 'Car 400 (M 276.820) (P) (2015)'),
+             item('third1', 'Car 400 Coupe (M 276.820) (P) (2015)')],
+            detail('Helix Ultra 5W-40'), detail('Helix Ultra 5W-40'))
+        vehicle = {'make': 'Example', 'model': 'Car', 'model_year': 2015, 'displacement_l': '3.0'}
+        result = client.lookup(None, vehicle)
+        self.assertEqual(result['status'], 'PROVISIONAL')
+        self.assertEqual(result['engine_code'], 'M 276.820')
+
+    def test_every_named_variant_is_read_and_must_agree_without_an_engine_code(self):
+        def gle(identifier, label):
+            return {**item(identifier, label), 'manufacturer': 'MERCEDES-BENZ',
+                    'model': label.split(' 350', 1)[0]}
+
+        equipment = [gle('suv183', 'GLE (W166) 350 d 4-matic 183kW (D) (2015)'),
+                     gle('suv190', 'GLE (W166) 350 d 4-matic 190kW (D) (2015)'),
+                     gle('coupe183', 'GLE Coupe (C292) 350 d 4-matic 183kW (D) (2015)'),
+                     gle('coupe190', 'GLE Coupe (C292) 350 d 4-matic 190kW (D) (2015)')]
+        vehicle = {'make': 'MERCEDES-BENZ', 'model': 'GLE-Class', 'model_year': 2015,
+                   'trim': 'GLE 350d'}
+        same = detail('Helix Ultra ECT C3 0W-30')
+        client = self.client(equipment, same, same, same, same)
+        result = client.lookup(None, vehicle)
+        self.assertEqual(result['status'], 'PROVISIONAL')
+        self.assertEqual(len(client.http.calls), 5)  # The search and all four variants.
+        self.assertEqual(client.http.calls[0][2]['q'], 'MERCEDES-BENZ GLE 350 d 2015')
+        # A variant that disagrees stops the reads: nothing is guessed.
+        client = self.client(equipment, same, detail('Helix HX8 5W-40'))
+        self.assertEqual(client.lookup(None, vehicle)['status'], 'CONFLICTED')
+        self.assertEqual(len(client.http.calls), 3)
+
+    def test_more_than_eight_variants_are_not_read(self):
+        equipment = [item(f'v{n}aa', f'Car E 400 {200 + n}kW (P) (2015)') for n in range(9)]
+        client = self.client(equipment)
+        self.assertEqual(client.lookup(None, self.vehicle)['status'], 'CONFLICTED')
+        self.assertEqual(len(client.http.calls), 1)
 
     def test_no_trim_means_several_engines_are_not_read_or_guessed(self):
         client = self.client([item('first1', 'Car 2.0 (P)', '2.0'),

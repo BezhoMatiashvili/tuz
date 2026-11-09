@@ -8,8 +8,26 @@ from dataclasses import dataclass, field
 from dotenv import load_dotenv
 
 
-def _flag(name: str) -> bool:
-    return os.getenv(name, "true").strip().lower() in {"1", "true", "yes"}
+def _flag(name: str, default: str = "true") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes"}
+
+
+def _seconds(name: str, default: float) -> float:
+    raw = os.getenv(name, "").strip()
+    try:
+        value = float(raw) if raw else default
+    except ValueError:
+        raise ValueError(f"{name} must be a number of seconds.") from None
+    if not 0.2 <= value <= 10:
+        raise ValueError(f"{name} must be between 0.2 and 10 seconds.")
+    return value
+
+
+def _days(name: str) -> int:
+    raw = os.getenv(name, "0").strip() or "0"
+    if not raw.isdigit():
+        raise ValueError(f"{name} must be a whole number of days.")
+    return int(raw)
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +52,12 @@ class Settings:
     allowed_origins: tuple[str, ...] = ("http://localhost:8767", "http://127.0.0.1:8767")
     rate_limit_per_minute: int = 60
     expensive_rate_limit_per_minute: int = 10
+    # Empty path disables the local chat log; from_env enables it by default.
+    chat_log_path: str = ""
+    chat_log_retention_days: int = 0
+    # Let the model reword result replies; a fact checker falls back to the backend sentence.
+    chat_rephrase: bool = False
+    chat_rephrase_seconds: float = 1.2
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -56,6 +80,10 @@ class Settings:
             shell_enabled=_flag("SHELL_ENABLED"),
             pakelo_enabled=_flag("PAKELO_ENABLED"),
             jsfilter_enabled=_flag("JSFILTER_ENABLED"),
+            chat_log_path=os.getenv("AUTOMOTIVE_CHAT_LOG_PATH", "data/chat_logs/chat_log.sqlite3"),
+            chat_log_retention_days=_days("AUTOMOTIVE_CHAT_LOG_RETENTION_DAYS"),
+            chat_rephrase=_flag("AUTOMOTIVE_CHAT_REPHRASE", "false"),
+            chat_rephrase_seconds=_seconds("AUTOMOTIVE_CHAT_REPHRASE_SECONDS", 1.2),
         )
         if settings.catalog_api_key and not settings.catalog_api_base_url.startswith("https://"):
             raise ValueError("The catalog API base URL must use HTTPS.")

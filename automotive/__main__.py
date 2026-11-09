@@ -63,6 +63,57 @@ def run_evaluation(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
               f"to {args.misses_out} (no VINs)")
 
 
+def run_chat_evaluation(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Scripted conversations, mock (offline) or live; prints {VIN1} placeholders only."""
+    import json
+    import os
+    import re
+    import sys
+
+    from automotive import conversation_eval as chat_eval
+
+    try:
+        scenarios = chat_eval.load_scenarios(args.scenarios or chat_eval.DEFAULT_SCENARIOS)
+    except (OSError, ValueError) as exc:
+        parser.exit(2, f"Scenarios could not be read: {exc}\n")
+    if args.only:
+        scenarios = [s for s in scenarios if args.only in s.get("tags", [])
+                     or args.only == s["id"]]
+    live = args.evaluate_chat == "live"
+    if live:
+        if not args.vins:
+            parser.exit(2, "Live chat evaluation needs --vins FILE (VINs are never printed).\n")
+        try:
+            vins = chat_eval.read_vins(args.vins)
+        except OSError:
+            parser.exit(2, "The VIN file could not be read.\n")
+        needed = {key for s in scenarios for t in s["turns"]
+                  for key in re.findall(r"\{(VIN\d)\}", t["say"])}
+        if not needed <= set(vins):
+            parser.exit(2, f"The VIN file needs at least {len(needed)} VINs.\n")
+        store = chat_eval.live_store()
+    else:
+        vins, store = dict(chat_eval.MOCK_VINS), chat_eval.mock_store()
+    print(f"{len(scenarios)} scenarios, {'live' if live else 'mock'} mode")
+    try:
+        results = chat_eval.evaluate(store, scenarios, vins, sys.stdout, live=live)
+        summary = chat_eval.summarize(results)
+        if args.judge and live:
+            from automotive.config import Settings
+
+            summary["judge"] = chat_eval.judge(results, Settings.from_env(), sys.stdout)
+    finally:
+        store.close()
+        store.search_service.close()
+    chat_eval.print_summary(summary, sys.stdout)
+    if args.report_out:
+        fd = os.open(args.report_out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump({"mode": "live" if live else "mock", "summary": summary,
+                       "scenarios": results}, handle, ensure_ascii=False, indent=1)
+        print(f"Report written to {args.report_out}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Local automotive intelligence application")
     parser.add_argument("--port", type=int, default=8767)
@@ -79,9 +130,22 @@ def main() -> None:
                         help="Write requests with no offer (no VINs) to this CSV")
     parser.add_argument("--check-catalog-api", action="store_true",
                         help="Check the optional catalog API key with one VIN (asked privately)")
+    parser.add_argument("--evaluate-chat", choices=("mock", "live"),
+                        help="Run scripted conversations and score accuracy, feel and speed")
+    parser.add_argument("--vins", metavar="FILE",
+                        help="VIN list for --evaluate-chat live ({VIN1} is the first line)")
+    parser.add_argument("--scenarios", metavar="PATH",
+                        help="Scenario file or directory (default: tests/fixtures/conversations)")
+    parser.add_argument("--only", metavar="TAG", help="Run scenarios with this tag or id")
+    parser.add_argument("--judge", action="store_true",
+                        help="Live only: one model rating of each transcript's natural feel")
+    parser.add_argument("--report-out", metavar="FILE", help="Write the full report as JSON")
     args = parser.parse_args()
     if args.check_catalog_api:
         check_catalog_api(parser)
+        return
+    if args.evaluate_chat:
+        run_chat_evaluation(parser, args)
         return
     if args.evaluate:
         run_evaluation(parser, args)

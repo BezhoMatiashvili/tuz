@@ -61,14 +61,14 @@ class ConversationalChatTests(unittest.TestCase):
     def test_greetings_are_natural_in_both_languages_without_provider_calls(self):
         en = self.turn('Hello!')
         ka = self.service.respond_conversation('გამარჯობა', language='ka')
-        self.assertIn('Hello', en['answer'])
+        self.assertIn('Hi', en['answer'])
         self.assertIn('გამარჯობა', ka['answer'])
         self.client.messages.create.assert_not_called()
 
     def test_vin_brakes_identifies_then_clarifies_and_never_reaches_model(self):
         result = self.turn(f'Find breaks for {VIN}', category='brakes')
         self.assertEqual(result['vehicle'], VEHICLE)
-        self.assertIn('pads or discs', result['answer'])
+        self.assertIn('Pads or discs', result['answer'])
         self.assertEqual(result['status'], 'CLARIFICATION')
         self.assertNotIn(VIN, json.dumps(result))
         self.client.messages.create.assert_not_called()
@@ -84,7 +84,7 @@ class ConversationalChatTests(unittest.TestCase):
     def test_pads_without_axle_asks_front_or_rear(self):
         result = self.turn('brake pads', category='brake pads', vehicle=VEHICLE)
         self.assertEqual(result['status'], 'CLARIFICATION')
-        self.assertIn('front or rear', result['answer'])
+        self.assertIn('Front or rear', result['answer'])
 
     def test_slash_code_and_authoritative_fields_remain_unknown(self):
         self.client.messages.create.side_effect = [
@@ -115,7 +115,7 @@ class ConversationalChatTests(unittest.TestCase):
             response(tool('finish_response', {'answer': 'results', 'result_ids': ['r99']})),
             finish(act='help'),
         ]
-        result = self.turn('help')
+        result = self.turn('can you compare the options')
         self.assertEqual(result['status'], 'OK')
         messages = self.client.messages.create.call_args.kwargs['messages']
         error = messages[2]['content'][0]
@@ -283,7 +283,7 @@ class ConversationalChatTests(unittest.TestCase):
             response(tool('search_inventory', {'code': 'AP104/2', 'manufacturer': None})),
             anthropic.APITimeoutError(request),
         ]
-        result = self.turn()
+        result = self.turn('compare AP104/2 with its alternatives')
         self.assertEqual(result['status'], 'PARTIAL')
         self.assertEqual(result['cards'][0]['product']['product_code'], 'AP104/2')
         self.assertIn('TIMEOUT', result['warnings'])
@@ -295,7 +295,7 @@ class ConversationalChatTests(unittest.TestCase):
             response(tool('search_products', {'query': 'rear brake pads'})),
             finish('r1'),
         ]
-        result = self.turn('AP104/2 rear pads', category='rear brake pads')
+        result = self.turn('which rear pads compare to AP104/2', category='rear brake pads')
         self.assertEqual(result['status'], 'PARTIAL')
         self.assertEqual(len(result['cards']), 1)
         self.assertNotIn('private', json.dumps(result))
@@ -315,7 +315,7 @@ class ConversationalChatTests(unittest.TestCase):
 
     def test_oil_without_a_resolved_grade_asks_for_the_engine_and_lists_no_guesses(self):
         result = self.turn('which oil', category='engine oil', vehicle=VEHICLE)
-        self.assertIn('exact engine code', result['answer'])
+        self.assertIn('engine code', result['answer'])
         self.assertEqual(result['cards'], [])
         self.repo.search_products.assert_not_called()  # No all-oils fallback.
         self.client.messages.create.assert_not_called()
@@ -339,7 +339,7 @@ class ConversationalChatTests(unittest.TestCase):
         card = result['cards'][0]
         self.assertIsNone(card['compatible'])
         self.assertEqual(card['fitment_status'], 'UNKNOWN')
-        self.assertIn('exact engine code', result['answer'])
+        self.assertIn('Oil suitability requires', ' '.join(card['warnings']))
 
     def test_only_product_with_verified_oil_approval_result_is_suitable(self):
         from unittest.mock import patch
@@ -366,8 +366,8 @@ class ConversationalChatTests(unittest.TestCase):
         self.assertEqual(result['vehicle']['engine_code'], 'B48')
         self.assertEqual(result['vehicle']['model_year'], 2013)
         self.repo.vehicle_specifications.assert_called_once_with({**VEHICLE, 'engine_code': 'B48'})
-        payload = json.dumps(self.client.messages.create.call_args.kwargs)
-        self.assertIn('B48', payload)
+        # A labelled engine code and a year are configuration, not part numbers: no model trip.
+        self.client.messages.create.assert_not_called()
 
     def test_georgian_explicit_engine_followup_is_literal_and_bare_code_cannot_change_engine(self):
         self.client.messages.create.return_value = finish(act='clarify_engine')
@@ -388,7 +388,7 @@ class ConversationalChatTests(unittest.TestCase):
         self.client.messages.create.side_effect = [
             response(tool('search_products', {'query': 'everything'})), finish('r1'),
         ]
-        result = self.turn('rear ones', category='rear brake pads')
+        result = self.turn('TRW rear ones', category='rear brake pads')
         self.repo.search_products.assert_called_once_with('rear brake pads', limit=100)
         self.assertEqual(len(result['cards']), 1)
 
@@ -415,7 +415,7 @@ class ConversationalChatTests(unittest.TestCase):
         self.client.messages.create.assert_not_called()
         coordinator.start.assert_called_once_with(VIN, '', 2013, VEHICLE)
         self.assertEqual(result['cards'][0]['product']['source_product_id'], 'p1')
-        self.assertIn('search results', result['answer'])
+        self.assertIn('I found 1 part for your 2013 Example Car', result['answer'])
         self.assertNotIn(VIN, json.dumps(result))
 
     def test_only_failed_sources_are_named_and_long_lists_are_not_failures(self):
@@ -453,7 +453,7 @@ class ConversationalChatTests(unittest.TestCase):
         result = self.turn('breaks', category='brakes', vehicle=VEHICLE, search_service=coordinator)
         self.client.messages.create.assert_not_called()
         self.assertEqual(result['status'], 'CLARIFICATION')
-        self.assertIn('pads or discs', result['answer'])
+        self.assertIn('Pads or discs', result['answer'])
         self.assertEqual([c['product']['source_product_id'] for c in result['cards']], ['p1'])
         self.assertEqual(result['cards'][0]['basis'], 'code')
         self.assertEqual(result['cards'][0]['matched_via'], ['Motorium: AP104/2'])
@@ -516,7 +516,7 @@ class ConversationalChatTests(unittest.TestCase):
         self.assertEqual(result['requirements']['engine_code'], 'M 276.850')
         self.assertEqual(result['requirements']['capacity_l'], 6.5)
         self.assertNotIn('missing', result['requirements'])
-        self.assertIn('requirement', result['answer'])
+        self.assertIn('(M 276.850) takes 5W-40, about 6.5 L', result['answer'])
         ids = [c['product']['source_product_id'] for c in result['cards']]
         self.assertEqual(ids, ['oil1', 'f1', 'oil2'])  # Store first, then TUZ 11.
         oil, filt, other = result['cards']
@@ -531,6 +531,28 @@ class ConversationalChatTests(unittest.TestCase):
         self.assertEqual(oil['fitment_status'], 'UNKNOWN')
         self.assertIsNone(oil['compatible'])
         self.repo.search_engine_family.assert_called_once_with('M276', limit=50)
+
+    def test_a_typed_mercedes_oil_change_resolves_without_asking_for_the_engine(self):
+        from automotive.dialogue import read_vehicle
+
+        coordinator = self.oil_setup()
+        resolved = coordinator.start.return_value
+
+        def start(vin, query, year, configuration):
+            # Choosers know the class and identify the engine by the trim.
+            if configuration.get('model') == 'E-Class' and configuration.get('trim'):
+                return {**resolved, 'vehicle': configuration}
+            return {**resolved, 'vehicle': configuration, 'fluids': []}
+
+        coordinator.start.side_effect = start
+        message = 'Mercedes Benz E400 2015 ზეთის შეცვლა მინდა'
+        result = self.service.respond_conversation(
+            message, language='ka', category=message, search_service=coordinator,
+            vehicle=read_vehicle(message).as_vehicle())
+        self.client.messages.create.assert_not_called()
+        self.assertEqual(result['act'], 'oil_resolved')
+        self.assertEqual(result['requirements']['engine_code'], 'M 276.850')
+        self.assertNotIn('ძრავის კოდი მჭირდება', result['answer'])
 
     def test_oil_change_reports_the_part_with_no_stocked_match(self):
         coordinator = self.oil_setup(filter_items=[])
@@ -554,7 +576,7 @@ class ConversationalChatTests(unittest.TestCase):
         result = self.turn(f'what oil {VIN}', category='engine oil', vin=VIN,
                            search_service=coordinator)
         self.assertEqual(result['cards'], [])
-        self.assertIn('none is in the store or TUZ 11', result['answer'])
+        self.assertIn('none are in the store or our warehouse', result['answer'])
 
     def test_a_typed_code_is_answered_even_when_not_in_stock(self):
         unavailable = {**PRODUCT, 'stock': {'store': 0.0, 'tuz11': 0.0}}
@@ -659,7 +681,7 @@ class ConversationalChatTests(unittest.TestCase):
         result = self.turn('front brake pads', category='front brake pads', vin=VIN,
                            search_service=coordinator)
         self.assertEqual(result['cards'], [])
-        self.assertIn('not guessing', result['answer'])
+        self.assertIn('rather not guess', result['answer'])
 
     def code_snapshot(self, products, **updates):
         rows = [{'product': p, 'status': 'UNKNOWN', 'compatible': None,
@@ -754,7 +776,7 @@ class ConversationalChatTests(unittest.TestCase):
         result = self.turn('front brake pads', category='front brake pads', vin=VIN,
                            search_service=coordinator)
         self.assertEqual(result['cards'], [])  # Neither quantity is above its minimum.
-        self.assertIn('none is in the store or TUZ 11', result['answer'])
+        self.assertIn('none are in the store or our warehouse', result['answer'])
 
     def test_informational_warnings_keep_a_complete_answer_complete(self):
         from datetime import UTC, datetime, timedelta
@@ -770,11 +792,11 @@ class ConversationalChatTests(unittest.TestCase):
         self.client.messages.create.return_value = response(*[
             tool('vehicle_identification', {}, f't{i}') for i in range(12)
         ])
-        result = self.turn('help')
+        result = self.turn('compare the options')
         self.assertEqual(result['usage']['tool_executions'], 8)
         self.assertEqual(result['usage']['model_requests'], 1)
         self.client.messages.create.return_value = response(tool('vehicle_identification', {}))
-        result = self.turn('help')
+        result = self.turn('compare the options')
         self.assertEqual(result['usage']['model_requests'], 4)
 
     def test_expired_deadline_and_cancelled_turn_avoid_provider_reads(self):
@@ -783,6 +805,94 @@ class ConversationalChatTests(unittest.TestCase):
         result = self.turn(cancelled=lambda: True)
         self.assertIn(result['status'], {'CANCELLED', 'DATA_UNAVAILABLE'})
         self.client.messages.create.assert_not_called()
+
+    def rephrase_service(self, text=None, error=None):
+        self.service.settings = Settings(anthropic_api_key='secret-key', vin_hmac_key='h' * 32,
+                                         chat_rephrase=True)
+        reply = SimpleNamespace(content=[{'type': 'text', 'text': text or ''}],
+                                stop_reason='end_turn',
+                                usage=SimpleNamespace(input_tokens=5, output_tokens=5))
+        self.client.messages.create.side_effect = error or [reply]
+        return self.code_snapshot([self.pad('a', 'ხუნდი წნ', store=2),
+                                   self.pad('b', 'ხუნდი წინა', store=0, tuz11=1)])
+
+    def test_a_grounded_rewording_replaces_the_backend_sentence(self):
+        coordinator = self.rephrase_service(
+            'Good news: 2 front brake pads for your 2013 Example Car. 1 is in the store now and '
+            '1 can come from TUZ 11 in 1-2 hours. Need the rear ones too?')
+        result = self.turn('front brake pads', category='front brake pads', vin=VIN,
+                           search_service=coordinator)
+        self.assertTrue(result['answer'].startswith('Good news'))
+        self.assertTrue(result['rephrased'])
+        kwargs = self.client.messages.create.call_args.kwargs
+        self.assertEqual(kwargs['thinking'], {'type': 'disabled'})
+        self.assertNotIn(VIN, json.dumps(kwargs))
+
+    def test_an_invented_or_dropped_fact_keeps_the_backend_sentence(self):
+        for text in ('We have 3 front pads for your Example Car, all in stock for 40 GEL.',
+                     'Good news, front pads for your Example Car are here. Need the rear ones?'):
+            coordinator = self.rephrase_service(text)
+            result = self.turn('front brake pads', category='front brake pads', vin=VIN,
+                               search_service=coordinator)
+            self.assertTrue(result['answer'].startswith('I found 2 front brake pads'), text)
+            self.assertFalse(result['rephrased'])
+
+    def test_a_slow_rewording_keeps_the_backend_sentence(self):
+        request = httpx.Request('POST', 'https://api.anthropic.com/v1/messages')
+        coordinator = self.rephrase_service(error=anthropic.APITimeoutError(request))
+        result = self.turn('front brake pads', category='front brake pads', vin=VIN,
+                           search_service=coordinator)
+        self.assertTrue(result['answer'].startswith('I found 2 front brake pads'))
+        self.assertEqual(result['status'], 'OK')
+
+    def test_rewording_is_off_unless_enabled(self):
+        coordinator = self.code_snapshot([self.pad('a', 'ხუნდი წნ')])
+        self.turn('front brake pads', category='front brake pads', vin=VIN,
+                  search_service=coordinator)
+        self.client.messages.create.assert_not_called()
+
+    def test_a_brand_that_was_not_shown_is_named_honestly(self):
+        shown = [{'id': 'a', 'brand': 'SATO', 'code': '1'},
+                 {'id': 'b', 'brand': 'TRW', 'code': '2'}]
+        result = self.turn('is the brembo one in stock?', category='front brake pads',
+                           vehicle=VEHICLE, dialogue={'small_talk': None, 'last_cards': shown})
+        self.assertEqual(result['act'], 'reference_missing')
+        self.assertEqual(result['answer'],
+                         "None of the ones I showed are Brembo — they're Sato, TRW.")
+        self.repo.get_product.assert_not_called()
+
+    def test_a_failed_search_says_so_instead_of_claiming_no_codes(self):
+        coordinator = Mock()
+        coordinator.start.side_effect = RuntimeError('SEARCH_CAPACITY')
+        result = self.turn('front brake pads', category='front brake pads', vin=VIN,
+                           search_service=coordinator)
+        self.assertEqual(result['act'], 'no_results')
+        self.assertIn("couldn't finish that", result['answer'])
+        result = self.turn('oil change', category='oil change', vin=VIN,
+                           search_service=coordinator)
+        self.assertNotIn('engine code', result['answer'])
+
+    def test_a_failed_code_lookup_is_not_reported_as_missing(self):
+        self.repo.search_parts.side_effect = psycopg.OperationalError('private')
+        result = self.turn('Do you have AP104/2?')
+        self.assertEqual(result['status'], 'DATA_UNAVAILABLE')
+        self.assertIn("couldn't finish that", result['answer'])
+        self.assertNotIn('catalog', result['answer'])
+        self.assertNotIn('private', json.dumps(result))
+
+    def test_a_grade_question_after_brake_results_searches_oil_not_the_cards(self):
+        oil = {**PRODUCT, 'source_product_id': 'oil', 'product_name': 'Castrol 5W-30 4L',
+               'brand': 'CASTROL', 'stock': {'store': 2.0, 'tuz11': 0.0}}
+        self.repo.search_engine_oils.return_value = {'items': [copy.deepcopy(oil)]}
+        self.repo.get_product.return_value = oil
+        shown = [{'id': 'p1', 'brand': 'Maker', 'code': 'AP104/2', 'basis': 'code'}]
+        result = self.turn('Do you have Castrol 5W-30?', vehicle=VEHICLE,
+                           category='engine oil Do you have Castrol 5W-30?',
+                           dialogue={'small_talk': None, 'last_cards': shown})
+        self.repo.search_engine_oils.assert_called_once_with('5W-30', brand='CASTROL', limit=50)
+        self.assertEqual(result['act'], 'results')
+        self.assertTrue(result['answer'].startswith('Yes, we have 5W-30 engine oil — 1 option'),
+                        result['answer'])  # Not worded as matched to the car.
 
     def test_progress_publishes_validated_cards_before_provider_failure(self):
         snapshots = []

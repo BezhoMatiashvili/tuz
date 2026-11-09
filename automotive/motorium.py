@@ -20,7 +20,7 @@ from automotive.vin import validate_vin
 
 ORIGIN = 'https://motorium.ge'
 ASSISTANT_URL = ORIGIN + '/api/ai-assistant.php'
-VIN_IN_TEXT = re.compile(r'\b[A-HJ-NPR-Z0-9]{17}\b', re.IGNORECASE)
+VIN_IN_TEXT = re.compile(r'(?<![A-Za-z0-9])[A-HJ-NPR-Z0-9]{17}(?![A-Za-z0-9])', re.IGNORECASE)
 
 
 class MotoriumError(RuntimeError):

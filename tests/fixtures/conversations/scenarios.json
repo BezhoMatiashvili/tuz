@@ -1,0 +1,162 @@
+[
+  {"id": "greet-en", "tags": ["small_talk"], "language": "en", "turns": [
+    {"say": "hi there", "kind": "small_talk", "expect": {"act": ["greeting"], "searched": false, "model_calls_max": 0}}
+  ]},
+  {"id": "greet-ka", "tags": ["small_talk"], "language": "ka", "turns": [
+    {"say": "გამარჯობათ", "kind": "small_talk", "expect": {"act": ["greeting"], "searched": false, "model_calls_max": 0}}
+  ]},
+  {"id": "greet-translit", "tags": ["small_talk"], "language": "ka", "turns": [
+    {"say": "gamarjoba", "kind": "small_talk", "reply_language": "ka", "expect": {"act": ["greeting"], "searched": false, "language": "ka"}}
+  ]},
+  {"id": "thanks-after-results", "tags": ["small_talk", "lookup"], "language": "en", "turns": [
+    {"say": "front brake pads {VIN1}", "vin": "VIN1", "kind": "lookup", "expect": {"act": ["results"], "category": "brake_pads", "axle": "front", "cards_min": 1}},
+    {"say": "thanks!", "kind": "small_talk", "expect": {"act": ["thanks"], "searched": false, "model_calls_max": 0}}
+  ]},
+  {"id": "thanks-ka", "tags": ["small_talk", "lookup"], "language": "ka", "turns": [
+    {"say": "{VIN1} წინა ხუნდები", "vin": "VIN1", "kind": "lookup", "expect": {"act": ["results"], "axle": "front", "cards_min": 1}},
+    {"say": "დიდი მადლობა", "kind": "small_talk", "expect": {"act": ["thanks"], "searched": false}}
+  ]},
+  {"id": "ok-after-results", "tags": ["small_talk"], "language": "en", "turns": [
+    {"say": "air filter for {VIN1}", "vin": "VIN1", "kind": "lookup", "expect": {"act": ["results"], "category": "air_filter", "cards_min": 1}},
+    {"say": "ok", "kind": "small_talk", "reply_language": "en", "expect": {"act": ["ack"], "searched": false}}
+  ]},
+  {"id": "bye-en", "tags": ["small_talk"], "language": "en", "turns": [
+    {"say": "ok bye", "kind": "small_talk", "expect": {"act": ["bye"], "searched": false}}
+  ]},
+  {"id": "identity-en", "tags": ["small_talk"], "language": "en", "turns": [
+    {"say": "are you a bot?", "kind": "small_talk", "expect": {"act": ["identity"], "searched": false, "model_calls_max": 0}}
+  ]},
+  {"id": "help-ka", "tags": ["small_talk"], "language": "ka", "turns": [
+    {"say": "რა შეგიძლია?", "kind": "small_talk", "expect": {"act": ["help", "identity"], "searched": false, "model_calls_max": 0}}
+  ]},
+  {"id": "identity-ka", "tags": ["small_talk"], "language": "ka", "turns": [
+    {"say": "ვინ ხარ?", "kind": "small_talk", "expect": {"act": ["identity"], "searched": false}}
+  ]},
+  {"id": "car-text-en", "tags": ["vehicle_text"], "language": "en", "turns": [
+    {"say": "I need front brake pads", "kind": "clarify", "expect": {"act": ["clarify_vehicle"], "searched": false, "model_calls_max": 0}},
+    {"say": "Honda Accord 2015", "kind": "lookup", "expect": {"act": ["results"], "vehicle": {"make": "HONDA", "model": "Accord", "model_year": 2015}, "category": "brake_pads", "axle": "front", "cards_min": 1, "model_calls_max": 0}}
+  ]},
+  {"id": "car-text-ka", "tags": ["vehicle_text"], "language": "ka", "turns": [
+    {"say": "წინა ხუნდები მჭირდება", "kind": "clarify", "expect": {"act": ["clarify_vehicle"], "searched": false}},
+    {"say": "2015 წლის ჰონდა აკორდი", "kind": "lookup", "expect": {"act": ["results"], "vehicle": {"make": "HONDA", "model": "Accord", "model_year": 2015}, "axle": "front", "cards_min": 1}}
+  ]},
+  {"id": "model-only", "tags": ["vehicle_text"], "language": "en", "turns": [
+    {"say": "air filter for my Accord 2015", "kind": "lookup", "expect": {"act": ["results"], "vehicle": {"make": "HONDA", "model": "Accord"}, "category": "air_filter", "cards_min": 1, "model_calls_max": 0}}
+  ]},
+  {"id": "missing-year", "tags": ["vehicle_text"], "language": "en", "turns": [
+    {"say": "cabin filter for a Honda Accord", "kind": "clarify", "expect": {"act": ["clarify_year"], "searched": false}},
+    {"say": "2015", "kind": "lookup", "reply_language": "en", "expect": {"act": ["results"], "category": "cabin_filter", "vehicle": {"model_year": 2015}, "cards_min": 1}}
+  ]},
+  {"id": "make-only", "tags": ["vehicle_text"], "language": "en", "turns": [
+    {"say": "oil filter for a honda", "kind": "clarify", "expect": {"act": ["clarify_vehicle", "clarify_model"], "searched": false}},
+    {"say": "accord 2015", "kind": "lookup", "expect": {"vehicle": {"make": "HONDA", "model": "Accord", "model_year": 2015}, "category": "oil_filter", "act": ["results", "no_vehicle_codes"]}}
+  ]},
+  {"id": "prius-ka", "tags": ["vehicle_text"], "language": "ka", "turns": [
+    {"say": "პრიუსის 2012 სალონის ფილტრი", "kind": "lookup", "expect": {"vehicle": {"make": "TOYOTA", "model": "Prius", "model_year": 2012}, "category": "cabin_filter", "act": ["no_vehicle_codes", "no_results", "results"]}}
+  ]},
+  {"id": "vin-only", "tags": ["vin"], "language": "en", "turns": [
+    {"say": "{VIN1}", "vin": "VIN1", "kind": "vin", "reply_language": "ka", "expect": {"act": ["vehicle_identified"], "searched": false, "answer_has": ["Accord"], "quick_replies_min": 2}},
+    {"say": "front pads", "kind": "lookup", "expect": {"act": ["results"], "axle": "front", "category": "brake_pads", "cards_min": 1}}
+  ]},
+  {"id": "vin-then-part-ka", "tags": ["vin"], "language": "ka", "turns": [
+    {"say": "{VIN1}", "vin": "VIN1", "kind": "vin", "expect": {"act": ["vehicle_identified"], "language": "ka"}},
+    {"say": "სალონის ფილტრი", "kind": "lookup", "expect": {"act": ["results"], "category": "cabin_filter", "cards_min": 1}}
+  ]},
+  {"id": "part-then-vin", "tags": ["vin"], "language": "en", "turns": [
+    {"say": "rear brake pads", "kind": "clarify", "expect": {"act": ["clarify_vehicle"], "searched": false}},
+    {"say": "{VIN1}", "vin": "VIN1", "kind": "lookup", "reply_language": "en", "expect": {"act": ["results"], "category": "brake_pads", "axle": "rear", "cards_min": 1}}
+  ]},
+  {"id": "brakes-clarify", "tags": ["clarify"], "language": "en", "turns": [
+    {"say": "brakes for {VIN1}", "vin": "VIN1", "kind": "lookup", "expect": {"act": ["clarify_brakes"], "quick_replies_min": 2}},
+    {"say": "front pads", "kind": "lookup", "expect": {"act": ["results"], "category": "brake_pads", "axle": "front", "cards_min": 1}},
+    {"say": "and the rear ones?", "kind": "lookup", "expect": {"act": ["results"], "category": "brake_pads", "axle": "rear", "cards_min": 1}}
+  ]},
+  {"id": "pads-axle", "tags": ["clarify"], "language": "en", "turns": [
+    {"say": "{VIN1} brake pads", "vin": "VIN1", "kind": "lookup", "expect": {"act": ["clarify_axle"], "quick_replies_min": 2}},
+    {"say": "front", "kind": "lookup", "expect": {"act": ["results"], "axle": "front", "category": "brake_pads", "cards_min": 1}}
+  ]},
+  {"id": "offer-yes", "tags": ["offer"], "language": "en", "turns": [
+    {"say": "front brake pads {VIN1}", "vin": "VIN1", "kind": "lookup", "expect": {"act": ["results"], "axle": "front"}},
+    {"say": "yes please", "kind": "lookup", "expect": {"act": ["results"], "axle": "rear", "category": "brake_pads", "cards_min": 1}}
+  ]},
+  {"id": "offer-no", "tags": ["offer", "small_talk"], "language": "en", "turns": [
+    {"say": "front brake pads {VIN1}", "vin": "VIN1", "kind": "lookup", "expect": {"act": ["results"]}},
+    {"say": "no thanks", "kind": "small_talk", "expect": {"act": ["no", "thanks", "ack"], "searched": false}}
+  ]},
+  {"id": "front-discs", "tags": ["lookup"], "language": "en", "turns": [
+    {"say": "front brake discs for {VIN1}", "vin": "VIN1", "kind": "lookup", "expect": {"act": ["results"], "category": "brake_discs", "cards_min": 1}}
+  ]},
+  {"id": "rear-discs-sold-out", "tags": ["lookup"], "language": "en", "turns": [
+    {"say": "rear brake discs {VIN1}", "vin": "VIN1", "kind": "lookup", "expect": {"act": ["none_in_stock"], "cards_max": 0}}
+  ]},
+  {"id": "wipers", "tags": ["categories"], "language": "en", "turns": [
+    {"say": "wiper blades for {VIN1}", "vin": "VIN1", "kind": "lookup", "expect": {"category": "wipers", "act": ["no_vehicle_codes"]}}
+  ]},
+  {"id": "spark-plugs", "tags": ["categories"], "language": "en", "turns": [
+    {"say": "spark plugs for {VIN1}", "vin": "VIN1", "kind": "lookup", "expect": {"category": "spark_plugs", "act": ["results"], "cards_min": 1}}
+  ]},
+  {"id": "battery-ka", "tags": ["categories"], "language": "ka", "turns": [
+    {"say": "აკუმულატორი მჭირდება {VIN1}", "vin": "VIN1", "kind": "lookup", "expect": {"category": "battery", "act": ["results"], "cards_min": 1}}
+  ]},
+  {"id": "change-car", "tags": ["vin"], "language": "en", "turns": [
+    {"say": "{VIN1} air filter", "vin": "VIN1", "kind": "lookup", "expect": {"act": ["results"], "vehicle": {"make": "HONDA"}}},
+    {"say": "and for this one {VIN2}", "vin": "VIN2", "kind": "lookup", "expect": {"act": ["results"], "vehicle": {"make": "MERCEDES-BENZ"}, "category": "air_filter", "cards_min": 1}}
+  ]},
+  {"id": "code-en", "tags": ["code"], "language": "en", "turns": [
+    {"say": "Do you have AP104/2?", "kind": "code", "expect": {"act": ["results"], "cards_min": 1, "model_calls_max": 0, "answer_has": ["AP104/2"]}}
+  ]},
+  {"id": "code-ka", "tags": ["code"], "language": "ka", "turns": [
+    {"say": "AP104/2 გაქვთ?", "kind": "code", "expect": {"act": ["results"], "cards_min": 1, "model_calls_max": 0}}
+  ]},
+  {"id": "code-missing", "tags": ["code"], "language": "en", "turns": [
+    {"say": "do you have XYZ9999?", "kind": "code", "expect": {"act": ["no_results"], "cards_max": 0, "answer_has": ["XYZ9999"], "model_calls_max": 0}}
+  ]},
+  {"id": "code-sticky-language", "tags": ["code", "language"], "language": "ka", "turns": [
+    {"say": "გამარჯობა", "kind": "small_talk", "expect": {"act": ["greeting"]}},
+    {"say": "AP104/2", "kind": "code", "reply_language": "ka", "expect": {"act": ["results"], "language": "ka", "cards_min": 1}}
+  ]},
+  {"id": "code-with-car", "tags": ["code"], "language": "en", "turns": [
+    {"say": "front brake pads {VIN1}", "vin": "VIN1", "kind": "lookup", "expect": {"act": ["results"]}},
+    {"say": "GDB3520", "kind": "code", "reply_language": "en", "expect": {"act": ["results"], "cards_min": 1, "cards_max": 1, "model_calls_max": 0}}
+  ]},
+  {"id": "year-is-not-a-code", "tags": ["vehicle_text"], "language": "en", "turns": [
+    {"say": "front brake pads for Honda Accord 2015", "kind": "lookup", "expect": {"act": ["results"], "axle": "front", "cards_min": 1, "model_calls_max": 0}}
+  ]},
+  {"id": "oil-change-en", "tags": ["oil"], "language": "en", "turns": [
+    {"say": "I need an oil change {VIN1}", "vin": "VIN1", "kind": "oil", "expect": {"act": ["oil_resolved"], "answer_has": ["0W-20"], "cards_min": 1}}
+  ]},
+  {"id": "oil-change-ka", "tags": ["oil"], "language": "ka", "turns": [
+    {"say": "{VIN2} ზეთის შეცვლა მინდა", "vin": "VIN2", "kind": "oil", "expect": {"act": ["oil_resolved"], "answer_has": ["5W-40"], "cards_min": 1}}
+  ]},
+  {"id": "grade-search", "tags": ["oil", "code"], "language": "en", "turns": [
+    {"say": "Do you have 0W-20 oil?", "kind": "code", "expect": {"act": ["results"], "cards_min": 1, "model_calls_max": 0}}
+  ]},
+  {"id": "oil-no-car", "tags": ["oil"], "language": "en", "turns": [
+    {"say": "which engine oil do I need?", "kind": "clarify", "expect": {"act": ["clarify_vehicle"], "searched": false}}
+  ]},
+  {"id": "ref-brand", "tags": ["reference"], "language": "en", "turns": [
+    {"say": "front brake pads {VIN1}", "vin": "VIN1", "kind": "lookup", "expect": {"act": ["results"], "cards_min": 2}},
+    {"say": "is the brembo one in stock?", "kind": "reference", "expect": {"act": ["reference"], "cards_min": 1, "cards_max": 1, "answer_has": ["Brembo"], "model_calls_max": 0}}
+  ]},
+  {"id": "ref-ordinal", "tags": ["reference"], "language": "en", "turns": [
+    {"say": "front brake pads {VIN1}", "vin": "VIN1", "kind": "lookup", "expect": {"act": ["results"], "cards_min": 2}},
+    {"say": "tell me about the second one", "kind": "reference", "expect": {"act": ["reference"], "cards_min": 1, "cards_max": 1}}
+  ]},
+  {"id": "ref-ka", "tags": ["reference"], "language": "ka", "turns": [
+    {"say": "{VIN1} წინა ხუნდები", "vin": "VIN1", "kind": "lookup", "expect": {"act": ["results"], "cards_min": 2}},
+    {"say": "პირველი მარაგშია?", "kind": "reference", "expect": {"act": ["reference"], "cards_max": 1, "cards_min": 1}}
+  ]},
+  {"id": "language-switch", "tags": ["language"], "language": "en", "turns": [
+    {"say": "hi", "kind": "small_talk", "expect": {"act": ["greeting"]}},
+    {"say": "წინა ხუნდები {VIN1}", "vin": "VIN1", "kind": "lookup", "expect": {"act": ["results"], "language": "ka", "cards_min": 1}}
+  ]},
+  {"id": "explicit-language", "tags": ["language"], "language": "en", "turns": [
+    {"say": "ხუნდები წინა {VIN1}", "vin": "VIN1", "language": "en", "kind": "lookup", "expect": {"act": ["results"], "language": "en"}}
+  ]},
+  {"id": "greet-and-ask", "tags": ["small_talk", "lookup"], "language": "en", "turns": [
+    {"say": "hello, I need an air filter for {VIN1}", "vin": "VIN1", "kind": "lookup", "expect": {"act": ["results"], "category": "air_filter", "cards_min": 1}}
+  ]},
+  {"id": "fuel-filter", "tags": ["categories"], "language": "en", "turns": [
+    {"say": "fuel filter for Honda Accord 2015", "kind": "lookup", "expect": {"category": "fuel_filter", "act": ["no_vehicle_codes", "results"], "model_calls_max": 0}}
+  ]}
+]

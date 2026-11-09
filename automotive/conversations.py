@@ -1,8 +1,14 @@
-"""Ephemeral, bounded conversation turns. Nothing in this module writes to storage."""
+"""Ephemeral, bounded conversation turns.
+
+Live conversation state stays in process memory. The only thing that leaves memory is an
+optional, already-redacted record handed to ``ChatLogger`` (a private local file); the
+store itself never writes to storage and a logging failure never affects a turn.
+"""
 
 from __future__ import annotations
 
 import copy
+import logging
 import re
 import secrets
 import time
@@ -11,10 +17,29 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Event, RLock, Thread
 from typing import Any
 
+from automotive import dialogue
 from automotive.chat import VIN_PATTERN, _redact
 from automotive.vin import validate_vin
 
+LOGGER = logging.getLogger(__name__)
 TERMINAL = {"COMPLETE", "PARTIAL", "FAILED"}
+IDENTITY = ("make", "model", "model_year")
+
+
+def _same(left: Any, right: Any) -> bool:
+    return re.sub(r"[^a-z0-9]+", "", str(left or "").casefold()) == re.sub(
+        r"[^a-z0-9]+", "", str(right or "").casefold())
+
+
+def _shown(cards: list) -> list[dict]:
+    """What a customer can refer back to: ordered, compact, no private fields."""
+    return [{"id": card["product"]["source_product_id"],
+             "brand": card["product"].get("brand"), "code": card["product"].get("product_code"),
+             "basis": card.get("basis"), "fitment_status": card.get("fitment_status"),
+             "matched_via": card.get("matched_via") or []}
+            for card in cards[:20] if isinstance(card, dict)
+            and isinstance(card.get("product"), dict)
+            and card["product"].get("source_product_id")]
 
 
 class ConversationError(RuntimeError):
@@ -30,9 +55,13 @@ class ConversationStore:
     cannot publish, and repeated resets cannot create an unbounded executor queue.
     """
 
+    AUTO_LANGUAGE = True  # submit() accepts language="auto".
+
     def __init__(self, chat_service: Any, search_service: Any, *,
                  ttl_seconds: float = 1800, turn_seconds: float = 180,
-                 maximum: int = 20, clock: Any = time.monotonic) -> None:
+                 maximum: int = 20, clock: Any = time.monotonic,
+                 chat_log: Any = None) -> None:
+        self.chat_log = chat_log
         self.chat_service = chat_service
         self.search_service = search_service
         self.ttl_seconds, self.turn_seconds = ttl_seconds, turn_seconds
@@ -61,9 +90,22 @@ class ConversationStore:
             return value
         return self._safe(str(value))
 
-    def _remove(self, identifier: str) -> None:
+    def _log_session(self, identifier: str, event: str, reason: str = "") -> None:
+        """Queue-only and best-effort: a logging fault must never affect a conversation."""
+        if not self.chat_log:
+            return
+        try:
+            if event == "start":
+                self.chat_log.session_started(identifier)
+            else:
+                self.chat_log.session_ended(identifier, reason)
+        except Exception:
+            LOGGER.debug("chat_log_session_skipped")
+
+    def _remove(self, identifier: str, reason: str = "deleted") -> None:
         conversation = self._conversations.pop(identifier, None)
         if conversation:
+            self._log_session(identifier, "end", reason)
             for turn in conversation["turns"].values():
                 turn["cancel"].set()
             conversation["vin"] = None
@@ -73,7 +115,7 @@ class ConversationStore:
         now = self.clock()
         for identifier, conversation in list(self._conversations.items()):
             if conversation["touched"] + self.ttl_seconds <= now:
-                self._remove(identifier)
+                self._remove(identifier, "expired")
                 continue
             for turn in conversation["turns"].values():
                 if turn["status"] == "RUNNING" and turn["deadline"] <= now:
@@ -102,8 +144,10 @@ class ConversationStore:
             identifier = secrets.token_urlsafe(32)
             self._conversations[identifier] = {
                 "touched": self.clock(), "vehicle": {}, "vin": None, "category": "",
-                "history": deque(maxlen=12), "turns": {},
+                "history": deque(maxlen=12), "turns": {}, "language": None, "pending": None,
+                "shown": [],
             }
+            self._log_session(identifier, "start")
             if self._janitor is None:
                 self._janitor = Thread(target=self._reap, name="chat-expiry", daemon=True)
                 self._janitor.start()
@@ -124,9 +168,10 @@ class ConversationStore:
     @staticmethod
     def _category(message: str, previous: str) -> str:
         from automotive.categories import POSITIONS, category_for_query
-        from automotive.codes import parse_codes
 
         category = category_for_query(message)
+        if not category and dialogue.grades(message):
+            return ("engine oil " + message)[:160]  # "Do you have 5W-30?" asks about oil.
         # Keep the actual subtype and axle; a canonical category alone loses follow-ups.
         if category:
             if category.startswith('brake') and previous and not any(
@@ -137,7 +182,7 @@ class ConversationStore:
                         return (message + ' ' + position)[:160]
             return message[:160]
         lower = message.casefold()
-        if parse_codes(message) and not re.search(
+        if dialogue.part_codes(message) and not re.search(
             r'engine|ძრავ|\byear\b|წელი|წლის', lower,
         ):
             return ""
@@ -168,12 +213,28 @@ class ConversationStore:
             # Resolve the car now so the part question that follows is answered from cache.
             self.search_service.prewarm(incoming_vin)
         safe_message = self._safe(message)
+        talk = None if embedded else dialogue.small_talk(safe_message)
         with self._lock:
             conversation = self._conversation(identifier)
+            if language not in {"ka", "en"}:
+                language = dialogue.detect_language(safe_message, conversation.get("language"))
+            conversation["language"] = language
+            pending = conversation.get("pending") or {}
+            offer = pending.get("offer") if isinstance(pending, dict) else None
+            requested = None
+            if talk == "yes" and offer:
+                talk, requested = None, offer.get("category")  # "Need the rear ones too?" "Yes"
+            typed = None if embedded or talk else self._typed_vehicle(
+                safe_message, conversation["vehicle"], pending)
+            if typed is not None:
+                vehicle = typed  # What the customer just typed beats the older form values.
             old_vin = conversation["vin"]
+            current = conversation["vehicle"]
+            # Filling in a missing detail is not a different car; replacing one is.
             identity_changed = vehicle is not None and any(
-                vehicle.get(key) and vehicle.get(key) != conversation["vehicle"].get(key)
-                for key in ("make", "model", "model_year")
+                vehicle.get(key) and (current.get(key) or old_vin)
+                and not _same(vehicle.get(key), current.get(key))
+                for key in IDENTITY
             )
             changed = ((incoming_vin is not None and incoming_vin != conversation["vin"])
                        or (vehicle is not None and any(
@@ -189,7 +250,11 @@ class ConversationStore:
                     turn["cancel"].set()
                 conversation["turns"].clear()
                 conversation["history"].clear()
-                if identity_changed or (incoming_vin is not None and incoming_vin != old_vin):
+                conversation["shown"] = []
+                switched = identity_changed or (
+                    incoming_vin is not None and old_vin is not None and incoming_vin != old_vin)
+                # "And for this one?" keeps the part; a bare new car starts over.
+                if switched and not dialogue.continues(safe_message):
                     conversation["category"] = ""
                 # A VIN change must discard the previous vehicle and supplier associations.
                 if incoming_vin is not None and incoming_vin != conversation["vin"]:
@@ -198,17 +263,27 @@ class ConversationStore:
                     if identity_changed:
                         conversation["vehicle"] = self._safe(vehicle)
                         conversation["vin"] = None
+                    elif typed is not None:
+                        # A typed car is complete: details it dropped must not come back.
+                        conversation["vehicle"] = self._safe(vehicle)
                     else:
                         conversation["vehicle"].update(self._safe(vehicle))
             if incoming_vin is not None and not (identity_changed and incoming_vin == old_vin):
                 conversation["vin"] = incoming_vin
-            conversation["category"] = self._category(safe_message, conversation["category"])
+            if requested:
+                conversation["category"] = requested[:160]
+            elif not talk:
+                conversation["category"] = self._category(safe_message, conversation["category"])
+            state = {"small_talk": talk, "typed_vehicle": typed is not None,
+                     "last_cards": copy.deepcopy(conversation["shown"])}
             turn_id = secrets.token_urlsafe(24)
             turn = {"status": "RUNNING", "cancel": Event(), "language": language,
+                    "started": self.clock(), "started_at": time.time(),
                     "deadline": self.clock() + self.turn_seconds,
                     "payload": {"status": "RUNNING", "answer": "", "progress": [],
                                 "cards": [], "supplier_only": [], "results": [],
-                                "warnings": [], "vehicle": dict(conversation["vehicle"])}}
+                                "warnings": [], "vehicle": dict(conversation["vehicle"]),
+                                "language": language}}
             # Twelve completed turns plus the active turn bound stored cards and tool results.
             while len(conversation["turns"]) >= 12:
                 conversation["turns"].pop(next(iter(conversation["turns"])))
@@ -216,11 +291,46 @@ class ConversationStore:
             self._outstanding += 1
             self._workers.submit(self._run, identifier, turn_id, safe_message,
                                  conversation["vin"], copy.deepcopy(conversation["vehicle"]),
-                                 list(conversation["history"]), conversation["category"], turn)
-            return {"conversation_id": identifier, "turn_id": turn_id, "status": "RUNNING"}
+                                 list(conversation["history"]), conversation["category"], turn,
+                                 state)
+            return {"conversation_id": identifier, "turn_id": turn_id, "status": "RUNNING",
+                    "language": language}
+
+    @staticmethod
+    def _typed_vehicle(message: str, current: dict, pending: dict) -> dict | None:
+        """The car or detail a message states ('Honda Accord 2015', a bare '2015', 'K24W')."""
+        asked = pending.get("act") if isinstance(pending, dict) else None
+        typed = dialogue.read_vehicle(message)
+        if typed.make and typed.model:
+            same = _same(typed.make, current.get("make")) and _same(
+                typed.model, current.get("model"))
+            if not same:
+                return typed.as_vehicle()
+            kept = dict(current)
+            if typed.trim and not _same(typed.trim, current.get("trim")):
+                # Engine details described the previous trim.
+                for key in ("engine_code", "displacement_l"):
+                    kept.pop(key, None)
+            return {**kept, **typed.as_vehicle()}
+        if typed.make:
+            return None if _same(typed.make, current.get("make")) else typed.as_vehicle()
+        year = dialogue.year_answer(message)
+        if year is None and asked in {"clarify_year", "clarify_model", "clarify_vehicle"}:
+            year = typed.model_year
+        if year and current.get("make") and current.get("model"):
+            return {**current, "model_year": year}
+        if asked == "clarify_engine":
+            engine = dialogue.engine_answer(message)
+            if engine:
+                return {**current, "engine_code": engine}
+            size = dialogue.displacement_answer(message)
+            if size:
+                return {**current, "displacement_l": size}
+        return None
 
     def _run(self, identifier: str, turn_id: str, message: str, vin: str | None,
-             vehicle: dict, history: list, category: str, turn: dict) -> None:
+             vehicle: dict, history: list, category: str, turn: dict,
+             state: dict | None = None) -> None:
         def cancelled() -> bool:
             return turn["cancel"].is_set() or self.clock() >= turn["deadline"]
 
@@ -240,6 +350,7 @@ class ConversationStore:
                 message, vehicle=vehicle, language=turn["language"], vin=vin,
                 history=history, category=category, search_service=self.search_service,
                 progress=progress, deadline=turn["deadline"], cancelled=cancelled,
+                **({"dialogue": state} if state is not None else {}),
             )
             result = self._safe(result)
             with self._lock:
@@ -260,8 +371,15 @@ class ConversationStore:
                     conversation["vehicle"] = result["vehicle"]
                     conversation["identity"] = {k: result["vehicle"].get(k)
                                                 for k in ("make", "model", "model_year")}
-                conversation["history"].append({"question": message[:4000],
-                                                "answer": result.get("answer", "")[:4000]})
+                conversation["pending"] = result.get("pending")
+                shown = _shown(result.get("cards") or [])
+                if shown:
+                    conversation["shown"] = shown
+                conversation["history"].append({
+                    "question": message[:4000], "answer": result.get("answer", "")[:4000],
+                    "note": str(result.get("note") or "")[:400],
+                    "shown": [f"{c['brand'] or ''} {c['code'] or ''}".strip() for c in shown[:5]],
+                })
         except Exception:
             with self._lock:
                 if not cancelled():
@@ -275,6 +393,22 @@ class ConversationStore:
         finally:
             with self._lock:
                 self._outstanding -= 1
+                # Snapshot under the lock; the write itself is queued outside it.
+                logged = copy.deepcopy(turn["payload"]) if self.chat_log else None
+                status = turn["status"] if turn["status"] != "RUNNING" else "CANCELLED"
+            if logged is not None:
+                self._log_turn(identifier, turn, message, vin, status, logged)
+
+    def _log_turn(self, identifier: str, turn: dict, message: str, vin: str | None,
+                  status: str, payload: dict) -> None:
+        try:
+            self.chat_log.turn(
+                identifier, question=message, status=status, language=turn["language"],
+                started_at=turn["started_at"], vin=vin, payload=payload,
+                duration_ms=int((self.clock() - turn["started"]) * 1000),
+            )
+        except Exception:  # Logging is best-effort and must not affect the turn.
+            LOGGER.debug("chat_log_turn_skipped")
 
     def get(self, identifier: str, turn_id: str, offset: int = 0, limit: int = 20) -> dict:
         with self._lock:
@@ -294,5 +428,5 @@ class ConversationStore:
         self._closed.set()
         with self._lock:
             for identifier in list(self._conversations):
-                self._remove(identifier)
+                self._remove(identifier, "shutdown")
         self._workers.shutdown(wait=False, cancel_futures=True)

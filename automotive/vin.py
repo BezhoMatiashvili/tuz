@@ -15,7 +15,7 @@ import requests
 
 VPIC_URL = 'https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVINValuesBatch/'
 VIN_PATTERN = re.compile(r'^[A-HJ-NPR-Z0-9]{17}$')
-VIN_IN_TEXT = re.compile(r'\b[A-HJ-NPR-Z0-9]{17}\b', re.IGNORECASE)
+VIN_IN_TEXT = re.compile(r'(?<![A-Za-z0-9])[A-HJ-NPR-Z0-9]{17}(?![A-Za-z0-9])', re.IGNORECASE)
 TRANSLITERATION = dict(zip('ABCDEFGHJKLMNPRSTUVWXYZ',
                            (1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 7, 9, 2, 3, 4, 5, 6, 7, 8, 9),
                            strict=True))

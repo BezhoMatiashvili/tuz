@@ -71,6 +71,8 @@ class ChatRequest(StrictModel):
 
 class ConversationMessage(ChatRequest):
     vin: str | None = Field(default=None, min_length=17, max_length=17)
+    # "auto" follows the customer's letters and keeps the language for codes and VINs.
+    language: Literal["ka", "en", "auto"] = "auto"
 
 
 class ImportRequest(StrictModel):
@@ -301,7 +303,11 @@ class ConversationTurn(BaseModel):
     turn_id: str
     status: Literal["RUNNING", "COMPLETE", "PARTIAL", "FAILED"]
     engine_status: str | None = None
+    act: str = ""
     answer: str = ""
+    note: str = ""
+    quick_replies: list[str] = Field(default_factory=list, max_length=8)
+    language: Literal["ka", "en"] = "ka"
     vehicle: dict[str, Any] = Field(default_factory=dict)
     progress: list[dict[str, Any]] = Field(default_factory=list)
     cards: list[ConversationCard] = Field(default_factory=list)
@@ -402,14 +408,18 @@ def create_app(
         fuchs_enabled=settings.fuchs_enabled, shell_enabled=settings.shell_enabled,
         pakelo_enabled=settings.pakelo_enabled, jsfilter_enabled=settings.jsfilter_enabled,
     )
+    from automotive.chat_log import ChatLogger
     from automotive.conversations import ConversationError, ConversationStore
 
-    conversations = ConversationStore(chat_service, search_service)
+    chat_log = ChatLogger.from_settings(settings)
+    conversations = ConversationStore(chat_service, search_service, chat_log=chat_log)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         yield
         conversations.close()
+        if chat_log:
+            chat_log.close()  # Drains queued records before exit.
         if owns_search_service:
             search_service.close()
 

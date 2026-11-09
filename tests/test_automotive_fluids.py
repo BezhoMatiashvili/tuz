@@ -130,6 +130,32 @@ class FuchsTests(unittest.TestCase):
         self.assertEqual(result['items'][0]['product_code'], 'CP9')
         self.assertIn('/recommendations/8', client.http.calls[-1][1])
 
+    def test_only_that_years_generations_are_opened_and_the_trim_narrows_a_series(self):
+        client = FuchsClient()
+        series = [{'id': 20 + n, 'typeName': f'3{n:02d}i', 'yearStart': 2012, 'yearEnd': 2015}
+                  for n in range(12)]
+        client.http = FakeHttp([
+            (200, {'resultData': [{'id': 1, 'categoryName': 'Cars'}]}),
+            (200, {'resultData': [{'id': 9, 'makeName': 'Example'}]}),
+            (200, {'resultData': [
+                {'id': 3, 'modelName': '3 series', 'typeYearStart': 2005, 'typeYearEnd': 2011},
+                {'id': 4, 'modelName': '3 series', 'typeYearStart': 2012, 'typeYearEnd': 2019},
+                {'id': 5, 'modelName': 'X3', 'typeYearStart': 2012, 'typeYearEnd': 2017},
+            ]}),
+            (200, {'resultData': series + [
+                {'id': 8, 'typeName': '328i', 'yearStart': 2012, 'yearEnd': 2015}]}),
+            (200, {'resultData': {'makeName': 'Example', 'modelName': '3 series',
+                                  'typeName': '328i', 'components': [
+                {'componentName': 'Engine', 'productRecommendations': [
+                    {'productName': 'TITAN 0W-20', 'productCode': 'CP3'}]}]}}),
+        ])
+        result = client.lookup(VIN, {**VEHICLE, 'model': '3 Series', 'model_year': 2014,
+                                     'trim': '328i'})
+        self.assertEqual(result['items'][0]['product_code'], 'CP3')
+        self.assertIn('yearFilter=2014', client.http.calls[2][1])
+        self.assertIn('modelId=4', client.http.calls[3][1])  # Not the 2005-2011 generation.
+        self.assertEqual(len(client.http.calls), 5)
+
     def test_two_types_do_not_request_a_recommendation(self):
         client = FuchsClient()
         client.http = FakeHttp([

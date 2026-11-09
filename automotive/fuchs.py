@@ -7,7 +7,7 @@ from time import monotonic
 from typing import Any
 from urllib.parse import urlencode
 
-from automotive.engine_match import identical, trim_matches
+from automotive.engine_match import engine_matches, identical, model_matches, trim_matches
 from automotive.public_http import (
     SUPPLIER_WARNING,
     PublicHttp,
@@ -55,20 +55,30 @@ class FuchsClient:
             return fluid_report('Fuchs', 'EMPTY', label=label)
         if len(makes) > 4:
             return _ambiguous(label, [row.get('makeName') for row in makes])
+        def decided(row: dict) -> bool:
+            return (trim_matches(row.get('typeName'), vehicle.get('trim'))
+                    or engine_matches(row.get('typeName'), vehicle.get('engine_code')))
+
+        stated = bool(vehicle.get('trim') or vehicle.get('engine_code'))
         types: list[dict] = []
         for make_row in makes:
-            models = self._rows('/models', {'language': 'en', 'makeId': make_row['id']}, deadline)
-            models = [row for row in models if _model_matches(row, model)]
+            models = self._rows('/models', {'language': 'en', 'makeId': make_row['id'],
+                                            'yearFilter': year}, deadline)
+            # Only the generations built that year: each one costs a request.
+            models = [row for row in models if _model_matches(row, model)
+                      and _model_covers_year(row, year)]
             for model_row in models[:8]:
                 rows = self._rows('/types', {
                     'language': 'en', 'modelId': model_row['id'], 'yearFilter': year,
                 }, deadline)
                 types.extend(row for row in rows if _covers_year(row, year))
-                if len(types) > 8:
-                    return _ambiguous(label, [row.get('typeName') for row in types])
+                # A series lists many types; only the ones the trim names can be ambiguous.
+                candidates = [row for row in types if decided(row)] if stated else types
+                if len(candidates) > 8 or len(types) > 60:
+                    return _ambiguous(label, [row.get('typeName') for row in candidates])
         if not types:
             return fluid_report('Fuchs', 'EMPTY', label=label)
-        by_trim = [row for row in types if trim_matches(row.get('typeName'), vehicle.get('trim'))]
+        by_trim = [row for row in types if decided(row)]
         types = by_trim or types
         if len(types) > 3 or (len(types) > 1 and not by_trim):
             return _ambiguous(label, [row.get('typeName') for row in types])
@@ -139,7 +149,16 @@ def _make_matches(row: dict, make: str) -> bool:
 
 
 def _model_matches(row: dict, model: str) -> bool:
-    return bool(identity(model)) and identity(model) in identity(row.get('modelName'))
+    return model_matches(row.get('modelName'), model)
+
+
+def _model_covers_year(row: dict, year: int) -> bool:
+    """A model row without a year range is kept; its types are checked anyway."""
+    start = row.get('typeYearStart', row.get('yearStart'))
+    end = row.get('typeYearEnd', row.get('yearEnd'))
+    if not all(isinstance(value, int) and not isinstance(value, bool) for value in (start, end)):
+        return True
+    return start <= year <= end
 
 
 def _covers_year(row: dict, year: int) -> bool:

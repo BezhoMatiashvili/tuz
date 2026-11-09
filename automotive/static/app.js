@@ -519,18 +519,16 @@ const chatWarnings = {
   STOCK_MAY_BE_STALE: ['მარაგი სინქრონიზაციის ბოლო მონაცემებითაა; გადაამოწმეთ მაღაზიაში.', 'Stock is from the last sync; confirm in the store.'],
   TIMEOUT: ['დროის ლიმიტი ამოიწურა; ნაპოვნი შედეგები ნაჩვენებია.', 'The time limit was reached; the results found so far are shown.'],
 };
+// The reply sentence already states the grade, engine and missing parts; only the
+// quantity check adds something the customer cannot read elsewhere.
 function requirementLines(record, language) {
   const need = record.requirements || {};
   const lines = [];
-  if (need.engine_code) lines.push(chatText(language, 'ძრავი (წყაროს მიხედვით): ', 'Engine (per the source): ') + need.engine_code);
-  if (need.grades?.length) lines.push(chatText(language, 'საჭირო ზეთი: ', 'Oil needed: ') + need.grades.join(' / ') + (need.capacity_l ? ' · ' + need.capacity_l + ' L' : ''));
   for (const group of need.coverage || []) {
     const have = group.litres_store + (group.litres_tuz11 ? ' L + ' + group.litres_tuz11 + ' L TUZ 11' : ' L');
     const enough = group.enough_store ? chatText(language, 'სრული შეცვლისთვის საკმარისია', 'enough for a full change') : (group.enough_with_tuz11 ? chatText(language, 'საკმარისია TUZ 11-ის გათვალისწინებით', 'enough including TUZ 11') : chatText(language, 'არასაკმარისია სრული შეცვლისთვის', 'not enough for a full change'));
     lines.push(`${group.brand} ${group.grade}: ${have} — ${enough}`);
   }
-  const names = {engine_oil: chatText(language, 'ძრავის ზეთი', 'engine oil'), oil_filter: chatText(language, 'ზეთის ფილტრი', 'oil filter')};
-  if (need.missing?.length) lines.push(chatText(language, 'მარაგში შესაბამისი ვერ მოიძებნა: ', 'No matching item in stock: ') + need.missing.map(name => names[name] || name).join(', '));
   return lines;
 }
 function warningText(language, warning) {
@@ -559,11 +557,21 @@ function updateSelectedVehicle(selected) {
 function deleteConversation(identifier) {
   if (identifier) api('/chat/conversations/' + encodeURIComponent(identifier), undefined, false, 'DELETE').catch(() => {});
 }
+let lastLanguage = null;
+let quickReplies = null;
+const VIN_IN_TEXT = /\b[A-HJ-NPR-Z0-9]{17}\b/gi;
+function guessLanguage(message, previous) {
+  if (/[\u10a0-\u10ff]/.test(message)) return 'ka';
+  const words = message.replace(VIN_IN_TEXT, ' ').split(/\s+/).filter(word => /^[A-Za-z]{2,}[?!.,]*$/.test(word) && !/^(ok|okay|vin)$/i.test(word.replace(/[?!.,]/g, '')));
+  return words.length ? 'en' : (previous || 'ka');
+}
 function resetChat() {
   chatRevision += 1;
   deleteConversation(conversationId);
   conversationId = null;
   chatBusy = false;
+  lastLanguage = null;
+  quickReplies = null;
   byId('chat-send').disabled = false;
   byId('chat-result').replaceChildren();
   byId('chat-progress').textContent = '';
@@ -571,74 +579,120 @@ function resetChat() {
 function chatMessage(role, text, language) {
   const section = element('article', null, 'chat-message ' + role);
   section.lang = language;
-  section.append(element('h3', role === 'user' ? chatText(language, 'თქვენ', 'You') : chatText(language, 'ასისტენტი', 'Assistant'), 'message-author'));
   if (text) section.append(element('p', text, 'message-text'));
   byId('chat-result').append(section);
+  section.scrollIntoView({block: 'end', behavior: 'smooth'});
   return section;
 }
-function renderChatCards(target, record, language) {
-  target.replaceChildren();
+function typingBubble(language) {
+  const bubble = element('article', null, 'chat-message assistant typing');
+  bubble.lang = language;
+  for (let i = 0; i < 3; i += 1) bubble.append(element('span', null, 'dot'));
+  bubble.append(element('span', chatText(language, 'ასისტენტი წერს…', 'Assistant is typing…'), 'sr-only'));
+  byId('chat-result').append(bubble);
+  bubble.scrollIntoView({block: 'end', behavior: 'smooth'});
+  return bubble;
+}
+function sendChat(text) {
+  if (chatBusy) return;
+  byId('message').value = text;
+  byId('chat-form').requestSubmit();
+}
+function clearQuickReplies() {
+  if (quickReplies) quickReplies.remove();
+  quickReplies = null;
+}
+function showQuickReplies(reply, options) {
+  clearQuickReplies();
+  if (!options?.length) return;
+  quickReplies = element('div', null, 'quick-replies');
+  for (const option of options) {
+    const chip = element('button', option, 'chip');
+    chip.type = 'button';
+    chip.addEventListener('click', () => sendChat(option));
+    quickReplies.append(chip);
+  }
+  reply.append(quickReplies);
+}
+function partCard(item, language) {
+  const row = item.product || {};
   const fitmentLabels = {
     VERIFIED: chatText(language, 'დადასტურებული შესაბამისობა', 'Verified fitment'),
     PROVISIONAL: chatText(language, 'კანდიდატი; შესაბამისობა დაუდასტურებელია', 'Candidate; fitment unconfirmed'),
     UNKNOWN: chatText(language, 'შესაბამისობა უცნობია', 'Fitment unknown'),
     CONFLICTED: chatText(language, 'ურთიერთსაწინააღმდეგო მტკიცებულება', 'Conflicting fitment evidence'),
   };
-  for (const item of record.cards || []) {
-    const row = item.product || {};
-    const card = element('article', null, 'chat-part');
-    card.append(element('h4', row.product_name || chatText(language, 'კატალოგის ჩანაწერი', 'Catalog item')));
-    card.append(element('p', row.brand || chatText(language, 'მწარმოებელი უცნობია', 'Manufacturer unknown'), 'muted'));
-    card.append(element('p', chatText(language, 'ძირითადი კოდი: ', 'Main code: ') + (row.product_code || '—'), 'code'));
-    const matches = (row.matched_codes || []).map(code => typeof code === 'object' ? (code.original || code.code || code.normalized_code || code.normalized || code.raw || '') : code).filter(Boolean);
-    card.append(element('p', chatText(language, 'დამთხვეული კოდები: ', 'Matched codes: ') + (matches.join(', ') || '—')));
-    const matchLabels = {
-      OIL_GRADE_BRAND: chatText(language, 'წყაროს რეკომენდებული ზეთის ხაზი', 'Product line the source recommends'),
-      OIL_GRADE: chatText(language, 'იგივე სიბლანტე, სხვა ბრენდი', 'Same grade, other brand'),
-      ENGINE_FAMILY: chatText(language, 'ძრავის ოჯახის დამთხვევა', 'Engine family match'),
-      CODE_CANDIDATE: chatText(language, 'ზუსტი კოდის დამთხვევა', 'Exact code match'),
-    };
-    card.append(element('p', chatText(language, 'დამთხვევის წყარო: ', 'Match source: ') + (matchLabels[item.match_source] || item.match_source || 'catalog')));
-    const status = item.fitment_status || 'UNKNOWN';
-    card.append(element('span', item.compatible === false ? chatText(language, 'შესაბამისობა უარყოფილია', 'Fitment excluded') : (fitmentLabels[status] || fitmentLabels.UNKNOWN), 'status ' + status));
-    card.append(element('p', item.availability || chatText(language, 'ნაპოვნია ჩვენს კატალოგში; მარაგი დაუდასტურებელია.', 'Found in our catalog; stock unconfirmed.'), 'availability ' + (item.availability_status || 'UNKNOWN')));
-    for (const reason of item.matched_via || []) card.append(element('p', chatText(language, 'შერჩეულია: ', 'Chosen because: ') + reason, 'muted'));
-    if (item.pack_litres) card.append(element('p', chatText(language, 'შეფუთვა: ', 'Pack size: ') + item.pack_litres + ' L', 'muted'));
-    card.append(element('p', chatText(language, 'ფასი: უცნობია', 'Price: unknown'), 'muted'));
-    card.append(element('p', chatText(language, 'ბოლო დაკვირვება: ', 'Observed: ') + (row.last_observed_at || chatText(language, 'უცნობია', 'unknown')), 'muted'));
-    for (const warning of item.warnings || []) card.append(element('p', warning, 'warning'));
-    target.append(card);
-  }
-  if (record.supplier_only?.length) {
-    const supplier = element('section', null, 'supplier-only');
-    supplier.append(element('h4', chatText(language, 'მომწოდებლის კოდები · საწყობში დამთხვევის გარეშე', 'Supplier codes · no warehouse match')));
-    for (const item of record.supplier_only) {
-      supplier.append(element('p', [item.name, item.manufacturer, item.mpn || item.main_code, ...(item.oem_codes || [])].filter(Boolean).join(' · '), 'code'));
-    }
-    supplier.append(element('p', chatText(language, 'ჩვენს საწყობში არსებობა და შესაბამისობა დაუდასტურებელია.', 'Warehouse availability and fitment are unconfirmed.'), 'muted'));
-    target.append(supplier);
-  }
+  const matchLabels = {
+    OIL_GRADE_BRAND: chatText(language, 'წყაროს რეკომენდებული ზეთის ხაზი', 'Product line the source recommends'),
+    OIL_GRADE: chatText(language, 'იგივე სიბლანტე, სხვა ბრენდი', 'Same grade, other brand'),
+    ENGINE_FAMILY: chatText(language, 'ძრავის ოჯახის დამთხვევა', 'Engine family match'),
+    CODE_CANDIDATE: chatText(language, 'ზუსტი კოდის დამთხვევა', 'Exact code match'),
+  };
+  const card = element('article', null, 'chat-part');
+  card.append(element('h4', row.product_name || chatText(language, 'კატალოგის ჩანაწერი', 'Catalog item')));
+  card.append(element('p', [row.brand, row.product_code].filter(Boolean).join(' · ') || '—', 'code'));
+  card.append(element('p', item.availability || chatText(language, 'ნაპოვნია ჩვენს კატალოგში; მარაგი დაუდასტურებელია.', 'Found in our catalog; stock unconfirmed.'), 'availability ' + (item.availability_status || 'UNKNOWN')));
+  const reasons = (item.matched_via || []).filter(Boolean);
+  if (reasons.length) card.append(element('p', chatText(language, 'შერჩეულია: ', 'Chosen because: ') + reasons[0], 'muted'));
+  if (item.pack_litres) card.append(element('p', chatText(language, 'შეფუთვა: ', 'Pack size: ') + item.pack_litres + ' L', 'muted'));
+  const warnings = (item.warnings || []).filter(Boolean);
+  if (warnings.length) card.append(element('p', warnings.at(-1), 'warning'));
+  // Evidence and matching details stay one tap away instead of crowding the card.
+  const details = element('details', null, 'part-details');
+  details.append(element('summary', chatText(language, 'დეტალები', 'Details')));
+  for (const warning of warnings.slice(0, -1)) details.append(element('p', warning, 'warning'));
+  const status = item.fitment_status || 'UNKNOWN';
+  details.append(element('span', item.compatible === false ? chatText(language, 'შესაბამისობა უარყოფილია', 'Fitment excluded') : (fitmentLabels[status] || fitmentLabels.UNKNOWN), 'status ' + status));
+  const matches = (row.matched_codes || []).map(code => typeof code === 'object' ? (code.original || code.code || code.normalized_code || code.normalized || code.raw || '') : code).filter(Boolean);
+  details.append(element('p', chatText(language, 'დამთხვეული კოდები: ', 'Matched codes: ') + (matches.join(', ') || '—')));
+  details.append(element('p', chatText(language, 'დამთხვევის წყარო: ', 'Match source: ') + (matchLabels[item.match_source] || item.match_source || 'catalog')));
+  for (const reason of reasons.slice(1)) details.append(element('p', chatText(language, 'შერჩეულია: ', 'Chosen because: ') + reason, 'muted'));
+  details.append(element('p', chatText(language, 'ბოლო დაკვირვება: ', 'Observed: ') + (row.last_observed_at || chatText(language, 'უცნობია', 'unknown')), 'muted'));
+  card.append(details);
+  return card;
 }
-async function showChatPage(target, pages, record, identifier, turnId, revision, language) {
+function renderChatCards(target, record, language, append = false) {
+  if (!append) target.replaceChildren();
+  for (const item of record.cards || []) target.append(partCard(item, language));
+}
+function supplierSection(record, language) {
+  if (!record.supplier_only?.length) return null;
+  const supplier = element('details', null, 'supplier-only');
+  supplier.append(element('summary', chatText(language, 'მომწოდებლის კოდები · საწყობში დამთხვევის გარეშე', 'Supplier codes · no warehouse match')));
+  for (const item of record.supplier_only) {
+    supplier.append(element('p', [item.name, item.manufacturer, item.mpn || item.main_code, ...(item.oem_codes || [])].filter(Boolean).join(' · '), 'code'));
+  }
+  supplier.append(element('p', chatText(language, 'ჩვენს საწყობში არსებობა და შესაბამისობა დაუდასტურებელია.', 'Warehouse availability and fitment are unconfirmed.'), 'muted'));
+  return supplier;
+}
+async function showChatPage(target, pages, record, identifier, turnId, revision, language, append = false) {
   if (revision !== chatRevision) return;
-  renderChatCards(target, record, language);
+  renderChatCards(target, record, language, append);
   pages.replaceChildren();
   if (record.next_offset != null) {
-    const more = element('button', chatText(language, 'შემდეგი ნაწილები', 'Next parts'), 'secondary');
+    const remaining = Math.max(0, (record.total || 0) - record.next_offset);
+    const more = element('button', chatText(language, `კიდევ ნახვა (${remaining})`, `Show more (${remaining})`), 'secondary');
     more.type = 'button';
     more.addEventListener('click', async () => {
       more.disabled = true;
       try {
-        const next = await api(`/chat/conversations/${encodeURIComponent(identifier)}/turns/${encodeURIComponent(turnId)}?offset=${record.next_offset}&limit=20`, undefined, false);
-        await showChatPage(target, pages, next, identifier, turnId, revision, language);
+        const next = await api(`/chat/conversations/${encodeURIComponent(identifier)}/turns/${encodeURIComponent(turnId)}?offset=${record.next_offset}&limit=10`, undefined, false);
+        await showChatPage(target, pages, next, identifier, turnId, revision, language, true);
       } catch (error) {
         if (revision === chatRevision) pages.append(element('p', error.message, 'error'));
       } finally { more.disabled = false; }
     });
     pages.append(more);
   }
-  const offset = record.offset || 0;
-  if (record.total) pages.append(element('p', `${offset + 1}–${offset + (record.cards || []).length} / ${record.total}`, 'muted'));
+}
+function progressLine(record, language) {
+  const selected = record.vehicle || {};
+  const car = [selected.make, selected.model, selected.model_year].filter(Boolean).join(' ');
+  const sources = (record.progress || []).filter(item => item && typeof item === 'object' && item.source_id);
+  const finished = sources.filter(item => !['RUNNING', 'PENDING'].includes(item.status)).length;
+  const base = car ? chatText(language, `ვამოწმებ მარაგს თქვენი ${car}-ისთვის…`, `Checking stock for your ${car}…`)
+    : chatText(language, 'ვეძებ…', 'Looking that up…');
+  return sources.length ? `${base} ${finished}/${sources.length}` : base;
 }
 byId('chat-form').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -646,17 +700,21 @@ byId('chat-form').addEventListener('submit', async (event) => {
   if (!message || chatBusy) return;
   const revision = chatRevision;
   const chosenLanguage = byId('chat-language').value;
-  const language = ['ka', 'en'].includes(chosenLanguage) ? chosenLanguage : (/[\u10a0-\u10ff]/.test(message) ? 'ka' : 'en');
+  const fixedLanguage = ['ka', 'en'].includes(chosenLanguage) ? chosenLanguage : null;
+  let language = fixedLanguage || guessLanguage(message, lastLanguage);
   chatBusy = true;
   byId('chat-send').disabled = true;
+  clearQuickReplies();
   // Raw VIN is sent only in request bodies; redact it from the visible transcript.
-  chatMessage('user', message.replace(/\b[A-HJ-NPR-Z0-9]{17}\b/gi, '[VIN]'), language);
+  chatMessage('user', message.replace(VIN_IN_TEXT, '[VIN]'), language);
   byId('message').value = '';
   const progress = byId('chat-progress');
-  progress.textContent = chatText(language, 'კითხვა მუშავდება…', 'Working on your request…');
+  progress.textContent = chatText(language, 'ვეძებ…', 'Looking that up…');
+  let typing = typingBubble(language);
   // Cards found so far appear in a live bubble while slower sources finish.
   let live = null;
   let liveCards = null;
+  const removeTyping = () => { if (typing) { typing.remove(); typing = null; } };
   const removeLive = () => { if (live) { live.remove(); live = null; } };
   try {
     if (!conversationId) {
@@ -665,7 +723,8 @@ byId('chat-form').addEventListener('submit', async (event) => {
       conversationId = created.conversation_id;
     }
     const identifier = conversationId;
-    const body = {message, language};
+    // "auto" lets the server follow the customer's letters and keep it for codes and VINs.
+    const body = {message, language: fixedLanguage || 'auto'};
     const suppliedVin = message.match(/\b[A-HJ-NPR-Z0-9]{17}\b/i)?.[0];
     const selected = readVehicle();
     if (selected && !suppliedVin) body.vehicle = selected;
@@ -677,62 +736,77 @@ byId('chat-form').addEventListener('submit', async (event) => {
     const turn = await api(`/chat/conversations/${encodeURIComponent(identifier)}/messages`, body, false);
     if (revision !== chatRevision) return;
     const turnId = turn.turn_id;
+    if (turn.language) language = turn.language;
+    lastLanguage = language;
     let polls = 0;
     while (revision === chatRevision) {
-      const record = await api(`/chat/conversations/${encodeURIComponent(identifier)}/turns/${encodeURIComponent(turnId)}?offset=0&limit=20`, undefined, false);
+      const record = await api(`/chat/conversations/${encodeURIComponent(identifier)}/turns/${encodeURIComponent(turnId)}?offset=0&limit=5`, undefined, false);
       if (revision !== chatRevision) return;
+      if (record.language) language = lastLanguage = record.language;
       if (record.vehicle && Object.keys(record.vehicle).length) {
         vehicle = record.vehicle;
         for (const key of vehicleKeys) byId(key).value = record.vehicle[key] ?? '';
         updateSelectedVehicle(record.vehicle);
       }
       if (record.status !== 'RUNNING' && record.status !== 'PENDING') {
+        removeTyping();
         removeLive();
-        const reply = chatMessage('assistant', record.answer || chatText(language, 'მოთხოვნა დასრულდა.', 'Your request is complete.'), language);
+        const reply = chatMessage('assistant', record.answer || chatText(language, 'მზადაა.', 'Done.'), language);
+        // One short caveat at most; older servers without it list their warnings.
+        if ('note' in record) {
+          if (record.note) reply.append(element('p', record.note, 'note'));
+        } else {
+          for (const warning of record.warnings || []) reply.append(element('p', warningText(language, warning), 'warning'));
+        }
+        // Answer chips sit right under the question they answer, above any cards.
+        showQuickReplies(reply, record.quick_replies);
         for (const line of requirementLines(record, language)) reply.append(element('p', line, 'requirement'));
-        for (const warning of record.warnings || []) reply.append(element('p', warningText(language, warning), 'warning'));
         const cards = element('div', null, 'chat-cards');
         const pages = element('nav', null, 'actions chat-pages');
         pages.ariaLabel = chatText(language, 'ნაწილების გვერდები', 'Part pages');
         reply.append(cards, pages);
         await showChatPage(cards, pages, record, identifier, turnId, revision, language);
-        progress.textContent = record.status === 'PARTIAL' ? chatText(language, 'ნაწილობრივი შედეგი; იხილეთ გაფრთხილებები.', 'Partial results; see the warnings.') : chatText(language, 'პასუხი მზადაა.', 'Reply ready.');
+        const supplier = supplierSection(record, language);
+        if (supplier) reply.append(supplier);
+        reply.scrollIntoView({block: 'end', behavior: 'smooth'});
+        progress.textContent = '';
         break;
       }
       if ((record.cards || []).length) {
         if (!live) {
+          removeTyping();
           live = element('article', null, 'chat-message assistant live');
           live.lang = language;
-          live.append(element('h3', chatText(language, 'ასისტენტი', 'Assistant'), 'message-author'));
-          live.append(element('p', chatText(language, 'შემოწმება გრძელდება — აქამდე ნაპოვნია:', 'Still checking — found so far:'), 'message-text'));
+          live.append(element('p', chatText(language, 'ჯერ კიდევ ვამოწმებ — აქამდე ვიპოვე:', 'Still checking — found so far:'), 'message-text'));
           liveCards = element('div', null, 'chat-cards');
           live.append(liveCards);
           byId('chat-result').append(live);
         }
         renderChatCards(liveCards, record, language);
       }
-      const sources = (record.progress || []).map(item => typeof item === 'string' ? item : [item.label || item.source_id, item.status].filter(Boolean).join(': '));
-      const car = record.vehicle && record.vehicle.make ? [record.vehicle.make, record.vehicle.model, record.vehicle.model_year].filter(Boolean).join(' ') + ' · ' : '';
-      progress.textContent = car + (sources.join(' · ') || chatText(language, 'წყაროები მოწმდება…', 'Checking sources…'));
-      // Poll quickly at first so the first cards show as soon as they exist.
+      progress.textContent = progressLine(record, language);
+      // Poll quickly at first: small talk and code answers finish in milliseconds.
       polls += 1;
-      await new Promise(resolve => setTimeout(resolve, polls < 8 ? 400 : polls < 20 ? 800 : 1500));
+      await new Promise(resolve => setTimeout(resolve, polls < 6 ? 150 : polls < 20 ? 400 : 1000));
     }
   } catch (error) {
     if (revision === chatRevision) {
+      removeTyping();
       removeLive();
       chatMessage('assistant', error.message, language);
       progress.textContent = chatText(language, 'ვერ შესრულდა. სცადეთ ხელახლა ან დაიწყეთ ახალი ჩატი.', 'Request failed. Try again or start a new chat.');
     }
   } finally {
     if (revision === chatRevision) {
+      removeTyping();
       chatBusy = false;
       byId('chat-send').disabled = false;
     }
   }
 });
+// Like a messenger: Enter sends, Shift+Enter starts a new line.
 byId('message').addEventListener('keydown', event => {
-  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) {
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
     if (!chatBusy) byId('chat-form').requestSubmit();
   }
@@ -750,9 +824,6 @@ byId('new-chat').addEventListener('click', () => {
   updateSelectedVehicle(null);
   byId('message').focus();
 });
-for (const [id, prompt] of [['prompt-brakes', 'მუხრუჭების მოძებნა ჩემი ავტომობილისთვის'], ['prompt-code', 'Find AP104/2'], ['prompt-oil', 'რომელი ძრავის ზეთი მჭირდება?']]) {
-  byId(id).addEventListener('click', () => {
-    byId('message').value = prompt;
-    byId('message').focus();
-  });
+for (const [id, prompt] of [['prompt-brakes', 'წინა ხუნდები მჭირდება'], ['prompt-code', 'Do you have AP104/2?'], ['prompt-oil', 'ზეთის შეცვლა მინდა']]) {
+  byId(id).addEventListener('click', () => sendChat(prompt));
 }

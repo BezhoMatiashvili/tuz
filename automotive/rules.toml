@@ -5,7 +5,8 @@
 # the section, so a typo cannot silently turn a rule off.
 #
 # Categories: brake_pads, brake_discs, brakes, oil_filter, air_filter, cabin_filter,
-# engine_oil, oil_change, suspension.
+# fuel_filter, engine_oil, oil_change, suspension, spark_plugs, battery, wipers, timing_belt,
+# coolant, bulbs, clutch.
 #
 # Built-in rules that need no editing: only active products are offered; a front/rear
 # request drops items named for the other axle (also `წნ` and `უკ`); a code match that is

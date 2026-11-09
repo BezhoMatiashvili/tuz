@@ -109,6 +109,11 @@ changing warehouse products. Then restart the application. VIN decoding can work
 without its database cache; inventory needs the database, and chat needs your own
 `ANTHROPIC_API_KEY`. The interface reports missing configuration.
 
+The chat reads like a messenger: it understands small talk, cars typed in words and short
+answers, and replies with the car, how many parts were found and where they are. Measure
+it with `uv run python -m automotive --evaluate-chat mock` (offline; also run as a test) or
+`--evaluate-chat live --vins FILE --judge` against the configured catalog and providers.
+
 See [automotive setup and evidence rules](docs/automotive.md) and
 [implementation acceptance evidence](IMPLEMENTATION_PROGRESS.md). Live database/provider
 verification is still required before operational use.

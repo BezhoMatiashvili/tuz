@@ -454,6 +454,16 @@ class FederationTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'SEARCH_CAPACITY'):
             self.coordinator.start(VIN)
 
+    def test_finished_snapshots_make_room_for_new_searches(self):
+        # Finished over 30 s ago; a just-finished snapshot keeps a grace period for readers.
+        old = time.monotonic() + self.coordinator.ttl_seconds - 60
+        self.coordinator._jobs = {str(i): {'expires': old + i, 'status': 'COMPLETE',
+                                          'fingerprint': str(i)} for i in range(20)}
+        result = self.finish()
+        self.assertEqual(result['status'], 'COMPLETE')
+        self.assertNotIn('0', self.coordinator._jobs)  # The oldest finished one went first.
+        self.assertIn('19', self.coordinator._jobs)
+
     def test_deadline_freezes_snapshot_and_late_provider_cannot_mutate_it(self):
         blocker = threading.Event()
         self.addCleanup(blocker.set)
