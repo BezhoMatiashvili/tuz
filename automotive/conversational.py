@@ -19,7 +19,7 @@ import psycopg
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from automotive import dialogue as talk
-from automotive import grounding, name_match, oil_match, replies, stock
+from automotive import engine_match, grounding, name_match, oil_match, replies, stock
 from automotive.codes import normalize_code, parse_codes, product_codes
 from automotive.recommendations import RecommendationService
 from automotive.rules import Rules, axle_verdict, requested_axle
@@ -210,6 +210,7 @@ class ConversationTurn:
         self.verified_oils: set[tuple[str, str | None]] = set()
         self.fitment_unavailable = False
         self.requirements: dict = {}
+        self.engine_options: list[dict] = []
         self.lookup_mode = False
         self.allow_name = False
         self.hidden_unavailable = 0
@@ -619,8 +620,19 @@ class ConversationTurn:
 
     def _oil_requirement(self, kind: str, refs: list[str]) -> None:
         """Resolve the grade the engine needs, then find it (and the filter) in the catalog."""
-        need = oil_match.requirements((self.discovery or {}).get('fluids', []))
+        fluids = (self.discovery or {}).get('fluids', [])
+        need = oil_match.requirements(fluids)
         self.requirements = oil_match.summary(need)
+        if not need['grades']:
+            # Shell and Pakelo labels name engines the way the reply then searches for them.
+            conflicted = [report for report in fluids if report.get('status') == 'CONFLICTED']
+            for providers in ({'Shell', 'Pakelo'}, None):
+                labels = [label for report in conflicted
+                          if providers is None or report.get('provider') in providers
+                          for label in report.get('candidates') or []]
+                self.engine_options = engine_match.engine_options(labels)
+                if self.engine_options:
+                    break
         if need['grades']:
             rows = oil_match.oil_rows(self.repository, need, self.context, self.language,
                                       self.rules)
@@ -1129,6 +1141,7 @@ class ConversationTurn:
             missing_brand=self.missing_brand, sold_out=self.hidden_unavailable,
             greeted=self.greeted and act not in replies.SMALL_TALK_TEXT,
             name_only=name_fallback, has_vin=bool(self.vin),
+            engine_options=self.engine_options if act == 'clarify_engine' else [],
             previous=[str(h.get('answer', '')) for h in self.history if isinstance(h, dict)],
             previous_notes=[str(h.get('note') or '') for h in self.history
                             if isinstance(h, dict)],
@@ -1143,7 +1156,8 @@ class ConversationTurn:
         response = {
             'status': status, 'act': act, 'answer': reply.text, 'note': reply.note,
             'quick_replies': reply.quick_replies, 'language': self.language,
-            'pending': ({'act': act, 'offer': reply.offer}
+            'pending': ({'act': act, 'offer': reply.offer,
+                         **({'options': self.engine_options} if act == 'clarify_engine' else {})}
                         if act.startswith('clarify') or reply.offer else None),
             'facts': reply.facts,
             'result_ids': list(dict.fromkeys(refs)),

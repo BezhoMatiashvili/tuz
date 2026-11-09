@@ -39,14 +39,52 @@ def model_base(model: Any) -> str:
     return found.group(1) if found else text
 
 
-def search_terms(model: Any, trim: Any) -> list[str]:
-    """Chooser search text, best first: Shell finds `GLE 350 d`, never `GLE-Class GLE 350 d`."""
+def search_terms(model: Any, trim: Any, body: Any = None) -> list[str]:
+    """Chooser search text, best first: Shell finds `GLE 350 d`, never `GLE-Class GLE 350 d`.
+
+    A search returns one page, so `E-Class Coupe` keeps the coupes from being cut off.
+    """
     full, base, words = str(model or '').strip(), model_base(model), trim_search_text(trim)
-    if not words:
-        return list(dict.fromkeys(term for term in (full, base) if term))
-    first = words.split(' ', 1)[0].casefold()
-    lead = words if base and first.startswith(base.casefold()) else f'{base} {words}'.strip()
-    return list(dict.fromkeys((lead, f'{full} {words}'.strip())))
+    named = next((word for word in ('Coupe', 'Convertible')
+                  if re.search(BODY_WORDS[word.casefold()], str(body or ''), re.IGNORECASE)), '')
+    terms = [f'{full} {named}'.strip(), full, base]
+    if words:
+        first = words.split(' ', 1)[0].casefold()
+        lead = words if base and first.startswith(base.casefold()) else f'{base} {words}'.strip()
+        terms = [lead, f'{full} {words}'.strip()] + terms
+    return list(dict.fromkeys(term for term in terms if term))
+
+
+def engine_option(label: Any) -> dict | None:
+    """`E-CLASS Coupe (C207) E 400 245kW (M 276.850) (P) (2015)` -> E 400, petrol."""
+    text = str(label or '')
+    markers = set(MARKER.findall(text)) & {'P', 'B', 'G', 'D'}
+    fuel = 'Diesel' if markers == {'D'} else 'Gasoline' if markers and 'D' not in markers else None
+    text = ENGINE_CODE.sub(' ', re.sub(r'\((?:[A-Z]|\d{4})\)', ' ', text))
+    tail = text.partition(')')[2]
+    text = tail if tail.strip() else re.sub(r'\([^)]*\)', ' ', text)
+    trim = ' '.join(re.sub(r'(?<![A-Za-z0-9])\d+\s?kW(?![A-Za-z])', ' ', text,
+                           flags=re.IGNORECASE).split())
+    return {'trim': trim[:60], 'fuel': fuel} if len(''.join(trim_groups(trim))) >= 2 else None
+
+
+def engine_options(labels: Any, limit: int = 6) -> list[dict]:
+    """The engines a customer can choose from, once each."""
+    options: dict[tuple, dict] = {}
+    for label in labels:
+        option = engine_option(label)
+        if option:
+            options.setdefault((option['trim'].casefold(), option['fuel']), option)
+
+    def words(option: dict) -> list[str]:
+        return [group.casefold() for group in trim_groups(option['trim'])]
+
+    # 'E 350 BlueTEC' already names 'E 350 BlueTEC / d': the shorter choice covers both.
+    kept = [option for option in options.values() if not any(
+        other is not option and other['fuel'] == option['fuel']
+        and len(words(other)) < len(words(option))
+        and words(option)[:len(words(other))] == words(other) for other in options.values())]
+    return kept[:limit]
 
 
 def _spelled(value: str) -> str | None:
@@ -72,7 +110,7 @@ def model_matches(label: Any, model: Any) -> bool:
 
 def _trim_pattern(groups: list[str]) -> str:
     # `400` is not the `400kW` in a label.
-    return (r'(?<![A-Za-z0-9])' + r'[\s-]?'.join(re.escape(g) for g in groups)
+    return (r'(?<![A-Za-z0-9])' + r'[\s/-]*'.join(re.escape(g) for g in groups)
             + r'(?![0-9])(?!\s?kw)')
 
 
@@ -144,7 +182,7 @@ def narrow(items: list[dict], label_of: Any, vehicle: dict) -> list[dict]:
         chosen = [item for item in by_trim if fuel_matches(label_of(item), fuel)]
         return by_body(chosen, label_of, vehicle.get('body'))
     compatible = [item for item in items if fuel_matches(label_of(item), fuel)]
-    return compatible or items
+    return by_body(compatible or items, label_of, vehicle.get('body'))
 
 
 def signature(report: dict) -> tuple:

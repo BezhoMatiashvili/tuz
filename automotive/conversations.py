@@ -320,12 +320,10 @@ class ConversationStore:
         if year and current.get("make") and current.get("model"):
             return {**current, "model_year": year}
         if asked == "clarify_engine":
-            engine = dialogue.engine_answer(message)
-            if engine:
-                return {**current, "engine_code": engine}
-            size = dialogue.displacement_answer(message)
-            if size:
-                return {**current, "displacement_l": size}
+            details = dialogue.engine_details(message, current.get("make"),
+                                              pending.get("options") or [])
+            if details:
+                return {**current, **details}
         return None
 
     def _run(self, identifier: str, turn_id: str, message: str, vin: str | None,

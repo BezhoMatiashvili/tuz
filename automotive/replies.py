@@ -83,6 +83,17 @@ class Situation:
     has_vin: bool = False
     previous: Sequence[str] = ()
     previous_notes: Sequence[str] = ()
+    engine_options: Sequence[dict] = ()
+
+
+FUEL_WORDS = {'Gasoline': ('ბენზინი', 'petrol'), 'Diesel': ('დიზელი', 'diesel')}
+
+
+def engine_choice(option: dict, language: str) -> str:
+    """'E 400 (ბენზინი)': what the customer taps; the reply is read back by its trim."""
+    fuel = FUEL_WORDS.get(str(option.get('fuel')))
+    word = fuel[0 if language == 'ka' else 1] if fuel else ''
+    return f"{option.get('trim')} ({word})" if word else str(option.get('trim'))
 
 
 def make_name(make: str | None) -> str:
@@ -417,7 +428,16 @@ def _clarify(s: Situation, category: str | None) -> tuple[str, dict]:
     if s.act == 'clarify_brakes':
         return lead + ('ხუნდები თუ დისკები — წინა თუ უკანა?' if ka
                        else 'Pads or discs — and front or rear?'), {}
-    if s.has_vin:
+    if s.engine_options:
+        choices = [engine_choice(option, s.language) for option in s.engine_options]
+        joined = (', '.join(choices[:-1]) + (' თუ ' if ka else ' or ') + choices[-1]
+                  if len(choices) > 1 else choices[0])
+        car = (_ka_car(vehicle) if ka else car_label(vehicle)) if vehicle.get('model') else ''
+        text = ((f'{car} რამდენიმე ძრავით გამოდიოდა, ზეთი კი ძრავზეა დამოკიდებული. რომელია: '
+                 f'{joined}? აირჩიეთ ქვემოთ ან გამომიგზავნეთ VIN.') if ka else
+                (f'The {car} came with several engines, and the oil depends on which. Is it '
+                 f'{joined}? Pick one below, or send the VIN.'))
+    elif s.has_vin:
         text = ('ამ VIN-ით ძრავი ზუსტად ვერ დავადგინე. მომწერეთ ძრავის კოდი — ის ძრავზე ან '
                 'მანქანის დოკუმენტებშია.' if ka else
                 "I couldn't pin down the engine from the VIN. Could you send the engine code? "
@@ -535,6 +555,8 @@ def _compose(s: Situation) -> Reply:
                      if ka else 'Chat requires an Anthropic API key. Direct search is available.')
     if act.startswith('clarify'):
         text, facts = _clarify(s, category)
+        if act == 'clarify_engine' and s.engine_options:
+            quick = [engine_choice(option, s.language) for option in s.engine_options]
         return Reply(_greet(s, text), note(s) if s.cards else '', quick, facts=facts)
     if act == 'vehicle_identified':
         label = _ka_car(s.vehicle) if ka else car_label(s.vehicle)

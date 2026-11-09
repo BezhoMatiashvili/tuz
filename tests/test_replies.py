@@ -87,6 +87,21 @@ class ReplyTests(unittest.TestCase):
         self.assertNotIn('VIN.', given.replace('from the VIN', ''))
         self.assertIn('engine code', given)
 
+    def test_an_ambiguous_engine_is_asked_by_name_with_choices(self):
+        options = [{'trim': 'E 320', 'fuel': 'Gasoline'},
+                   {'trim': 'E 350 BlueTEC', 'fuel': 'Diesel'},
+                   {'trim': 'E 400', 'fuel': 'Gasoline'}]
+        car = {'make': 'MERCEDES-BENZ', 'model': 'E-Class', 'model_year': 2015}
+        ka = compose('clarify_engine', 'ka', category='ზეთის შეცვლა', vehicle=car,
+                     engine_options=options)
+        self.assertIn('E 320 (ბენზინი), E 350 BlueTEC (დიზელი) თუ E 400 (ბენზინი)?', ka.text)
+        self.assertNotIn('ძრავის კოდი', ka.text)
+        self.assertEqual(ka.quick_replies,
+                         ['E 320 (ბენზინი)', 'E 350 BlueTEC (დიზელი)', 'E 400 (ბენზინი)'])
+        en = compose('clarify_engine', category='oil change', vehicle=car, engine_options=options)
+        self.assertIn('2015 Mercedes-Benz E-Class came with several engines', en.text)
+        self.assertEqual(en.text.count('?'), 1)
+
     def test_name_matched_reply_is_short_and_says_to_check(self):
         reply = compose('results', category='front brake pads', name_only=True,
                         cards=[card('a', 'IN_STORE', basis='name')])

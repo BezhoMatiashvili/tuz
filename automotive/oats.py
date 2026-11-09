@@ -67,7 +67,7 @@ class OatsCatalog:
         self.http.reserve()
         token = self._token(deadline)
         found: list[dict] = []
-        for terms in search_terms(model, vehicle.get('trim')):
+        for terms in search_terms(model, vehicle.get('trim'), vehicle.get('body')):
             found = self._search(make, terms, int(year), token, deadline)
             if found:
                 break
@@ -76,6 +76,10 @@ class OatsCatalog:
         if not matched:
             return fluid_report(self.provider, 'EMPTY', label=label,
                                 warnings=['შერჩეულ წელს ცალსახა მანქანა ვერ მოიძებნა.'])
+        # Choices offered on a conflict ignore the size: a supplier can list the customer's
+        # 3.0 L engine as 3.5 L. Sizes near the stated one come first.
+        choices = self._choices(self._match(found, make, model, int(year),
+                                            {**vehicle, 'displacement_l': None}), vehicle)
         # Several variants are only read when the trim already identified the engine
         # family (2WD and 4-matic), or the stated engine size leaves at most one engine code;
         # otherwise the choice stays ambiguous. Read variants must still agree.
@@ -85,7 +89,7 @@ class OatsCatalog:
             or (len(codes - {None}) <= 1
                 and all(self._size_decided(i, vehicle) for i in matched)))
         if len(matched) > 8 or (len(matched) > 1 and not decided):
-            return self._conflict(label, matched)
+            return self._conflict(label, matched, choices)
         # Variants of one engine share a recommendation; a small sample verifies it. Without
         # one engine code, every variant the customer's details name is read (power and
         # drive variants of `GLE 350 d`), and they must all agree.
@@ -103,7 +107,7 @@ class OatsCatalog:
         if identical(reports):
             # Variants such as 2WD and 4-matic share one recommendation: it is unambiguous.
             return self._with_engine(reports[0], matched)
-        return self._conflict(label, matched)
+        return self._conflict(label, matched, choices)
 
     @staticmethod
     def _with_engine(report: dict, matched: list[dict]) -> dict:
@@ -111,7 +115,21 @@ class OatsCatalog:
         report['engine_code'] = redact(next(iter(codes)), 40) if len(codes) == 1 else None
         return report
 
-    def _conflict(self, label: str, matched: list[dict]) -> dict:
+    @staticmethod
+    def _choices(pool: list[dict], vehicle: dict) -> list[str]:
+        wanted = _number(vehicle.get('displacement_l'))
+
+        def distance(item: dict) -> float:
+            values = [_number(v) for v in item.get('displacement') or []
+                      if isinstance(item.get('displacement'), list)]
+            known = [abs(v - wanted) for v in values if v is not None and wanted is not None]
+            return min(known) if known else 0.0
+
+        near = [item for item in pool if distance(item) <= 0.5]
+        return [str(item.get('display_name_long') or item.get('model') or '')
+                for item in sorted(near or pool, key=distance)]
+
+    def _conflict(self, label: str, matched: list[dict], choices: list[str]) -> dict:
         names = [redact(item.get('display_name_long') or item.get('model'), 80)
                  for item in matched[:8]]
         return fluid_report(
@@ -119,6 +137,7 @@ class OatsCatalog:
             clarification='რამდენიმე ძრავა ემთხვევა. ზეთი არ შერჩეულა: ' + '; '.join(
                 name for name in names if name),
             warnings=['ძრავა ცალსახა არ არის, ამიტომ პროდუქტი არ დაბრუნდა.'],
+            candidates=choices,
         )
 
     def _token(self, deadline: float | None) -> str | None:
@@ -136,7 +155,7 @@ class OatsCatalog:
                 deadline: float | None) -> list[dict]:
         params: dict[str, Any] = {
             'q': ' '.join(part for part in (make, terms, str(year)) if part)[:80],
-            'page': 1, 'page_size': 20,
+            'page': 1, 'page_size': 50,
             'language': self.language,
         }
         if token:
@@ -151,7 +170,7 @@ class OatsCatalog:
             raise PublicSourceError('INVALID_RESPONSE') from None
         if not isinstance(equipment, list):
             raise PublicSourceError('INVALID_RESPONSE')
-        return [item for item in equipment[:20] if isinstance(item, dict)]
+        return [item for item in equipment[:50] if isinstance(item, dict)]
 
     def _match(self, equipment: list[dict], make: str, model: str, year: int,
                vehicle: dict) -> list[dict]:
@@ -193,6 +212,10 @@ class OatsCatalog:
 
     @staticmethod
     def _size_decided(item: dict, vehicle: dict) -> bool:
+        """A stated size picks the engine only with a known fuel: a 3.0 L E-Class coupe is
+        a petrol E 320 or a diesel E 350 BlueTEC."""
+        if not (vehicle.get('fuel') or vehicle.get('fuel_type')):
+            return False
         wanted = _number(vehicle.get('displacement_l'))
         values = item.get('displacement') if isinstance(item.get('displacement'), list) else []
         return wanted is not None and any(_number(value) == wanted for value in values)

@@ -228,6 +228,28 @@ class ConversationTests(unittest.TestCase):
                          {"make": "MERCEDES-BENZ", "model": "E-Class", "model_year": 2015,
                           "trim": "E 350"})
 
+    def test_a_georgian_description_then_a_tapped_engine_choice(self):
+        options = [{"trim": "E 320", "fuel": "Gasoline"},
+                   {"trim": "E 350 BlueTEC", "fuel": "Diesel"},
+                   {"trim": "E 400", "fuel": "Gasoline"}]
+        self.engine.respond_conversation = lambda message, **kwargs: (
+            self.engine.calls.append((message, kwargs)) or {
+                "status": "CLARIFICATION", "answer": "Which engine?",
+                "vehicle": kwargs["vehicle"], "cards": [],
+                "pending": {"act": "clarify_engine", "offer": None, "options": options}})
+        cid = self.store.create()["conversation_id"]
+        self.finish(cid, self.store.submit(
+            cid, "მერსედესისზე ე კლასზე კუპეზე 2015 წლიანზე 3.0 ძრავზე მინდა ზეთის შეცვლა"
+        )["turn_id"])
+        self.assertEqual(self.engine.calls[-1][1]["vehicle"], {
+            "make": "MERCEDES-BENZ", "model": "E-Class", "model_year": 2015, "body": "Coupe",
+            "displacement_l": "3.0"})
+        self.finish(cid, self.store.submit(cid, "E 400 (ბენზინი)")["turn_id"])
+        message, kwargs = self.engine.calls[-1]
+        self.assertEqual(kwargs["vehicle"]["trim"], "E 400")
+        self.assertEqual(kwargs["vehicle"]["fuel"], "Gasoline")
+        self.assertIn("ზეთის შეცვლა", kwargs["category"])
+
     def test_yes_accepts_the_offer_and_language_stays_for_codes(self):
         self.engine.respond_conversation = lambda message, **kwargs: (
             self.engine.calls.append((message, kwargs)) or {

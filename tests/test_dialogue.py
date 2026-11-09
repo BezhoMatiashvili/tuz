@@ -90,6 +90,35 @@ class VehicleTextTests(unittest.TestCase):
             typed = dialogue.read_vehicle(text)
             self.assertEqual((typed.make, typed.model, typed.trim), (make, model, None), text)
 
+    def test_a_georgian_description_names_the_class_body_and_engine_size(self):
+        typed = dialogue.read_vehicle(
+            'მერსედესისზე ე კლასზე კუპეზე 2015 წლიანზე 3.0 ძრავზე მინდა ზეთის შეცვლა')
+        self.assertEqual(typed.as_vehicle(), {
+            'make': 'MERCEDES-BENZ', 'model': 'E-Class', 'model_year': 2015, 'body': 'Coupe',
+            'displacement_l': '3.0'})
+        self.assertEqual(dialogue.read_vehicle('მერსედეს ე400 2015').trim, 'E 400')
+        self.assertEqual(dialogue.read_vehicle('Mercedes E class 2015 diesel').as_vehicle(), {
+            'make': 'MERCEDES-BENZ', 'model': 'E-Class', 'model_year': 2015, 'fuel': 'Diesel'})
+        # Litres of oil are not an engine size.
+        self.assertNotIn('displacement_l', dialogue.read_vehicle(
+            'BMW 328i 2014 მინდა 5.0 ლიტრი ზეთი').as_vehicle())
+
+    def test_replies_to_the_engine_question(self):
+        options = [{'trim': 'E 320', 'fuel': 'Gasoline'},
+                   {'trim': 'E 350 BlueTEC', 'fuel': 'Diesel'},
+                   {'trim': 'E 400', 'fuel': 'Gasoline'}]
+        make = 'MERCEDES-BENZ'
+        self.assertEqual(dialogue.engine_details('E 400 (ბენზინი)', make, options),
+                         {'trim': 'E 400', 'fuel': 'Gasoline'})
+        self.assertEqual(dialogue.engine_details('დიზელია', make, options),
+                         {'trim': 'E 350 BlueTEC', 'fuel': 'Diesel'})
+        self.assertEqual(dialogue.engine_details('ბენზინი', make, options),
+                         {'fuel': 'Gasoline'})  # Two petrol engines: only the fuel is known.
+        self.assertEqual(dialogue.engine_details('ე400', make), {'trim': 'E 400'})
+        self.assertEqual(dialogue.engine_details('3.0', make), {'displacement_l': '3.0'})
+        self.assertEqual(dialogue.engine_details('M276', make), {'engine_code': 'M276'})
+        self.assertEqual(dialogue.engine_details('thanks', make), {})
+
     def test_two_word_and_joined_model_names(self):
         self.check('Range Rover Sport 2015', 'LAND ROVER', 'Range Rover Sport', 2015)
         self.check('Land Rover Range Rover Evoque 2016', 'LAND ROVER', 'Range Rover Evoque',

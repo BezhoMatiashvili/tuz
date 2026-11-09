@@ -88,12 +88,30 @@ class EngineMatchTests(unittest.TestCase):
 
     def test_search_terms_use_the_spelling_in_supplier_labels(self):
         self.assertEqual(engine_match.search_terms('GLE-Class', 'GLE 350d'),
-                         ['GLE 350 d', 'GLE-Class GLE 350 d'])
+                         ['GLE 350 d', 'GLE-Class GLE 350 d', 'GLE-Class', 'GLE'])
         self.assertEqual(engine_match.search_terms('3 Series', '328i')[0], '328 i')
         self.assertEqual(engine_match.search_terms('IS', 'IS 250')[0], 'IS 250')
-        self.assertEqual(engine_match.search_terms('Car', 'E400'), ['Car E 400'])
+        self.assertEqual(engine_match.search_terms('Car', 'E400'), ['Car E 400', 'Car'])
         self.assertEqual(engine_match.search_terms('3 Series', None), ['3 Series', '3'])
         self.assertEqual(engine_match.search_terms('Accord', None), ['Accord'])
+        self.assertEqual(engine_match.search_terms('E-Class', None, 'Coupe'),
+                         ['E-Class Coupe', 'E-Class', 'E'])
+
+    def test_engine_choices_from_supplier_labels(self):
+        self.assertEqual(engine_match.engine_option(
+            'E-CLASS Coupe (C207) E 350 BlueTEC / d 190kW (D) (2015)'),
+            {'trim': 'E 350 BlueTEC / d', 'fuel': 'Diesel'})
+        self.assertEqual(engine_match.engine_option('3 (F30, F80) 328 i xDrive 180kW (P) (2014)'),
+                         {'trim': '328 i xDrive', 'fuel': 'Gasoline'})
+        self.assertEqual(engine_match.engine_option('IS 250 RWD (USA)'),
+                         {'trim': 'IS 250 RWD', 'fuel': None})
+        self.assertTrue(engine_match.trim_matches('E 350 BlueTEC / d 190kW (D)',
+                                                  'E 350 BlueTEC / d'))
+        self.assertEqual(engine_match.engine_options([
+            'E-CLASS Coupe (C207) E 350 BlueTEC / d 190kW (D) (2015)',
+            'E-CLASS Coupe (C207) E 350 BlueTEC 185kW (D) (2015)',
+            'E-CLASS Coupe (C207) E 350 245kW (P) (2015)']),
+            [{'trim': 'E 350 BlueTEC', 'fuel': 'Diesel'}, {'trim': 'E 350', 'fuel': 'Gasoline'}])
 
     def test_fuel_marker_must_agree_when_present(self):
         self.assertTrue(engine_match.fuel_matches('E 400 (P)', 'Gasoline'))
@@ -238,10 +256,36 @@ class ChooserResolutionTests(unittest.TestCase):
              item('second1', 'Car 400 (M 276.820) (P) (2015)'),
              item('third1', 'Car 400 Coupe (M 276.820) (P) (2015)')],
             detail('Helix Ultra 5W-40'), detail('Helix Ultra 5W-40'))
-        vehicle = {'make': 'Example', 'model': 'Car', 'model_year': 2015, 'displacement_l': '3.0'}
+        vehicle = {'make': 'Example', 'model': 'Car', 'model_year': 2015, 'displacement_l': '3.0',
+                   'fuel': 'Gasoline'}
         result = client.lookup(None, vehicle)
         self.assertEqual(result['status'], 'PROVISIONAL')
         self.assertEqual(result['engine_code'], 'M 276.820')
+
+    def test_a_size_without_the_fuel_asks_and_offers_the_engines_near_it(self):
+        # Shell's E-Class coupe 2015 list: the petrol E 400 is a 3.0 L listed as 3.5 L.
+        def coupe(identifier, label, size):
+            return {**item(identifier, label, size), 'manufacturer': 'MERCEDES-BENZ',
+                    'model': 'E-CLASS Coupe (C207)'}
+
+        equipment = [
+            coupe('e200p', 'E-CLASS Coupe (C207) E 200 135kW (P) (2015)', '2.0'),
+            coupe('e320p', 'E-CLASS Coupe (C207) E 320 200kW (P) (2015)', '3.0'),
+            coupe('e350d', 'E-CLASS Coupe (C207) E 350 BlueTEC 185kW (D) (2015)', '3.0'),
+            coupe('e400p', 'E-CLASS Coupe (C207) E 400 245kW (M 276.850) (P) (2015)', '3.5'),
+            coupe('e500p', 'E-CLASS Coupe (C207) E 500 300kW (P) (2015)', '4.7'),
+        ]
+        vehicle = {'make': 'MERCEDES-BENZ', 'model': 'E-Class', 'model_year': 2015,
+                   'body': 'Coupe', 'displacement_l': '3.0'}
+        client = self.client(equipment)
+        result = client.lookup(None, vehicle)
+        self.assertEqual(result['status'], 'CONFLICTED')
+        self.assertEqual(len(client.http.calls), 1)  # Nothing is read or guessed.
+        self.assertEqual(client.http.calls[0][2]['q'], 'MERCEDES-BENZ E-Class Coupe 2015')
+        options = engine_match.engine_options(result['candidates'])
+        self.assertEqual(options, [{'trim': 'E 320', 'fuel': 'Gasoline'},
+                                   {'trim': 'E 350 BlueTEC', 'fuel': 'Diesel'},
+                                   {'trim': 'E 400', 'fuel': 'Gasoline'}])
 
     def test_every_named_variant_is_read_and_must_agree_without_an_engine_code(self):
         def gle(identifier, label):

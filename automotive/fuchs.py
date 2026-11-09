@@ -174,4 +174,5 @@ def _ambiguous(label: str, names: list[Any]) -> dict:
         clarification='რამდენიმე ძრავა ემთხვევა. ზეთი არ შერჩეულა: ' + '; '.join(
             name for name in shown if name),
         warnings=['ძრავა ცალსახა არ არის, ამიტომ პროდუქტი არ დაბრუნდა.'],
+        candidates=[str(name) for name in names if name],
     )

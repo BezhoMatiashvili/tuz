@@ -37,12 +37,14 @@ def identity(value: Any) -> str:
 
 def fluid_report(provider: str, status: str, *, label: str = '', items: list | None = None,
                  clarification: str | None = None, warnings: list[str] | None = None,
-                 engine_code: str | None = None) -> dict:
+                 engine_code: str | None = None, candidates: list | None = None) -> dict:
     return {
         'provider': provider, 'status': status, 'vehicle_label': redact(label, 180) or '',
         'engine_code': redact(engine_code, 40),
         'items': items or [], 'clarification': redact(clarification, 500),
         'warnings': [text for item in (warnings or []) if (text := redact(item, 240))],
+        # The variants a customer could choose between when the engine is ambiguous.
+        'candidates': [text for item in (candidates or [])[:12] if (text := redact(item, 120))],
     }
 
 
