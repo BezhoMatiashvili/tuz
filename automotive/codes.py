@@ -6,7 +6,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-PARSER_VERSION = "1"
+PARSER_VERSION = "2"
 CODE_FIELDS = ("product_code", "original_code", "duplicate_code")
 
 

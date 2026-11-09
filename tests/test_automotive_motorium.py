@@ -94,9 +94,21 @@ class MotoriumTests(unittest.TestCase):
         }))
         self.assertEqual(self.client.lookup(VIN, 'filter')['items'], [])
 
-    def test_missing_part_context_and_invalid_identity_are_not_guessed(self):
+    def test_matched_vehicle_without_part_context_keeps_only_products_named_for_the_part(self):
+        data = source(context={'vehicle': {'make': 'Example', 'model': 'Car', 'year': 2013}})
+        data['products'].append({'id': 18, 'mpn': 'ZZ9', 'sap': 'supplier-18',
+                                 'brand': 'Maker', 'name': 'Wiper blade'})
+        self.session.post.return_value = response(data)
+        result = self.client.lookup(VIN, 'filter')
+        self.assertEqual([item['mpn'] for item in result['items']], ['AP104/2'])
+        self.assertEqual(result['status'], 'PROVISIONAL')
+        self.assertTrue(result['vehicle_context_matched'])
+        self.assertIn('PART_QUERY_NOT_ESTABLISHED', result['warnings'])
+        self.assertFalse(result['has_more'])
+        self.assertEqual(self.client.lookup(VIN, 'brake pads')['items'], [])
+
+    def test_invalid_identity_is_not_guessed(self):
         for data in (
-            source(context={'vehicle': {'make': 'Example', 'model': 'Car', 'year': 2013}}),
             source(vehicle={'make': True, 'model': 'Car', 'year': 2013}),
             source(vehicle={'make': 'Example', 'model': 'Car', 'year': True}),
         ):

@@ -1,0 +1,91 @@
+# Staff-editable accuracy rules for the parts assistant.
+#
+# Edit this file, then restart the application. The file is validated at startup: an
+# unknown key, a wrong type or an unknown category stops the app with a message that names
+# the section, so a typo cannot silently turn a rule off.
+#
+# Categories: brake_pads, brake_discs, brakes, oil_filter, air_filter, cabin_filter,
+# engine_oil, oil_change, suspension.
+#
+# Built-in rules that need no editing: only active products are offered; a front/rear
+# request drops items named for the other axle (also `წნ` and `უკ`); a code match that is
+# another kind of part is dropped; a catalog vehicle that disagrees with the decoded car is
+# ignored; stock older than `hide_after_hours` is never stated as in stock.
+
+[stock]
+# An item is offered when the store quantity is GREATER than min_store, or the TUZ 11
+# quantity is greater than min_tuz11 (TUZ 11 reaches the store in 1-2 hours).
+min_store = 0
+min_tuz11 = 0
+# Hours after the last catalogue sync when the customer is asked to confirm stock, and
+# when the quantity is no longer stated as a fact.
+stale_hours = 3
+hide_after_hours = 24
+
+# Brands that are one brand (a supplier name vs. the name used in our catalogue).
+[[brand_alias]]
+names = ["MANN", "MANN-FILTER", "MANN+HUMMEL"]
+
+[[brand_alias]]
+names = ["MOBIL", "MOBIL-1", "MOBIL 1"]
+
+[[brand_alias]]
+names = ["MERCEDES-BENZ", "MERCEDES", "MB"]
+
+[[brand_alias]]
+names = ["VOLKSWAGEN", "VW", "VAG"]
+
+[[brand_alias]]
+names = ["KNECHT", "MAHLE"]
+
+# Words that mean the item is an accessory or another kind of part, not the requested one.
+# Matching is by text inside the product name, lower-cased.
+[[not_the_part]]
+category = "brake_pads"
+words = ["სენს", "ცვეთის", "ზამბარა", "ბარაბნიანი", "ხელის", "sensor"]
+
+[[not_the_part]]
+category = "brake_discs"
+words = ["შლანგ"]
+
+[[not_the_part]]
+category = "oil_filter"
+words = ["საფენი", "კორპ", "მანჟეტ", "ჩობალ", "შუასადებ", "ხუფ", "შემამჭ", "კოლოფის",
+         "ტრანსმის", "ავტომატური", "გოჭი", "მილი", "რგოლი", "ბუდე", "housing", "gasket"]
+
+[[not_the_part]]
+category = "air_filter"
+words = ["მილი", "ყუთი", "კორპუს"]
+
+# Oil approvals a car requires. Oils whose NAME states one of them rank first and are
+# labelled; oils that state none are labelled "approval not stated"; strict = true hides
+# those. Fill in from the owner's manual, for example (not enabled):
+#
+# [[oil_approval]]
+# make = "MERCEDES-BENZ"
+# engine_family = "M276"          # optional; from the chooser's engine code
+# require_any = ["229.5", "229.52"]
+# strict = false
+
+# Products that must never be offered (for a known bad match). Optional make/model limit it
+# to one vehicle. Example (not enabled):
+#
+# [[never_offer]]
+# product_code = "2040000000"
+# make = "HONDA"
+# model = "Accord"
+# reason = "wrong generation, reported by the store"
+
+# Fitments staff verified. Offered first with the label "Confirmed by our staff" (this is
+# not the evidence-reviewed VERIFIED status); stock and active-product rules still apply.
+# Example (not enabled):
+#
+# [[staff_confirmed]]
+# make = "HONDA"
+# model = "Accord"
+# year_from = 2003
+# year_to = 2007
+# category = "brake_pads"
+# product_code = "2040025971"
+# brand = "TRW"
+# note = "checked against the old part"

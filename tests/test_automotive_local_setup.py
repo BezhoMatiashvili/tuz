@@ -110,7 +110,7 @@ class LocalSetupTests(unittest.TestCase):
         self.assertNotIn(runtime['password'], statements)
         self.assertNotIn(enrichment['password'], statements)
         require_catalog.assert_called_once_with(connection)
-        self.assertEqual(migrate.call_args.kwargs['through'], '0006_automotive')
+        self.assertEqual(migrate.call_args.kwargs['through'], '0007_content_hash_index')
 
 
 if __name__ == '__main__':

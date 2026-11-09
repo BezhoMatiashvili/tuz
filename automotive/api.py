@@ -31,6 +31,7 @@ class VehicleConfiguration(StrictModel):
     model: str | None = Field(default=None, max_length=100)
     model_year: int | None = Field(default=None, ge=1980, le=2100)
     engine_code: str | None = Field(default=None, max_length=100)
+    trim: str | None = Field(default=None, max_length=100)
     fuel: str | None = Field(default=None, max_length=100)
     transmission: str | None = Field(default=None, max_length=100)
     market: str | None = Field(default=None, max_length=100)
@@ -81,6 +82,11 @@ class JobRequest(StrictModel):
     kind: Literal["index"] = "index"
 
 
+class StockInfo(BaseModel):
+    store: float | None = None
+    tuz11: float | None = None
+
+
 class CatalogProduct(BaseModel):
     source_product_id: str
     source_fingerprint: str | None = None
@@ -93,7 +99,7 @@ class CatalogProduct(BaseModel):
     last_observed_at: Any = None
     price: float | None = None
     currency: str | None = None
-    stock: float | None = None
+    stock: StockInfo | None = None
     status: str = "UNKNOWN"
     matched_codes: list[Any] = Field(default_factory=list)
 
@@ -161,6 +167,11 @@ class ServiceStatus(BaseModel):
     enrichment_configured: bool
     provider_health_checked: bool = False
     motorium_configured: bool = False
+    fuchs_configured: bool = False
+    shell_configured: bool = False
+    pakelo_configured: bool = False
+    jsfilter_configured: bool = False
+    catalog_api_configured: bool = False
 
 
 class MotoriumPart(BaseModel):
@@ -189,6 +200,7 @@ class MotoriumResult(BaseModel):
 
 
 class SourceProgress(BaseModel):
+    elapsed_ms: int | None = None
     source_id: str
     label: str
     status: str
@@ -231,6 +243,26 @@ class OilResult(BaseModel):
     has_more: bool = False
 
 
+class FluidProduct(BaseModel):
+    kind: Literal["oil", "filter"]
+    component: str
+    product_name: str
+    product_code: str | None = None
+    viscosity: str | None = None
+    interval: str | None = None
+    capacity: str | None = None
+
+
+class FluidReport(BaseModel):
+    provider: str
+    status: str
+    vehicle_label: str = ""
+    engine_code: str | None = None
+    items: list[FluidProduct] = Field(default_factory=list)
+    clarification: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
 class VINSearchResult(BaseModel):
     search_id: str
     status: Literal["RUNNING", "COMPLETE", "PARTIAL", "FAILED", "CONFLICTED"]
@@ -246,6 +278,7 @@ class VINSearchResult(BaseModel):
     coverage_complete: bool = False
     created_at: str
     maintenance: OilResult | None = None
+    fluids: list[FluidReport] = Field(default_factory=list)
     cross_references: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -255,6 +288,11 @@ class ConversationCard(BaseModel):
     fitment_status: str
     compatible: bool | None = None
     availability: str = "Found in our catalog; stock unconfirmed."
+    availability_status: str = "UNKNOWN"
+    basis: str = ""
+    matched_via: list[str] = Field(default_factory=list)
+    pack_litres: float | None = None
+    role: str | None = None
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -271,6 +309,7 @@ class ConversationTurn(BaseModel):
     results: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     usage: dict[str, Any] = Field(default_factory=dict)
+    requirements: dict[str, Any] = Field(default_factory=dict)
     total: int = 0
     offset: int = 0
     next_offset: int | None = None
@@ -311,12 +350,19 @@ def create_app(
     search_service: Any = None,
 ) -> FastAPI:
     from automotive.config import Settings
+    from automotive.fuchs import FuchsClient
+    from automotive.jsfilter import JsFilterClient
     from automotive.motorium import MotoriumClient, MotoriumError
+    from automotive.pakelo import PakeloClient
     from automotive.repository import DatabaseNotConfigured
+    from automotive.shell_oil import ShellOilClient
     from automotive.vin import ProviderUnavailable
     from automotive.vin_search import VINSearchCoordinator
 
     settings = settings or Settings.from_env()
+    from automotive.rules import load_rules
+
+    rules = load_rules()  # An invalid rules.toml stops startup with a named error.
     motorium_service = motorium_service or MotoriumClient()
     if repository is None:
         from automotive.repository import AutomotiveRepository
@@ -329,16 +375,32 @@ def create_app(
     if chat_service is None:
         from automotive.chat import ChatService
 
-        chat_service = ChatService(repository, vin_service, settings)
+        chat_service = ChatService(repository, vin_service, settings, rules=rules)
     if enrichment_repository is None and settings.enrichment_database_url:
         from automotive.repository import AutomotiveRepository
 
         enrichment_repository = AutomotiveRepository(settings.enrichment_database_url)
 
+    catalog_service = None
+    if settings.catalog_api_key:
+        from automotive.catalog_api import CatalogApiClient
+
+        catalog_service = CatalogApiClient(
+            settings.catalog_api_key, base_url=settings.catalog_api_base_url,
+            host=settings.catalog_api_host, key_header=settings.catalog_api_key_header,
+            hmac_key=settings.vin_hmac_key,
+        )
     owns_search_service = search_service is None
     search_service = search_service or VINSearchCoordinator(
         repository, vin_service, motorium_service, settings.vin_hmac_key,
         motorium_enabled=settings.motorium_enabled,
+        fuchs_service=FuchsClient() if settings.fuchs_enabled else None,
+        shell_service=ShellOilClient() if settings.shell_enabled else None,
+        pakelo_service=PakeloClient() if settings.pakelo_enabled else None,
+        jsfilter_service=JsFilterClient() if settings.jsfilter_enabled else None,
+        catalog_service=catalog_service, rules=rules,
+        fuchs_enabled=settings.fuchs_enabled, shell_enabled=settings.shell_enabled,
+        pakelo_enabled=settings.pakelo_enabled, jsfilter_enabled=settings.jsfilter_enabled,
     )
     from automotive.conversations import ConversationError, ConversationStore
 
@@ -456,6 +518,11 @@ def create_app(
             ),
             "provider_health_checked": False,
             "motorium_configured": settings.motorium_enabled,
+            "fuchs_configured": settings.fuchs_enabled,
+            "shell_configured": settings.shell_enabled,
+            "pakelo_configured": settings.pakelo_enabled,
+            "jsfilter_configured": settings.jsfilter_enabled,
+            "catalog_api_configured": bool(settings.catalog_api_key),
         }
 
     @app.get("/api/v1/inventory/search", response_model=SearchResult)

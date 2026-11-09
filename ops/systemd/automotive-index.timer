@@ -1,0 +1,12 @@
+[Unit]
+Description=Index new and changed catalogue products every hour, after the sync
+
+[Timer]
+# The synchroniser runs on the hour with up to five minutes of delay.
+OnCalendar=*:10:00
+Persistent=true
+AccuracySec=1m
+Unit=automotive-index.service
+
+[Install]
+WantedBy=timers.target

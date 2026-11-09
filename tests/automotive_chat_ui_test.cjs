@@ -9,8 +9,9 @@ class Node {
   get value() {return this._value;}
   set textContent(value) {this._text=String(value);this.children=[];}
   get textContent() {return this._text+this.children.map(n=>n.textContent).join('');}
-  append(...nodes) {this.children.push(...nodes);}
-  replaceChildren(...nodes) {this._text='';this.children=[...nodes];}
+  append(...nodes) {nodes.forEach(n=>{n.parent=this;});this.children.push(...nodes);}
+  replaceChildren(...nodes) {this._text='';nodes.forEach(n=>{n.parent=this;});this.children=[...nodes];}
+  remove() {if(this.parent){this.parent.children=this.parent.children.filter(n=>n!==this);this.parent=null;}}
   addEventListener(event,fn) {(this.events[event] ||= []).push(fn);}
   async fire(event,extra={}) {for(const fn of this.events[event] || []) await fn({target:this,preventDefault(){},...extra});}
   querySelectorAll(tag) {return this.children.flatMap(n=>[...(n.tagName===tag?[n]:[]),...n.querySelectorAll(tag)]);}
@@ -25,7 +26,7 @@ assert.equal(ids.size,[...html.matchAll(/id="/g)].length);
 assert.match(html,/id="chat-result"[^>]+role="log"/);
 assert.match(html,/id="direct-search" class="advanced direct-search"><summary>/);
 const timers=[],calls=[];
-const fixture={status:'COMPLETE',answer:'Here are catalog candidates.',warnings:[],vehicle:{make:'Example',model:'Car',model_year:2013},cards:[{product:{source_product_id:'p1',product_name:'<script>injected=true</script>',brand:'Maker',product_code:'AP104/2',matched_codes:[{code:'AP104/2'}],last_observed_at:'2026-01-01'},match_source:'EXACT_CODE',fitment_status:'UNKNOWN',compatible:null}],supplier_only:[{name:'Supplier pad',manufacturer:'Supplier',mpn:'S123'}],total:21,offset:0,next_offset:20};
+const fixture={status:'COMPLETE',answer:'Here are catalog candidates.',warnings:['SOURCE_FAILED:motorium','VIN_NOT_PROVIDED','NAME_MATCH_ONLY'],vehicle:{make:'Example',model:'Car',model_year:2013},cards:[{product:{source_product_id:'p1',product_name:'<script>injected=true</script>',brand:'Maker',product_code:'AP104/2',matched_codes:[{code:'AP104/2'}],last_observed_at:'2026-01-01'},match_source:'EXACT_CODE',fitment_status:'UNKNOWN',compatible:null,availability:'In the store: 16',availability_status:'IN_STORE',matched_via:['Shell: Helix Ultra 5W-40'],pack_litres:4}],requirements:{grades:['0W-40','5W-40'],capacity_l:6.5,engine_code:'M 276.850',missing:['oil_filter'],coverage:[{brand:'SHELL',grade:'5W-40',litres_store:64,litres_tuz11:0,enough_store:true,enough_with_tuz11:true}]},supplier_only:[{name:'Supplier pad',manufacturer:'Supplier',mpn:'S123'}],total:21,offset:0,next_offset:20};
 let responder=async url=>url.endsWith('/conversations')?{conversation_id:'c1'}:url.endsWith('/messages')?{turn_id:'t1',status:'RUNNING'}:fixture;
 const ctx=vm.createContext({document:{getElementById:id=>ids.get(id),createElement:tag=>new Node(tag)},URLSearchParams,console,setTimeout:fn=>timers.push(fn),fetch:async(url,options={})=>{
   calls.push({url,options});
@@ -44,9 +45,21 @@ const flush=async()=>{for(let i=0;i<30;i++)await Promise.resolve();};
   assert.equal(JSON.parse(sent.options.body).language,'en');
   assert.ok(calls.every(c=>!c.url.includes('1HGCM82633A004352')));
   const transcript=field('chat-result');
-  assert.match(transcript.textContent,/Found in our catalog; stock unconfirmed/);
   assert.match(transcript.textContent,/Supplier codes · no warehouse match/);
   assert.match(transcript.textContent,/Fitment unknown/);
+  assert.match(transcript.textContent,/In the store: 16/);
+  assert.doesNotMatch(transcript.textContent,/stock unconfirmed/);
+  assert.match(transcript.textContent,/Chosen because: Shell: Helix Ultra 5W-40/);
+  assert.match(transcript.textContent,/Pack size: 4 L/);
+  assert.match(transcript.textContent,/Oil needed: 0W-40 \/ 5W-40 · 6.5 L/);
+  assert.match(transcript.textContent,/Engine \(per the source\): M 276.850/);
+  assert.match(transcript.textContent,/No matching item in stock: oil filter/);
+  assert.match(transcript.textContent,/SHELL 5W-40: 64 L — enough for a full change/);
+  assert.match(transcript.textContent,/Source not checked: Motorium/);
+  assert.match(transcript.textContent,/showing in-stock parts that name it/);
+  assert.doesNotMatch(transcript.textContent,/NAME_MATCH_ONLY/);
+  assert.match(transcript.textContent,/Send the VIN to look up supplier part codes/);
+  assert.doesNotMatch(transcript.textContent,/SOURCE_FAILED|VIN_NOT_PROVIDED|SOME_SOURCES_UNAVAILABLE/);
   assert.match(transcript.textContent,/2026-01-01/);
   assert.doesNotMatch(transcript.textContent,/1HGCM82633A004352/);
   assert.equal(transcript.querySelectorAll('script').length,0);
@@ -92,5 +105,25 @@ const flush=async()=>{for(let i=0;i<30;i++)await Promise.resolve();};
   assert.equal(calls.length,before,'Reset prevents stale polling');
   assert.equal(transcript.textContent,'');
   assert.equal(field('chat-send').disabled,false);
+  // Cards found while the turn is still running appear in a live bubble that the final
+  // reply replaces; polling starts quickly.
+  await field('new-chat').fire('click');
+  await flush();
+  timers.length=0;
+  let livePolls=0;
+  const runningFixture={...fixture,status:'RUNNING',answer:''};
+  responder=async url=>url.endsWith('/conversations')?{conversation_id:'c3'}:url.endsWith('/messages')?{turn_id:'t4'}:(livePolls++===0?runningFixture:fixture);
+  field('message').value='Find AP104/2';
+  const liveTurn=field('chat-form').fire('submit');
+  await flush();
+  assert.match(transcript.textContent,/Still checking — found so far/);
+  assert.match(transcript.textContent,/In the store: 16/);
+  assert.match(field('chat-progress').textContent,/Example Car 2013/);
+  timers.shift()();
+  await liveTurn;
+  await flush();
+  assert.doesNotMatch(transcript.textContent,/Still checking/);
+  assert.match(transcript.textContent,/Here are catalog candidates/);
+  assert.equal(transcript.textContent.split('In the store: 16').length,2,'The live copy is replaced, not duplicated');
   console.log('PASS: transcript, bilingual messages, catalog/supplier labels, text-only rendering, VIN privacy, pagination, follow-up session reuse, reset and stale-create/poll invalidation.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

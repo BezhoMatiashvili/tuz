@@ -14,6 +14,7 @@ from typing import Any
 
 import requests
 
+from automotive.categories import matches_category
 from automotive.codes import normalize_code, parse_codes
 from automotive.vin import validate_vin
 
@@ -163,7 +164,17 @@ class MotoriumClient:
             if result['status'] == 'CONFLICTED' or not result['vehicle_context_matched']:
                 return result
             exhausted = False
-            for raw in source['products'][:limit]:
+            products = source['products']
+            context = source.get('context')
+            part_established = isinstance(context, dict) and isinstance(context.get('part'), dict)
+            if part_query.strip() and not part_established:
+                # Unconfirmed category: keep only products named for the requested part.
+                products = [
+                    raw for raw in products if isinstance(raw, dict) and matches_category(
+                        {'product_name': _text(raw.get('name')) or ''}, part_query,
+                    )
+                ]
+            for raw in products[:limit]:
                 if not isinstance(raw, dict):
                     continue
                 item = self._item(raw)
@@ -185,7 +196,7 @@ class MotoriumClient:
                 if exhausted:
                     result['warnings'].append('TIME_LIMIT')
                     break
-            result['has_more'] = len(source['products']) > limit or exhausted
+            result['has_more'] = len(products) > limit or exhausted
             if result['items']:
                 result['status'] = ('CONFLICTED' if any(i['status'] == 'CONFLICTED'
                                                       for i in result['items']) else 'PROVISIONAL')
@@ -239,9 +250,11 @@ class MotoriumClient:
             result['warnings'].append('VEHICLE_CONTEXT_MISMATCH')
             result['clarification'] = 'Motorium-მა VIN სხვა მოდელს დაუკავშირა; კოდები არ დაბრუნდა.'
             return result
+        # The vehicle identity matched. A missing structured part context only means
+        # the provider did not confirm the requested category, so lookup() keeps
+        # products whose own names match it and labels the result provisional.
         if part_query.strip() and not isinstance(context.get('part'), dict):
             result['warnings'].append('PART_QUERY_NOT_ESTABLISHED')
-            return result
         result['vehicle_context_matched'] = True
         return result
 

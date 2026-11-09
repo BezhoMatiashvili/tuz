@@ -358,3 +358,58 @@ independent supplier/manufacturer validation before treating candidates as confi
   VIN + "brakes" asks for pads/discs and axle; front pads return 12 and "rear ones" returns 5
   catalog candidates, all with unknown stock. Motorium reported CONFLICTED for the probe VIN,
   so the supplier-code-to-warehouse bridge is NOT confirmed live; results are PARTIAL.
+
+### Follow-up — Fast, accurate vehicle-part lookup (2026-11-09)
+- Cause of the empty/`SOME_SOURCES_UNAVAILABLE` replies: broad questions waited on eight sequential
+  Motorium calls plus every chooser (73.7 s previously), any non-OK source made the whole answer
+  partial, Motorium withheld codes when the assistant omitted a structured part, and exact code hits
+  were dropped by the product-name category filter.
+- Chat answers a known vehicle plus category (or a VIN with no category) directly from the read job
+  before any model call; brakes/oil show candidates together with their clarification.
+- Sources are scoped to the requested category, Motorium categories run in a small pool, VIN is
+  optional for make/model/year jobs and oil choosers, JS Asakashi filter codes are matched in the
+  warehouse, and the engine-oil category excludes sensors, coolers, pumps and gearbox oils.
+- Real failures are named per source and localized in the chat UI. Verified live (read-only): front
+  brake pads for the public Honda fixture VIN returned 12 catalog candidates in 6.8 s (previously
+  one 75 s federation); Motorium reported the known fixture identity conflict by name.
+- Tests: 274 total, 263 passed, 11 skipped (PostgreSQL/loopback); Ruff, Bandit and both Node DOM
+  suites pass. Restart the server to load the change.
+
+### Follow-up — VIN to requirement to code to stock (2026-11-09)
+- Stock mapping confirmed from the source screenshot and the stored columns: `column_10` is
+  the store, `column_12` (TUZ 11) arrives in 1-2 hours, `column_11` (TUZ 6) is unused.
+  Chat offers only items in the store or TUZ 11 and states the availability.
+- Chat offers are derived from the car's requirement (VIN codes, chooser oil grade, engine
+  family, reviewed fitment), never from make/model names. New `oil_change` bundle.
+- Choosers are matched by trim, fuel and body, not by displacement (vPIC said 3.0 L where
+  Shell lists the same engine as 3.5 L). Verified read-only for a 2015 E 400 Coupe: engine
+  `M 276.850`, 0W-40 / 5W-40, 6.5 L; in-store Shell Helix Ultra 5W-40 and the MANN M276 oil
+  filter were offered.
+- Tests: 309 total, 298 passed, 11 skipped (PostgreSQL/loopback); Ruff, Bandit, Node UI tests pass.
+
+### Follow-up — Name fallback and optional catalog API (2026-11-09)
+- When no code can be derived for a named part, chat offers in-stock name matches with the stated
+  year range checked and a "verify compatibility" label; never for oil, never when a code-derived
+  offer exists. Make aliases (MB, VW) and flexible model spelling added to name candidates, which
+  are now ordered stocked-first.
+- Added `automotive/catalog_api.py`: key-gated VIN to OE/part-number client (RapidAPI "Auto Parts
+  Catalog" defaults), a source in the VIN federation, and `--check-catalog-api`. Activated with the
+  user's key and verified live on one VIN (2015 E 400 Coupe, exact vehicle found): part groups are
+  taken from the vehicle's own category tree and numbers match only with the same brand. Coverage
+  across other cars is not measured yet.
+- Tests: 335 total, 324 passed, 11 skipped; Ruff, Bandit and Node UI tests pass.
+
+### Follow-up — Faster answers and stricter accuracy (2026-11-09)
+- Found by measurement: the code index was empty (0 of 65,805 products), so each code search
+  scanned every row (~1 s), and the answer waited for the slowest source (Motorium 5.5 s, Fuchs up
+  to 10 s). Migration `0007` adds a stock-independent `content_hash`; the index was built locally
+  (49 s, 173,021 codes) and a lookup is now ~60 ms. The worker has `--auto` and a systemd timer.
+- Pipeline tiers, shared 24 h caches, parallel catalog calls, prewarm, faster polling and live
+  cards. Live read-only timings for the E 400 VIN: oil change 4.6 s (was 10-18 s), front brake
+  pads 1.3 s, air filter 2.3 s, cabin filter 0.9 s (warm).
+- Hard rules (active-only, axle with `წნ`/`უკ`, part-type conflict, vehicle consistency, code
+  safety, 24 h freshness, oil quantity) and the staff-editable `automotive/rules.toml`.
+- `--evaluate` batch tool; first run on two VINs showed the axle rule removing rear-axle pads for a
+  front request and Motorium's 5 s fallback as the main remaining delay on non-European cars.
+- Tests: 386 total, 375 passed, 11 skipped (PostgreSQL/loopback).
+

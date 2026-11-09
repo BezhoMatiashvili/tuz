@@ -93,7 +93,10 @@ def _redact(value: str, secrets: tuple[str, ...] = ()) -> str:
 
 class ChatService:
     def __init__(self, repository: Any, vin_service: Any, settings: Settings,
-                 client: Any = None) -> None:
+                 client: Any = None, rules: Any = None) -> None:
+        from automotive.rules import Rules
+
+        self.rules = rules or Rules()
         self.repository = repository
         self.vin_service = vin_service
         self.settings = settings

@@ -10,6 +10,7 @@ import json
 import re
 import time
 import unicodedata
+from collections import Counter
 from collections.abc import Callable, Sequence
 from typing import Any, Literal
 
@@ -17,17 +18,23 @@ import anthropic
 import psycopg
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from automotive.codes import parse_codes, product_codes
+from automotive import name_match, oil_match, stock
+from automotive.codes import normalize_code, parse_codes, product_codes
 from automotive.recommendations import RecommendationService
+from automotive.rules import Rules, axle_verdict, requested_axle
 from automotive.vehicle_inventory import VehicleInventoryService
 
+# Warnings that inform the customer but do not make an answer incomplete.
+INFO_WARNINGS = {'STOCK_MAY_BE_STALE', 'VIN_NOT_PROVIDED', 'NAME_MATCH_ONLY',
+                 'MORE_CATALOG_CANDIDATES', 'VEHICLE_CONTEXT_CHANGED'}
 VEHICLE_FIELDS = {
-    'make', 'model', 'model_year', 'engine_code', 'fuel_type', 'fuel', 'transmission',
+    'make', 'model', 'model_year', 'trim', 'engine_code', 'fuel_type', 'fuel', 'transmission',
     'market', 'displacement_l', 'engine_cylinders', 'body', 'drive',
 }
 ACTS = Literal[
     'greeting', 'help', 'clarify_vehicle', 'clarify_engine', 'clarify_brakes',
     'clarify_axle', 'results', 'no_results', 'acknowledge',
+    'oil_resolved', 'none_in_stock', 'no_vehicle_codes',
 ]
 TEXT = {
     'greeting': (
@@ -71,6 +78,22 @@ TEXT = {
         'დააზუსტოთ ავტომობილი და ნაწილის დასახელება.',
         'I could not find a warehouse match in this search. '
         'Try an exact code or clarify the vehicle and part name.',
+    ),
+    'oil_resolved': (
+        'წყაროების მიხედვით ამ ძრავის მოთხოვნა დადგენილია (იხ. ქვემოთ). ნაჩვენებია ჩვენთან '
+        'არსებული შესაბამისი პროდუქტები; დაშვებები (approval) დამოუკიდებლად დადასტურებული არ არის.',
+        'The sources gave this engine\'s requirement (shown below). These are our matching '
+        'products; approvals are not independently verified.',
+    ),
+    'none_in_stock': (
+        'შესაბამისი ნაწილები ვიპოვე, მაგრამ ახლა არც მაღაზიაში და არც TUZ 11-ში მარაგში არ არის.',
+        'I found suitable parts, but none is in the store or TUZ 11 right now.',
+    ),
+    'no_vehicle_codes': (
+        'ამ ავტომობილის ნაწილის კოდები ხელმისაწვდომი წყაროებიდან ვერ დავადგინე, ამიტომ '
+        'ვარაუდს არ გთავაზობთ. გამომიგზავნეთ ნაწილის OE ან სხვა კოდი.',
+        'I could not determine this car\'s part codes from the available sources, so I am not '
+        'guessing. Send an OE or part number.',
     ),
     'acknowledge': (
         'გასაგებია. რომელი ნაწილის მოძებნა გსურთ?',
@@ -173,6 +196,8 @@ class ConversationTurn:
         from automotive.chat import VIN_PATTERN, _dump, _redact
 
         self.service, self.repository = service, service.repository
+        self.rules = getattr(service, 'rules', None) or Rules()
+        self.rejections: Counter = Counter()
         self.language = language
         self.secrets = tuple(str(getattr(service.settings, key, '') or '') for key in (
             'anthropic_api_key', 'operator_token', 'vin_hmac_key', 'database_url',
@@ -183,6 +208,8 @@ class ConversationTurn:
         self.message = self.redact(message)
         found = VIN_PATTERN.search(message)
         self.vin = found.group().upper() if found else vin
+        self.vin_in_message = bool(found)
+        self._products: dict[str, Any] = {}
         self.context = {k: v for k, v in (vehicle or {}).items() if k in VEHICLE_FIELDS}
         self.history = list(history)[-12:]
         self.category = category[:160]
@@ -208,6 +235,10 @@ class ConversationTurn:
         self.last_sources: list[dict] = []
         self.verified_oils: set[tuple[str, str | None]] = set()
         self.fitment_unavailable = False
+        self.requirements: dict = {}
+        self.lookup_mode = False
+        self.allow_name = False
+        self.hidden_unavailable = 0
 
     def _read_explicit_configuration(self) -> dict:
         """Accept literal configuration answers without allowing model-authored facts.
@@ -296,7 +327,7 @@ class ConversationTurn:
                        'progress': [{'status': 'RUNNING', 'stage': 'VEHICLE_CONTEXT_CHANGED'}]})
 
     def _publish(self, sources: list | None = None) -> None:
-        snapshot = self._answer('OK', 'results', list(self.results))
+        snapshot = self._answer('OK', 'results', list(self.results), final=False)
         self.partial_cards = snapshot['cards']
         self.partial_supplier = snapshot['supplier_only']
         self.progress({**snapshot, 'progress': sources or self.last_sources or [
@@ -325,7 +356,8 @@ class ConversationTurn:
         return manufacturer is not None and (identity, manufacturer) in self.allowed
 
     def _discover(self) -> dict:
-        if not self.vin or self.search_service is None:
+        # A VIN is preferred; make, model and year alone still select a vehicle.
+        if self.search_service is None or not (self.vin or self._vehicle_known()):
             return {'status': 'INSUFFICIENT_DATA', 'items': [],
                     'clarification': 'VIN_REQUIRED', 'vehicle': self.context}
         snapshot = self.search_service.start(
@@ -373,9 +405,27 @@ class ConversationTurn:
             offset = next_offset
         snapshot = {**snapshot, 'items': items[:2000]}
         self.discovery = snapshot
-        if snapshot.get('status') in ('PARTIAL', 'FAILED', 'CONFLICTED'):
-            self.warnings.append('SOME_SOURCES_UNAVAILABLE')
+        # Name each source that actually failed; a long result list or an unrequested
+        # source is not a failure.
+        for source in snapshot.get('sources', []):
+            if self._source_failed(source):
+                self.warnings.append(f"SOURCE_FAILED:{source.get('source_id')}")
         return snapshot
+
+    def _vehicle_known(self) -> bool:
+        return all(self.context.get(k) for k in ('make', 'model', 'model_year'))
+
+    @staticmethod
+    def _source_failed(source: dict) -> bool:
+        status, code = source.get('status'), source.get('error_code')
+        if code in {'NOT_REQUESTED', 'VIN_REQUIRED', 'MULTIPLE_ENGINES', 'NOT_NEEDED'}:
+            return False
+        if status in {'ERROR', 'SKIPPED', 'CONFLICTED'}:
+            return True
+        return status == 'PARTIAL' and code in {
+            'TIME_LIMIT', 'DATABASE_UNAVAILABLE', 'PROVIDER_UNAVAILABLE', 'RATE_LIMITED',
+            'ACCESS_REQUIRED', 'INVALID_RESPONSE',
+        }
 
     def _execute(self, name: str, args: BaseModel) -> dict:
         self._check()
@@ -409,6 +459,92 @@ class ConversationTurn:
                 self.context, deadline=self.deadline,
             )
         raise ValueError('tool_not_allowed')
+
+    def _lookup_requested(self) -> bool:
+        """Vehicle-part question with no user-supplied code: no model round trip needed."""
+        return (self._vehicle_known() and not self.user_allowed
+                and bool(self.category or self.vin_in_message))
+
+    def _lookup_turn(self, clarify: str | None) -> dict:
+        from automotive.categories import category_for_query
+
+        self.lookup_mode = True
+        kind = category_for_query(self.category)
+        steps: list[tuple[str, BaseModel, bool]] = []
+        if kind == 'engine_oil':
+            steps.append(('recommend_oil', EmptyInput(), False))
+        steps.append(('discover_vehicle_parts' if self.search_service is not None
+                      else 'vehicle_inventory', EmptyInput(), True))
+        refs: list[str] = []
+        status = 'CLARIFICATION' if clarify else 'OK'
+        for name, args, authorize in steps:
+            try:
+                self.usage['tool_executions'] += 1
+                refs.append(self._add(name, self._execute(name, args), authorize=authorize))
+            except TimeoutError:
+                status = 'TIMEOUT'
+                break
+            except (RuntimeError, ValueError, OSError, psycopg.Error):
+                if self.cancelled():
+                    status = 'CANCELLED'
+                    break
+                self.warnings.append('SOURCE_UNAVAILABLE')
+        if status in {'OK', 'CLARIFICATION'}:
+            try:
+                self._check()
+                self._staff_rows(kind, refs)
+            except TimeoutError:
+                status = 'TIMEOUT'
+            except (RuntimeError, ValueError, OSError, psycopg.Error):
+                self.warnings.append('SOURCE_UNAVAILABLE')
+        if kind in {'engine_oil', 'oil_change'} and status in {'OK', 'CLARIFICATION'}:
+            try:
+                self._check()
+                self._oil_requirement(kind, refs)
+            except TimeoutError:
+                status = 'TIMEOUT'
+            except (RuntimeError, ValueError, OSError, psycopg.Error):
+                self.warnings.append('SOURCE_UNAVAILABLE')
+        if not self.vin:
+            self.warnings.append('VIN_NOT_PROVIDED')
+        return self._answer(status, clarify or 'results', refs)
+
+    def _staff_rows(self, kind: str | None, refs: list[str]) -> None:
+        """Fitments staff confirmed in rules.toml for this car and part type."""
+        confirmed = self.rules.confirmed_for(self.context, kind)
+        if not confirmed:
+            return
+        found = self.repository.search_parts_many([rule.product_code for rule in confirmed])
+        label = ('დადასტურებულია ჩვენი პერსონალის მიერ' if self.language == 'ka'
+                 else 'Confirmed by our staff')
+        rows = []
+        for rule in confirmed:
+            for product in found.get(normalize_code(rule.product_code), []):
+                if rule.brand and not self.rules.brands_match(product.get('brand'), rule.brand):
+                    continue
+                rows.append({'product': product, 'status': 'UNKNOWN', 'compatible': None,
+                             'match_type': 'STAFF_CONFIRMED', 'evidence': [], 'warnings': [],
+                             'provenance': [f'{label}: {rule.note}' if rule.note else label]})
+        if rows:
+            refs.append(self._add('staff_rule', {'status': 'PROVISIONAL', 'items': rows,
+                                                 'has_more': False}))
+
+    def _oil_requirement(self, kind: str, refs: list[str]) -> None:
+        """Resolve the grade the engine needs, then find it (and the filter) in the catalog."""
+        need = oil_match.requirements((self.discovery or {}).get('fluids', []))
+        self.requirements = oil_match.summary(need)
+        if need['grades']:
+            rows = oil_match.oil_rows(self.repository, need, self.context, self.language,
+                                      self.rules)
+            if rows and need.get('capacity_l'):
+                self.requirements['coverage'] = oil_match.coverage(rows, need['capacity_l'])
+            refs.append(self._add('oil_grade', {'status': 'PROVISIONAL', 'items': rows,
+                                                'has_more': False}))
+        if kind == 'oil_change' and need.get('engine_code'):
+            self._check()
+            rows = oil_match.engine_family_rows(self.repository, need, self.language)
+            refs.append(self._add('engine_family', {'status': 'PROVISIONAL', 'items': rows,
+                                                    'has_more': False}))
 
     def run(self) -> dict:
         from automotive.chat import MAX_MODEL_REQUESTS, MAX_OUTPUT_TOKENS, MAX_TOOL_EXECUTIONS
@@ -452,12 +588,19 @@ class ConversationTurn:
 
         category = category_for_query(self.category or self.message)
         self.category = self.category or (category or '')
+        clarify = None
         if category in {'brakes', 'brake'}:
-            return self._answer('CLARIFICATION', 'clarify_brakes', list(self.results))
-        if category in {'brake_pads', 'brake_discs'} and not any(
+            clarify = 'clarify_brakes'
+        elif category in {'brake_pads', 'brake_discs'} and not any(
             word in self.category.casefold() for word in ('front', 'rear', 'წინა', 'უკანა')
         ):
-            return self._answer('CLARIFICATION', 'clarify_axle', list(self.results))
+            clarify = 'clarify_axle'
+        if self._lookup_requested():
+            # A known vehicle plus a part category is answered directly from the
+            # catalog; the clarification (axle, pads/discs, engine) is shown with it.
+            return self._lookup_turn(clarify)
+        if clarify:
+            return self._answer('CLARIFICATION', clarify, list(self.results))
         if not self.service.client and not self.service.settings.anthropic_api_key:
             return self._answer('NOT_CONFIGURED', 'help', list(self.results))
 
@@ -592,7 +735,14 @@ class ConversationTurn:
 
         if row.get('compatible') is False:
             return None
-        if category_for_query(self.category) and not matches_category(product, self.category):
+        # Exact supplier-code and source-viscosity hits identify the product themselves;
+        # name/category filters apply only to name-based discovery.
+        exact = row.get('match_type') in {
+            'CODE_CANDIDATE', 'OIL_GRADE_BRAND', 'OIL_GRADE', 'ENGINE_FAMILY',
+            'STAFF_CONFIRMED',
+        }
+        if (not exact and category_for_query(self.category)
+                and not matches_category(product, self.category)):
             return None
         identifier = product.get('source_product_id')
         if not isinstance(identifier, str) or not identifier:
@@ -605,7 +755,9 @@ class ConversationTurn:
             return None
         self._check()
         try:
-            current = self.repository.get_product(identifier)
+            if identifier not in self._products:
+                self._products[identifier] = self.repository.get_product(identifier)
+            current = self._products[identifier]
         except (RuntimeError, OSError, psycopg.Error):
             self.warnings.append('PRODUCT_REFRESH_UNAVAILABLE')
             return None
@@ -615,6 +767,64 @@ class ConversationTurn:
         if product.get('source_fingerprint') != current.get('source_fingerprint'):
             self.warnings.append('STALE_PRODUCT_FINGERPRINT')
             return None
+        basis = self._basis(row, source)
+        # With a selected car, an item must come from the car's requirement (code, oil
+        # grade, engine family or reviewed fitment); a name match is not enough.
+        if basis == 'name' and self._vehicle_known():
+            if not self.allow_name:
+                return None
+            fit = name_match.year_fit(
+                f"{product.get('product_name', '')} {product.get('product_model', '')}",
+                str(self.context.get('model') or ''), self.context.get('model_year'))
+            if fit == name_match.OUT:
+                return None
+            basis = 'name_year' if fit == name_match.IN else 'name'
+            ka = self.language == 'ka'
+            row = {**row, 'provenance': [
+                ('მანქანის სახელი და წლის დიაპაზონი' if ka else 'Car name and year range')
+                if fit == name_match.IN else
+                ('მანქანის სახელი (წელი არ არის მითითებული)' if ka
+                 else 'Car name (no year stated)')],
+                'warnings': list(row.get('warnings', [])) + [
+                    'დაასახელა მხოლოდ მანქანის სახელით; გადაამოწმეთ თავსებადობა.' if ka
+                    else 'Matched by the car\'s name only; please verify compatibility.']}
+        category = category_for_query(self.category)
+        name_text = f"{current.get('product_name', '')} {current.get('product_model', '')}"
+        if basis != 'typed_code' and self.rules.never_reason(current, self.context):
+            self.rejections['never_offer'] += 1
+            return None
+        axle = 'N/A'
+        if basis in {'code', 'engine', 'fitment', 'name', 'name_year'}:
+            # Hard rules for anything derived by code or name; typed codes, oil grades and
+            # staff-confirmed fitments are not second-guessed here.
+            if self.rules.part_conflict(name_text, category):
+                self.rejections['part_type'] += 1
+                return None
+            axle = axle_verdict(name_text, requested_axle(self.category)
+                                or requested_axle(self.message), category)
+            if axle == 'OPPOSITE':
+                self.rejections['axle'] += 1
+                return None
+            if axle == 'UNSTATED':
+                row = {**row, 'warnings': list(row.get('warnings', [])) + [
+                    'ღერძი სახელში მითითებული არ არის; გადაამოწმეთ წინა/უკანა.'
+                    if self.language == 'ka' else
+                    'Axle not stated in the name; confirm front or rear.']}
+        state = stock.classify(current.get('stock'), self.rules.min_store, self.rules.min_tuz11)
+        observed = current.get('last_observed_at')
+        age = stock.age_hours(observed)
+        too_old = age is not None and age > self.rules.hide_after_hours
+        if too_old and state != stock.UNKNOWN:
+            # Quantities this old are not a fact: ask the customer to confirm instead.
+            state = stock.UNKNOWN
+            self.rejections['stale_stock'] += 1
+        if state == stock.UNAVAILABLE and basis != 'typed_code':
+            self.hidden_unavailable += 1
+            self.rejections['no_stock'] += 1
+            return None
+        if state in {stock.IN_STORE, stock.WITHIN_HOURS} and stock.is_stale(
+                observed, hours=self.rules.stale_hours):
+            self.warnings.append('STOCK_MAY_BE_STALE')
         # A code match is tied to the refreshed row's fingerprint; generated prose
         # and arbitrary result payload keys never become product fields.
         fields = {'source_product_id', 'source_fingerprint', 'product_code', 'product_name',
@@ -623,36 +833,84 @@ class ConversationTurn:
         authoritative = {k: v for k, v in current.items() if k in fields}
         authoritative['matched_codes'] = product.get('matched_codes', [])
         row = dict(row)
-        if category_for_query(self.category) == 'engine_oil':
+        if category_for_query(self.category) in {'engine_oil', 'oil_change'}:
             identity = (identifier, current.get('source_fingerprint'))
             if identity in self.verified_oils:
                 row.update(status='VERIFIED', compatible=True)
             else:
                 row.update(status='UNKNOWN', compatible=None)
-                row['warnings'] = list(row.get('warnings', [])) + [
-                    'Oil suitability requires vehicle specifications and product approvals.',
-                ]
+                if basis in {'name', 'typed_code'}:
+                    row['warnings'] = list(row.get('warnings', [])) + [
+                        'Oil suitability requires vehicle specifications and product approvals.',
+                    ]
         if self.fitment_unavailable:
             row.update(status='UNKNOWN', compatible=None)
         return {
             'product': authoritative, 'match_source': source,
             'fitment_status': row.get('status', 'UNKNOWN'),
             'compatible': row.get('compatible'),
-            'availability': 'Found in our catalog; stock unconfirmed.',
+            'availability': (stock.STALE_TEXT[0 if self.language == 'ka' else 1] if too_old
+                             else stock.availability_text(
+                                 current.get('stock'), self.language,
+                                 self.rules.min_store, self.rules.min_tuz11)),
+            'availability_status': state, 'basis': basis, 'axle': axle,
+            'approval': row.get('approval'),
+            'matched_via': [v for v in row.get('provenance', []) if isinstance(v, str)][:4],
+            'pack_litres': row.get('pack_litres'), 'role': row.get('role'),
             'warnings': list(row.get('warnings', [])), 'evidence': row.get('evidence', []),
         }
 
-    def _answer(self, status: str, act: str, refs: list[str]) -> dict:
-        expired = time.monotonic() >= self.deadline
-        cards: dict[str, dict] = {
-            c['product']['source_product_id']: c for c in self.partial_cards
-        } if expired else {}
-        supplier: dict[str, dict] = {
-            str(index): row for index, row in enumerate(self.partial_supplier)
-        } if expired else {}
-        selected = [{'result_id': ref, **self.results[ref]} for ref in dict.fromkeys(refs)
-                    if ref in self.results]
-        oil_checked, oil_verified = False, False
+    @staticmethod
+    def _basis(row: dict, source: str) -> str:
+        """Why this item is offered; only car-derived reasons are strong enough."""
+        match_type = row.get('match_type')
+        if source == 'search_inventory':
+            return 'typed_code'
+        if source == 'recommend_oil':
+            return 'verified_oil'
+        named = {'CODE_CANDIDATE': 'code', 'OIL_GRADE_BRAND': 'oil_grade_brand',
+                 'OIL_GRADE': 'oil_grade', 'ENGINE_FAMILY': 'engine',
+                 'STAFF_CONFIRMED': 'staff_rule'}
+        if match_type in named:
+            return named[match_type]
+        if row.get('status') == 'VERIFIED' or match_type in {
+                'VERIFIED_FITMENT', 'FITMENT_CANDIDATE'}:
+            return 'fitment'
+        return 'name'
+
+    @staticmethod
+    def _ordered(cards: list[dict]) -> list[dict]:
+        """In the store first, then TUZ 11; stronger reasons before weaker ones."""
+        strength = {'staff_rule': 0, 'verified_oil': 0, 'fitment': 1, 'code': 2, 'typed_code': 2,
+                    'oil_grade_brand': 3, 'engine': 3, 'oil_grade': 4, 'name_year': 5, 'name': 6}
+        return sorted(cards, key=lambda c: (
+            stock.RANKS.get(c.get('availability_status'), 2),
+            1 if c.get('axle') == 'UNSTATED' else 0,
+            0 if c.get('approval') == 'STATED' else 1, strength.get(c.get('basis'), 6)))
+
+    def _requirements(self, cards: list[dict]) -> dict:
+        """What the car needs, and which part of an oil change has no stocked match."""
+        result = dict(self.requirements)
+        from automotive.categories import PATTERNS, category_for_query
+
+        if category_for_query(self.category) == 'oil_change' and self.lookup_mode:
+            has_oil = any(c.get('basis') in {'oil_grade_brand', 'oil_grade', 'verified_oil'}
+                          for c in cards)
+            has_filter = any(
+                c.get('role') == 'oil_filter' or (
+                    c.get('basis') in {'code', 'fitment'} and re.search(
+                        PATTERNS['oil_filter'], c['product'].get('product_name', ''),
+                        re.IGNORECASE))
+                for c in cards)
+            missing = [name for name, found in (('engine_oil', has_oil),
+                                                ('oil_filter', has_filter)) if not found]
+            if missing:
+                result['missing'] = missing
+        return result
+
+    def _collect(self, selected: list[dict], cards: dict, supplier: dict) -> tuple:
+        """Refresh and gate every result row into cards; returns oil flags and a timeout flag."""
+        oil_checked, oil_verified, timed_out = False, False, False
         try:
             for result in selected:
                 data, tool = result['data'], result['tool']
@@ -689,23 +947,69 @@ class ConversationTurn:
                         if card:
                             cards[card['product']['source_product_id']] = card
         except TimeoutError:
-            status = 'TIMEOUT'
+            timed_out = True
         except (RuntimeError, OSError, psycopg.Error):
             self.warnings.append('FITMENT_UNAVAILABLE')
+        return oil_checked, oil_verified, timed_out
+
+    def _name_fallback_wanted(self, cards: dict, expired: bool) -> bool:
+        """No code-derived offer for a named part: allow year-checked name matches."""
         from automotive.categories import category_for_query
 
-        if (oil_checked or category_for_query(self.category) == 'engine_oil') and not oil_verified:
-            act = 'clarify_engine'
+        return (self.lookup_mode and not cards and not expired and not self.hidden_unavailable
+                and category_for_query(self.category) not in {None, 'engine_oil', 'oil_change'})
+
+    def _answer(self, status: str, act: str, refs: list[str], final: bool = True) -> dict:
+        self.hidden_unavailable = 0
+        self.rejections = Counter()
+        name_fallback = False
+        expired = time.monotonic() >= self.deadline
+        cards: dict[str, dict] = {
+            c['product']['source_product_id']: c for c in self.partial_cards
+        } if expired else {}
+        supplier: dict[str, dict] = {
+            str(index): row for index, row in enumerate(self.partial_supplier)
+        } if expired else {}
+        selected = [{'result_id': ref, **self.results[ref]} for ref in dict.fromkeys(refs)
+                    if ref in self.results]
+        oil_checked, oil_verified, timed_out = self._collect(selected, cards, supplier)
+        status = 'TIMEOUT' if timed_out else status
+        if final and self._name_fallback_wanted(cards, expired):
+            # No code could be derived for this car. Offer in-stock items that name the
+            # car (year range checked), clearly labelled for verification.
+            first_pass, self.rejections = Counter(self.rejections), Counter()
+            self.allow_name, self.hidden_unavailable = True, 0
+            supplier.clear()
+            _, _, timed_out = self._collect(selected, cards, supplier)
+            status = 'TIMEOUT' if timed_out else status
+            self.allow_name = False
+            name_fallback = bool(cards)
+            self.rejections = first_pass | self.rejections  # Same product, counted once.
+        from automotive.categories import category_for_query
+
+        category = category_for_query(self.category)
+        if (oil_checked or category in {'engine_oil', 'oil_change'}) and not oil_verified:
+            resolved = bool(self.requirements.get('grades'))
+            if category == 'oil_change' and not resolved:
+                act = 'clarify_engine'
+            elif category != 'oil_change' or resolved:
+                act = 'oil_resolved' if resolved else 'clarify_engine'
         if status not in {'OK', 'CLARIFICATION'}:
             self.warnings.append(status)
         if cards and status not in {'OK', 'CLARIFICATION'}:
             status = 'PARTIAL'
-        if self.warnings and status == 'OK' and (cards or supplier):
+        if (status == 'OK' and (cards or supplier)
+                and any(w not in INFO_WARNINGS for w in self.warnings)):
             status = 'PARTIAL'
         if act == 'results' and not cards and not supplier:
             act = 'no_results'
         if cards and act in {'help', 'no_results'}:
             act = 'results'
+        if not cards and not supplier and act in {'results', 'no_results', 'oil_resolved'}:
+            if self.hidden_unavailable:
+                act = 'none_in_stock'
+            elif self.lookup_mode:
+                act = 'no_vehicle_codes' if act != 'oil_resolved' else 'no_results'
         answer = TEXT.get(act, TEXT['help'])[0 if self.language == 'ka' else 1]
         if status == 'NOT_CONFIGURED':
             answer = ('ჩატს სჭირდება Anthropic-ის API გასაღები. პირდაპირი ძიება ხელმისაწვდომია.'
@@ -721,8 +1025,13 @@ class ConversationTurn:
         response = {
             'status': status, 'answer': answer, 'result_ids': list(dict.fromkeys(refs)),
             'results': summaries, 'usage': self.usage,
-            'warnings': list(dict.fromkeys(self.warnings)), 'vehicle': self.context,
-            'category': self.category, 'cards': list(cards.values()),
+            'warnings': list(dict.fromkeys(
+                self.warnings + (['NAME_MATCH_ONLY'] if name_fallback else []))),
+            'vehicle': self.context,
+            'category': self.category, 'cards': self._ordered(list(cards.values())),
+            'requirements': self._requirements(list(cards.values())),
+            'diagnostics': {'rejections': dict(self.rejections),
+                            'hidden_unavailable': self.hidden_unavailable},
             'supplier_only': list(supplier.values()),
             'progress': self.last_sources,
         }

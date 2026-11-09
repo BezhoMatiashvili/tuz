@@ -1,0 +1,91 @@
+"""Match a decoded vehicle to a supplier's equipment label by trim, fuel and engine code.
+
+Displacement from a VIN decoder is not trusted over the trim: the same engine can be
+listed with a different displacement by another source. Labels are supplier-asserted.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+
+FUEL_MARKERS = {
+    'gasoline': {'P', 'B', 'G'}, 'petrol': {'P', 'B', 'G'}, 'diesel': {'D'},
+}
+BODY_WORDS = {
+    'coupe': r'coup[eé]', 'convertible': r'convertible|cabrio|roadster|spider|spyder',
+    'wagon': r'wagon|estate|t-model|touring|avant|variant|tourer',
+    'hatchback': r'hatch',
+}
+MARKER = re.compile(r'\(([A-Z])\)')
+ENGINE_CODE = re.compile(r'\(([A-Z]{1,3}\s\d{3}(?:\.\d{1,3})?|[A-Z]{1,3}\d{3}\.\d{1,3})\)')
+
+
+def trim_groups(trim: Any) -> list[str]:
+    return re.findall(r'[A-Za-z]+|\d+', trim) if isinstance(trim, str) else []
+
+
+def trim_search_text(trim: Any) -> str:
+    """`E400` becomes `E 400`, the spelling suppliers usually use in labels."""
+    groups = trim_groups(trim)
+    return ' '.join(groups) if len(''.join(groups)) >= 3 else ''
+
+
+def trim_matches(label: Any, trim: Any) -> bool:
+    groups = trim_groups(trim)
+    if len(''.join(groups)) < 3:
+        return False
+    pattern = r'(?<![A-Za-z0-9])' + r'[\s-]?'.join(re.escape(g) for g in groups) + r'(?![0-9])'
+    return bool(re.search(pattern, str(label or ''), re.IGNORECASE))
+
+
+def fuel_matches(label: Any, fuel: Any) -> bool:
+    """A label with a fuel marker must agree with the decoded fuel; no marker means unknown."""
+    allowed = FUEL_MARKERS.get(str(fuel or '').strip().casefold())
+    markers = set(MARKER.findall(str(label or ''))) & {'P', 'B', 'G', 'D'}
+    return not (allowed and markers and not markers & allowed)
+
+
+def engine_code(label: Any) -> str | None:
+    found = ENGINE_CODE.search(str(label or ''))
+    return found.group(1) if found else None
+
+
+def engine_family(code: Any) -> str | None:
+    """`M 276.850` -> `M276`: the part before the dot, spaces removed."""
+    base = re.sub(r'\s+', '', str(code or '').split('.', 1)[0])
+    return base if len(trim_groups(base)) >= 2 else None
+
+
+def by_body(items: list[dict], label_of: Any, body: Any) -> list[dict]:
+    """Keep labels naming the decoded body type; unchanged when no label names it."""
+    text = str(body or '').casefold()
+    for word, pattern in BODY_WORDS.items():
+        if re.search(pattern, text):
+            named = [item for item in items if re.search(pattern, str(label_of(item) or ''),
+                                                         re.IGNORECASE)]
+            return named or items
+    return items
+
+
+def narrow(items: list[dict], label_of: Any, vehicle: dict) -> list[dict]:
+    """Prefer trim matches, then fuel and body, dropping labels that contradict the vehicle."""
+    by_trim = [item for item in items if trim_matches(label_of(item), vehicle.get('trim'))]
+    fuel = vehicle.get('fuel') or vehicle.get('fuel_type')
+    if by_trim:
+        # A trim that contradicts the fuel is a disagreement between sources: no match.
+        chosen = [item for item in by_trim if fuel_matches(label_of(item), fuel)]
+        return by_body(chosen, label_of, vehicle.get('body'))
+    compatible = [item for item in items if fuel_matches(label_of(item), fuel)]
+    return compatible or items
+
+
+def signature(report: dict) -> tuple:
+    return tuple(sorted((str(item.get('product_name')), str(item.get('viscosity')),
+                         str(item.get('capacity'))) for item in report.get('items') or []))
+
+
+def identical(reports: list[dict]) -> bool:
+    """Several equipment variants may share one recommendation (2WD and 4-matic)."""
+    return bool(reports) and all(r.get('status') == 'PROVISIONAL' for r in reports) and len(
+        {signature(r) for r in reports}) == 1

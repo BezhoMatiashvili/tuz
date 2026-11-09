@@ -8,6 +8,9 @@ import unicodedata
 # Patterns are deliberately shared by PostgreSQL and Python. Georgian stems allow
 # normal inflections; English terms have boundaries so oil does not match a coil.
 PATTERNS = {
+    # A bundle: engine oil plus oil filter. Listed first so it wins over 'oil'.
+    'oil_change': (r'oil[ -]?change|change\s+(my\s+|the\s+)?oil|oil\s+service'
+                   r'|ზეთ\S*\s+(შეცვლ|გამოცვლ|ცვლა|შევცვალ|გამოვცვალ)|(შეცვლ|გამოცვლ|შევცვალ)\S*\s+ზეთ'),
     'brake_pads': r'(^|\W)(pads?|brake[ -]?pads?)(\W|$)|ხუნდ|კალოდკ',
     'brake_discs': r'(^|\W)(brake[ -]?dis[ck]s?|rotors?)(\W|$)|სამუხრუჭე\s+დისკ|მუხრუჭის\s+დისკ',
     'brakes': r'(^|\W)(brakes?|breaks?|pads?|rotors?)(\W|$)|სამუხრუჭ|მუხრუჭ|ხუნდ|კალოდკ',
@@ -18,11 +21,15 @@ PATTERNS = {
     'suspension': r'(^|\W)(suspension|shocks?|struts?)(\W|$)|საკიდარ|ამორტიზატორ',
 }
 OIL_EXCLUSIONS = (
-    r'(^|\W)(filters?|transmission|gear|brake|steering)(\W|$)|ფილტრ|ტრანსმისი|გადაცემ|სამუხრუჭ'
+    r'(^|\W)(filters?|transmission|gear|brake|steering|hydraulic|axle|atf|cvt|coolant|antifreeze'
+    r'|grease|sensor|radiator|pump|gasket|seal|cooler)(\W|$)'
+    r'|ფილტრ|ფილ\.|ტრანსმისი|გადაცემ|სამუხრუჭ|ჰიდრავლ|რედუქტორ|ანტიფრიზ|საცხი|კოლოფის'
+    r'|სენსორ|რადიატორ|ტუმბო|მანჟეტ|შუასადებ|საფენ|ჩობალ|კორპ'
 )
 POSITIONS = {
-    'front': r'(^|\W)front(\W|$)|წინა',
-    'rear': r'(^|\W)rear(\W|$)|უკანა',
+    # `წნ` and `უკ` are the abbreviations the catalogue uses for front and rear.
+    'front': r'(^|\W)front(\W|$)|წინა|(^|[^ა-ჰ])წნ($|[^ა-ჰ])',
+    'rear': r'(^|\W)rear(\W|$)|უკანა|(^|[^ა-ჰ])უკ($|[^ა-ჰ])',
 }
 
 
@@ -43,6 +50,9 @@ def query_patterns(query: str) -> tuple[list[str], list[str]]:
     if not value:
         return [], []
     category = category_for_query(value)
+    if category == 'oil_change':
+        # Names of either part of the bundle (engine oil or oil filter).
+        return [f"({PATTERNS['engine_oil']})|({PATTERNS['oil_filter']})"], []
     patterns = [PATTERNS[category]] if category else [re.escape(value)]
     patterns.extend(pattern for pattern in POSITIONS.values() if re.search(pattern, value))
     return patterns, [OIL_EXCLUSIONS] if category == 'engine_oil' else []

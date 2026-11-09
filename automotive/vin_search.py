@@ -11,14 +11,18 @@ import unicodedata
 import uuid
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import UTC, datetime
-from threading import RLock
+from threading import Event, RLock
 from typing import Any
 
-from automotive.categories import matches_category
+from automotive.catalog_api import categories_for
+from automotive.categories import category_for_query, matches_category
+from automotive.codes import normalize_code
 from automotive.evidence import applies_to, flatten_record
 from automotive.motorium import MotoriumError
+from automotive.public_http import PublicSourceError
 from automotive.recommendations import RecommendationService
 from automotive.repository import AutomotiveRepository
+from automotive.rules import Rules, oem_code_ok, vehicle_consistent
 from automotive.vehicle_inventory import VehicleInventoryService
 from automotive.vin import validate_vin
 
@@ -28,10 +32,21 @@ SOURCE_LABELS = {
     'vpic': 'vPIC · ავტომობილი', 'warehouse': 'ჩვენი საწყობის კატალოგი',
     'fitment': 'შესაბამისობის ჩანაწერები',
     'maintenance': 'სერვისის მოთხოვნები და პროდუქტის დაშვებები', 'motorium': 'Motorium',
+    'fuchs': 'Fuchs · ზეთის შერჩევა', 'shell': 'Shell · ზეთის შერჩევა',
+    'pakelo': 'Pakelo · ზეთის შერჩევა', 'jsfilter': 'JS Asakashi · ფილტრები',
+    'catalog_api': 'კატალოგის API · OE და ნაწილების კოდები',
     'catalog_codes': 'ნაპოვნი კოდები ჩვენს საწყობში',
     'cross_reference': 'მიმართული გადაკვეთის მტკიცებულება',
 }
 TERMINAL = {'COMPLETE', 'PARTIAL', 'FAILED', 'CONFLICTED'}
+# Motorium is asked for the oil filter; oil itself is chosen by grade, not by code.
+OIL_CHANGE_QUERY = 'ზეთის ფილტრი'
+# Seconds a fallback source may take before it is abandoned (it is only a backup).
+FALLBACK_SECONDS = {'motorium': 7.0, 'jsfilter': 5.0, 'pakelo': 4.0, 'fuchs': 4.0, 'shell': 6.0}
+FALLBACK_SOURCES = {'motorium', 'jsfilter', 'pakelo', 'fuchs', 'shell'}
+# Source outcomes that are expected and never make an answer partial.
+QUIET_CODES = ('NOT_REQUESTED', 'VIN_REQUIRED', 'NOT_NEEDED')
+MAX_CODE_LOOKUPS = 60
 
 
 def _key(value: Any) -> str:
@@ -99,25 +114,64 @@ class VINSearchCoordinator:
 
     def __init__(self, repository: Any, vin_service: Any, motorium_service: Any,
                  hmac_key: str, *, motorium_enabled: bool = True,
-                 budget_seconds: float = 75, ttl_seconds: float = 300,
+                 fuchs_service: Any = None, shell_service: Any = None,
+                 pakelo_service: Any = None, jsfilter_service: Any = None,
+                 catalog_service: Any = None,
+                 fuchs_enabled: bool = True, shell_enabled: bool = True,
+                 pakelo_enabled: bool = True, jsfilter_enabled: bool = True,
+                 budget_seconds: float = 75, ttl_seconds: float = 300, rules: Any = None,
                  queries: tuple[str, ...] = DEFAULT_QUERIES) -> None:
         self.repository = repository
         self.vin_service = vin_service
         self.motorium_service = motorium_service
         self.hmac_key = hmac_key.encode()
         self.motorium_enabled = motorium_enabled
+        self._external = {
+            'fuchs': (fuchs_service, bool(fuchs_enabled and fuchs_service is not None)),
+            'shell': (shell_service, bool(shell_enabled and shell_service is not None)),
+            'pakelo': (pakelo_service, bool(pakelo_enabled and pakelo_service is not None)),
+            'jsfilter': (jsfilter_service, bool(jsfilter_enabled and jsfilter_service is not None)),
+        }
+        self._catalog = catalog_service
+        self.rules = rules or Rules()
         self.budget_seconds, self.ttl_seconds = budget_seconds, ttl_seconds
         self.queries = queries
         self._jobs: dict[str, dict] = {}
         self._lock = RLock()
         self._workers = ThreadPoolExecutor(max_workers=2, thread_name_prefix='vin-search')
+        self._warm = ThreadPoolExecutor(max_workers=2, thread_name_prefix='vin-warm')
+        self._reports: dict[tuple, tuple[float, dict]] = {}
 
     def close(self) -> None:
         self._workers.shutdown(wait=False, cancel_futures=True)
+        self._warm.shutdown(wait=False, cancel_futures=True)
 
-    def start(self, vin: str, part_query: str = '', model_year: int | None = None,
+    def prewarm(self, vin: str) -> None:
+        """Start resolving the vehicle as soon as a VIN is seen; failures are silent."""
+        if self._catalog is None or not hasattr(self._catalog, 'warm'):
+            return
+        try:
+            vin = validate_vin(vin)
+            self._warm.submit(self._prewarm, vin)
+        except Exception:  # A warm-up must never affect the customer's request.
+            return
+
+    def _prewarm(self, vin: str) -> None:
+        try:
+            self._catalog.warm(vin, time.monotonic() + 15)
+        except Exception:
+            return
+
+    def start(self, vin: str | None, part_query: str = '', model_year: int | None = None,
               configuration: dict | None = None) -> dict:
-        vin = validate_vin(vin)
+        """Start a read job. Without a VIN, a full make/model/year configuration is required."""
+        if vin is None:
+            if not configuration or not all(
+                configuration.get(k) for k in ('make', 'model', 'model_year')
+            ):
+                raise ValueError('VEHICLE_REQUIRED')
+        else:
+            vin = validate_vin(vin)
         material = json.dumps([vin, part_query, model_year, configuration], sort_keys=True)
         fingerprint = hmac.new(self.hmac_key, material.encode(), hashlib.sha256).hexdigest()
         now = time.monotonic()
@@ -134,15 +188,19 @@ class VINSearchCoordinator:
             identifier = uuid.uuid4().hex
             self._jobs[identifier] = {
                 'fingerprint': fingerprint, 'expires': now + self.ttl_seconds,
-                'status': 'RUNNING', 'vehicle': {}, 'warnings': [
+                'status': 'RUNNING',
+                'vehicle': dict(configuration) if vin is None else {}, 'warnings': [
                     'ყველა ჩართული წყარო მოწმდება; სრული ქარხნული ნაწილების სიის დაფარვა '
                     'არ დასტურდება. წყაროს ჩანაწერი მარაგის რაოდენობას არ ნიშნავს.',
-                ], 'created_at': datetime.now(UTC).isoformat(), 'local': {}, 'supplied': [],
+                ] + ([] if vin is not None else [
+                    'VIN არ არის მითითებული; ძიება მწარმოებლის, მოდელისა და წლის მიხედვითაა.',
+                ]), 'created_at': datetime.now(UTC).isoformat(), 'local': {}, 'supplied': [],
                 'motorium_vehicle': {}, 'sources': {
                     k: {'source_id': k, 'label': label, 'status': 'PENDING', 'count': 0,
                         'completed_queries': 0, 'total_queries': 0, 'coverage_complete': False,
                         'error_code': None} for k, label in SOURCE_LABELS.items()
-                }, 'maintenance': None, 'code_local': [], 'cross_references': [],
+                }, 'maintenance': None, 'fluids': [], 'catalog_items': [],
+                'code_local': [], 'cross_references': [],
                 'part_query': part_query,
             }
             self._workers.submit(self._run, identifier, vin, part_query, model_year, configuration)
@@ -179,7 +237,7 @@ class VINSearchCoordinator:
                 'verified_count': sum(p['status'] == 'VERIFIED' for p in items),
                 'candidate_count': sum(p['status'] != 'VERIFIED' for p in items),
                 'coverage_complete': False, 'created_at': job['created_at'],
-                'maintenance': job['maintenance'],
+                'maintenance': job['maintenance'], 'fluids': job['fluids'],
                 'cross_references': job['cross_references'],
             })
 
@@ -187,6 +245,13 @@ class VINSearchCoordinator:
         with self._lock:
             job = self._jobs.get(identifier)
             if job and job['status'] not in TERMINAL:
+                timers = job.setdefault('timers', {})
+                status = updates.get('status')
+                if status == 'RUNNING':
+                    timers.setdefault(source, time.monotonic())
+                elif status in ('OK', 'EMPTY', 'ERROR', 'PARTIAL', 'CONFLICTED') \
+                        and source in timers and 'elapsed_ms' not in job['sources'][source]:
+                    updates['elapsed_ms'] = int((time.monotonic() - timers[source]) * 1000)
                 job['sources'][source].update(updates)
 
     def _store(self, identifier: str, **updates: Any) -> bool:
@@ -201,33 +266,43 @@ class VINSearchCoordinator:
         if not self.motorium_enabled:
             self._source(identifier, 'motorium', status='DISABLED')
             return
-        queries = (query,) if query.strip() else self.queries
+        queries = ((OIL_CHANGE_QUERY if category_for_query(query) == 'oil_change' else query),
+                   ) if query.strip() else self.queries
         self._source(identifier, 'motorium', status='RUNNING', total_queries=len(queries))
-        partial = False
-        for index, category in enumerate(queries):
+        state: dict[str, Any] = {'partial': False, 'error': None, 'conflict': False,
+                                 'succeeded': 0, 'done': 0}
+        stop = Event()
+
+        def fail(code: str) -> None:
+            with self._lock:
+                state['error'] = state['error'] or code
+
+        def one(category: str) -> None:
+            if stop.is_set() or state['conflict']:
+                return
             if time.monotonic() >= deadline:
-                self._source(identifier, 'motorium', status='PARTIAL', error_code='TIME_LIMIT')
+                fail('TIME_LIMIT')
                 return
             try:
                 result = self.motorium_service.lookup(vin, category, limit=6, deadline=deadline)
             except MotoriumError as error:
-                self._source(identifier, 'motorium', status='PARTIAL' if index else 'ERROR',
-                             error_code=error.code)
+                if error.code in ('RATE_LIMITED', 'ACCESS_REQUIRED'):
+                    stop.set()
+                fail(error.code)
                 return
             except Exception:
-                self._source(identifier, 'motorium', status='PARTIAL' if index else 'ERROR',
-                             error_code='PROVIDER_UNAVAILABLE')
+                fail('PROVIDER_UNAVAILABLE')
                 return
             with self._lock:
                 job = self._jobs.get(identifier)
                 if not job or job['status'] in TERMINAL:
+                    stop.set()
                     return
                 if result.get('vehicle_context_matched'):
                     incoming = result.get('vehicle', {})
                     if (job['motorium_vehicle'] and
                             not same_vehicle(incoming, job['motorium_vehicle'])):
-                        self._source(identifier, 'motorium', status='CONFLICTED',
-                                     error_code='VEHICLE_CONTEXT_MISMATCH')
+                        state['conflict'] = True
                         return
                     job['motorium_vehicle'] = incoming
                     for item in result.get('items', []):
@@ -243,20 +318,45 @@ class VINSearchCoordinator:
                                     row['status'] = 'CONFLICTED'
                                     row['warnings'].append('PRODUCT_IDENTITY_CONFLICT')
                         job['supplied'].append(item)
-                partial |= (bool(result.get('has_more')) or
-                            not result.get('vehicle_context_matched'))
+                # A result list longer than our six-product page is normal; only an
+                # unestablished vehicle or an exhausted deadline makes the source partial.
+                state['partial'] |= (not result.get('vehicle_context_matched')
+                                     or 'TIME_LIMIT' in result.get('warnings', []))
+                state['succeeded'] += 1
+                state['done'] += 1
                 unique = {i['provider_product_id'] for i in job['supplied']}
                 self._source(identifier, 'motorium', count=len(unique),
-                             completed_queries=index + 1)
-            if result.get('status') == 'CONFLICTED' and not result.get('items'):
+                             completed_queries=state['done'])
+                if result.get('status') == 'CONFLICTED' and not result.get('items'):
+                    state['conflict'] = True
+
+        # Category lookups are independent reads: a small pool keeps a broad question fast.
+        pool = ThreadPoolExecutor(max_workers=min(4, len(queries)),
+                                  thread_name_prefix='vin-motorium')
+        try:
+            futures = [pool.submit(one, category) for category in queries]
+            wait(futures, timeout=max(0, deadline - time.monotonic()) + 1)
+            if any(not future.done() for future in futures):
+                stop.set()
+                fail('TIME_LIMIT')
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+        with self._lock:
+            job = self._jobs.get(identifier)
+            if not job or job['status'] in TERMINAL:
+                return
+            supplied = job['supplied']
+            conflicted = state['conflict'] or any(i['status'] == 'CONFLICTED' for i in supplied)
+            if state['conflict']:
                 self._source(identifier, 'motorium', status='CONFLICTED',
                              error_code='VEHICLE_CONTEXT_MISMATCH')
-                return
-        with self._lock:
-            supplied = self._jobs[identifier]['supplied']
-            conflicted = any(i['status'] == 'CONFLICTED' for i in supplied)
-            self._source(identifier, 'motorium', status='CONFLICTED' if conflicted else
-                         'PARTIAL' if partial else ('OK' if supplied else 'EMPTY'))
+            elif state['error']:
+                self._source(identifier, 'motorium',
+                             status='PARTIAL' if state['succeeded'] else 'ERROR',
+                             error_code=state['error'])
+            else:
+                self._source(identifier, 'motorium', status='CONFLICTED' if conflicted else
+                             'PARTIAL' if state['partial'] else ('OK' if supplied else 'EMPTY'))
 
     def _local(self, identifier: str, vehicle: dict, deadline: float) -> None:
         for source in ('warehouse', 'fitment', 'maintenance'):
@@ -303,6 +403,53 @@ class VINSearchCoordinator:
             self._source(identifier, 'maintenance', status='ERROR',
                          error_code='DATABASE_UNAVAILABLE')
 
+    @staticmethod
+    def _filter_codes(job: dict) -> list[tuple[str, str | None]]:
+        """Filter part numbers published for this vehicle by the JS Asakashi catalogue."""
+        wanted = {'oil_filter': 'OIL', 'air_filter': 'AIR', 'cabin_filter': 'CABIN'}.get(
+            category_for_query(job['part_query']) if job['part_query'].strip() else '',
+        )
+        codes: list[tuple[str, str | None]] = []
+        for report in job['fluids']:
+            if report.get('provider') != 'JS Asakashi':
+                continue
+            for item in report.get('items') or []:
+                if item.get('product_code') and (wanted is None or item.get('component') == wanted):
+                    codes.append((item['product_code'], None))
+        return codes
+
+    def _brand_ok(self, warehouse_brand: Any, supplier: Any) -> bool:
+        """A part number is only trusted with its brand: `MANN` matches `MANN-FILTER`."""
+        return self.rules.brands_match(warehouse_brand, supplier)
+
+    def _catalog_matches(self, repository: Any, items: list[dict]) -> list[tuple[dict, str]]:
+        """Warehouse products for catalog-API numbers: OE numbers any brand, part numbers
+        only from the same brand (a bare number can collide with another brand's)."""
+        wanted: dict[str, list[tuple[Any, str]]] = {}
+        order: list[str] = []
+        for item in items:  # OE numbers first: they are the most specific.
+            for code in item.get('oem_codes', []):
+                wanted.setdefault(normalize_code(code), []).append(
+                    (None, f'Catalog API OE: {code}'))
+                order.append(code)
+        for item in items:
+            wanted.setdefault(normalize_code(item['code']), []).append(
+                (item.get('supplier') or '', f"Catalog API: {item['code']}"))
+            order.append(item['code'])
+        order = list(dict.fromkeys(c for c in order if normalize_code(c)))
+        if callable(getattr(type(repository), 'search_parts_many', None)):
+            found = repository.search_parts_many(order)
+        else:
+            found = {normalize_code(c): repository.search_parts(c, limit=100)['items']
+                     for c in order[:MAX_CODE_LOOKUPS]}
+        matches: list[tuple[dict, str]] = []
+        for normalized, products in found.items():
+            for product in products:
+                for supplier, via in wanted.get(normalized, []):
+                    if supplier is None or self._brand_ok(product.get('brand'), supplier):
+                        matches.append((product, via))
+        return matches
+
     def _codes(self, identifier: str, deadline: float) -> None:
         """Bridge supplier identifiers to our catalog, retaining candidate uncertainty."""
         with self._lock:
@@ -310,11 +457,23 @@ class VINSearchCoordinator:
             vehicle = dict(job['vehicle'])
             supplied = (job['supplied'] if same_vehicle(vehicle, job['motorium_vehicle']) else [])
             supplied = [i for i in supplied if i['status'] != 'CONFLICTED']
-            codes = [(i['mpn'], i.get('manufacturer')) for i in supplied]
-            codes += [(code, None) for i in supplied for code in i.get('oem_codes', [])]
+            if job['part_query'].strip():
+                supplied = [i for i in supplied if matches_category(
+                    {'product_name': i.get('name')}, job['part_query'],
+                )]
+            sourced = [(i['mpn'], i.get('manufacturer'), 'Motorium') for i in supplied]
+            # A short or all-digit OEM-labelled code with no brand can collide; drop it.
+            sourced += [(code, None, 'Motorium') for i in supplied
+                        for code in i.get('oem_codes', []) if oem_code_ok(code)]
+            sourced += [(code, manufacturer, 'JS Asakashi')
+                        for code, manufacturer in self._filter_codes(job)]
+            catalog_items = list(job['catalog_items'])
+            codes = [(c, m) for c, m, _ in sourced]
+            origin: dict[tuple, str] = {}
+            for code, manufacturer, name in sourced:
+                origin.setdefault((code, manufacturer), name)
             local_codes = [(i['product'].get('product_code'), i['product'].get('brand'))
                            for i in job['local'].get('items', [])]
-            part_query = job['part_query']
         codes = list(dict.fromkeys((c, m) for c, m in codes if c))
         self._source(identifier, 'catalog_codes', status='RUNNING',
                      total_queries=len(codes))
@@ -322,10 +481,10 @@ class VINSearchCoordinator:
         if isinstance(repository, AutomotiveRepository):
             repository = AutomotiveRepository(repository.database_url, statement_timeout_ms=5000)
         rows: dict[str, dict] = {}
-        partial = len(codes) > 24
+        partial = len(codes) > MAX_CODE_LOOKUPS
         reason = 'RESULT_LIMIT' if partial else None
         failed = False
-        for index, (code, manufacturer) in enumerate(codes[:24]):
+        for index, (code, manufacturer) in enumerate(codes[:MAX_CODE_LOOKUPS]):
             if time.monotonic() >= deadline:
                 partial = True
                 reason = 'TIME_LIMIT'
@@ -339,9 +498,12 @@ class VINSearchCoordinator:
             if len(result['items']) >= 100:
                 reason = 'RESULT_LIMIT'
             for product in result['items']:
-                if not matches_category(product, part_query):
-                    continue
+                # An exact supplier-code hit identifies the product; its catalog name
+                # (often only a brand string) does not need to repeat the category.
+                via = f'{origin.get((code, manufacturer), "")}: {code}'.strip(': ')
+                known = rows.get(product['source_product_id'], {}).get('provenance', [])
                 rows[product['source_product_id']] = {
+                    'provenance': known + ([via] if via not in known else []),
                     'product': product, 'status': 'UNKNOWN', 'compatible': None,
                     'match_type': 'CODE_CANDIDATE', 'evidence': [],
                     'warnings': ['წყაროს კოდით ნაპოვნი საწყობის კანდიდატია; '
@@ -350,6 +512,22 @@ class VINSearchCoordinator:
             if not self._store(identifier, code_local=list(rows.values())):
                 return
             self._source(identifier, 'catalog_codes', count=len(rows), completed_queries=index + 1)
+        if catalog_items and not failed and time.monotonic() < deadline:
+            try:
+                for product, via in self._catalog_matches(repository, catalog_items):
+                    known = rows.get(product['source_product_id'], {}).get('provenance', [])
+                    rows[product['source_product_id']] = {
+                        'provenance': known + ([via] if via not in known else []),
+                        'product': product, 'status': 'UNKNOWN', 'compatible': None,
+                        'match_type': 'CODE_CANDIDATE', 'evidence': [],
+                        'warnings': ['წყაროს კოდით ნაპოვნი საწყობის კანდიდატია; '
+                                     'VIN-თან შესაბამისობა და ურთიერთჩანაცვლება დაუდასტურებელია.'],
+                    }
+            except Exception:
+                failed = True
+            if not self._store(identifier, code_local=list(rows.values())):
+                return
+            self._source(identifier, 'catalog_codes', count=len(rows))
         self._source(identifier, 'catalog_codes',
                      status='PARTIAL' if partial or (failed and rows) else 'ERROR' if failed
                      else 'OK' if rows else 'EMPTY',
@@ -374,20 +552,151 @@ class VINSearchCoordinator:
             self._source(identifier, 'cross_reference', status='ERROR',
                          error_code='DATABASE_UNAVAILABLE')
 
-    def _run(self, identifier: str, vin: str, query: str, year: int | None,
-             configuration: dict | None) -> None:
-        deadline = time.monotonic() + self.budget_seconds
-        pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix='vin-source')
+    def _catalog_api(self, identifier: str, vin: str, vehicle: dict, query: str,
+                     deadline: float) -> None:
+        """VIN to OE and part numbers from the optional catalog API."""
+        categories = categories_for(query)
+        self._source(identifier, 'catalog_api', status='RUNNING', total_queries=len(categories))
         try:
-            self._source(identifier, 'vpic', status='RUNNING')
-            pending = {
-                pool.submit(self.vin_service.decode, vin, year, deadline=deadline): 'vpic',
-                pool.submit(self._motorium, identifier, vin, query,
-                            deadline - min(15, self.budget_seconds * 0.2)): 'motorium',
-            }
-            vpic_done, local_started, codes_started = False, False, False
-            while pending and time.monotonic() < deadline:
-                finished, _ = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
+            report = self._catalog.lookup(vin, vehicle, categories, deadline=deadline)
+        except PublicSourceError as exc:
+            self._source(identifier, 'catalog_api', status='ERROR', error_code=exc.code)
+            return
+        except Exception:
+            self._source(identifier, 'catalog_api', status='ERROR',
+                         error_code='PROVIDER_UNAVAILABLE')
+            return
+        status = {'PROVISIONAL': 'OK', 'EMPTY': 'EMPTY', 'CONFLICTED': 'CONFLICTED'}.get(
+            str(report.get('status')), 'ERROR')
+        with self._lock:
+            job = self._jobs.get(identifier)
+            if not job or job['status'] in TERMINAL:
+                return
+            job['catalog_items'] = list(report.get('items') or [])
+            job['catalog_label'] = report.get('vehicle_label') or ''
+        self._source(identifier, 'catalog_api', status=status, count=len(report.get('items') or []),
+                     completed_queries=len(categories),
+                     error_code='MULTIPLE_VEHICLES' if status == 'CONFLICTED' else None)
+
+    def _fluid(self, identifier: str, source: str, service: Any, vin: str,
+               vehicle: dict, deadline: float) -> None:
+        self._source(identifier, source, status='RUNNING', total_queries=1)
+        # Chooser answers depend only on the vehicle, so they are shared for a day.
+        cache_key = (source, *(_key(vehicle.get(k)) for k in (
+            'make', 'model', 'model_year', 'trim', 'fuel', 'body')))
+        with self._lock:
+            hit = self._reports.get(cache_key)
+        try:
+            if hit and hit[0] > time.monotonic():
+                report = copy.deepcopy(hit[1])
+            else:
+                report = service.lookup(vin, vehicle, deadline=deadline)
+                if isinstance(report, dict) and report.get('status') in {
+                        'PROVISIONAL', 'EMPTY', 'CONFLICTED'}:
+                    with self._lock:
+                        if len(self._reports) > 500:
+                            self._reports.clear()
+                        self._reports[cache_key] = (time.monotonic() + 24 * 3600,
+                                                    copy.deepcopy(report))
+        except PublicSourceError as exc:
+            self._source(identifier, source, status='ERROR', error_code=exc.code,
+                         completed_queries=1)
+            return
+        except Exception:
+            self._source(identifier, source, status='ERROR', error_code='PROVIDER_UNAVAILABLE',
+                         completed_queries=1)
+            return
+        if not isinstance(report, dict):
+            self._source(identifier, source, status='ERROR', error_code='INVALID_RESPONSE',
+                         completed_queries=1)
+            return
+        mapped = {'PROVISIONAL': 'OK', 'EMPTY': 'EMPTY', 'INSUFFICIENT_DATA': 'EMPTY',
+                  'CONFLICTED': 'CONFLICTED'}.get(str(report.get('status')), 'ERROR')
+        with self._lock:
+            job = self._jobs.get(identifier)
+            if not job or job['status'] in TERMINAL:
+                return
+            job['fluids'].append(report)
+        self._source(
+            identifier, source, status=mapped, count=len(report.get('items') or []),
+            completed_queries=1, error_code='MULTIPLE_ENGINES' if mapped == 'CONFLICTED' else None,
+        )
+
+    @staticmethod
+    def _scope(query: str) -> set[str]:
+        """External choosers that can answer the requested category (all for a broad one)."""
+        if not query.strip():
+            return {'fuchs', 'shell', 'pakelo', 'jsfilter'}
+        category = category_for_query(query)
+        if category in ('engine_oil', 'oil_change'):
+            return {'fuchs', 'shell', 'pakelo'}
+        if category in ('oil_filter', 'air_filter', 'cabin_filter'):
+            return {'jsfilter'}
+        return set()
+
+    def _run(self, identifier: str, vin: str | None, query: str, year: int | None,
+             configuration: dict | None) -> None:
+        """Fast tier first (vPIC, catalog API, Shell); slower public sources only as fallbacks."""
+        deadline = time.monotonic() + self.budget_seconds
+        scope = self._scope(query)
+        for name, (_service, enabled) in self._external.items():
+            if not enabled:
+                self._source(identifier, name, status='DISABLED')
+            elif name not in scope:
+                self._source(identifier, name, status='SKIPPED', error_code='NOT_REQUESTED')
+            elif vin is None and name == 'jsfilter':
+                self._source(identifier, name, status='SKIPPED', error_code='VIN_REQUIRED')
+        use_catalog = False
+        if self._catalog is None:
+            self._source(identifier, 'catalog_api', status='DISABLED')
+        elif vin is None:
+            self._source(identifier, 'catalog_api', status='SKIPPED', error_code='VIN_REQUIRED')
+        elif not categories_for(query):
+            self._source(identifier, 'catalog_api', status='SKIPPED', error_code='NOT_REQUESTED')
+        else:
+            use_catalog = True
+        pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix='vin-source')
+        pending: dict = {}
+        started: set[str] = set()
+
+        def start(name: str, function: Any, *args: Any, **kwargs: Any) -> None:
+            pending[pool.submit(function, *args, **kwargs)] = name
+            started.add(name)
+
+        def soft(seconds: float) -> float:
+            return min(deadline, time.monotonic() + seconds)
+
+        def start_motorium() -> None:
+            if self.motorium_enabled and vin and 'motorium' not in started:
+                start('motorium', self._motorium, identifier, vin, query,
+                      min(deadline - min(15, self.budget_seconds * 0.2),
+                          time.monotonic() + FALLBACK_SECONDS['motorium']))
+
+        def start_fluid(name: str, vehicle: dict, seconds: float) -> None:
+            service, enabled = self._external[name]
+            if enabled and name in scope and name not in started and not (
+                    vin is None and name == 'jsfilter'):
+                start(name, self._fluid, identifier, name, service, vin, vehicle, soft(seconds))
+
+        try:
+            vpic_done = vin is None
+            if vin is None:
+                # Make, model and year select the vehicle; VIN-only providers do not run.
+                self._source(identifier, 'vpic', status='SKIPPED', error_code='VIN_REQUIRED')
+                self._source(identifier, 'motorium', status='SKIPPED', error_code='VIN_REQUIRED')
+            else:
+                self._source(identifier, 'vpic', status='RUNNING')
+                start('vpic', self.vin_service.decode, vin, year, deadline=deadline)
+                if use_catalog:
+                    start('catalog_api', self._catalog_api, identifier, vin, {}, query,
+                          soft(25))
+            local_started = codes_started = fluids_started = False
+            code_fallback_decided = oil_fallback_decided = False
+            vehicle_checked = not use_catalog
+            first_pass = True
+            while time.monotonic() < deadline:
+                finished, _ = wait(pending, timeout=0.2 if pending else 0,
+                                   return_when=FIRST_COMPLETED)
                 for future in finished:
                     source = pending.pop(future)
                     try:
@@ -404,20 +713,26 @@ class VINSearchCoordinator:
                         if source == 'vpic':
                             self._source(identifier, 'vpic', status='ERROR',
                                          error_code='DECODE_FAILED')
-                        elif source == 'motorium':
-                            self._source(identifier, 'motorium', status='ERROR',
-                                         error_code='PROVIDER_UNAVAILABLE')
-                        else:
+                        elif source == 'local':
                             self._source(identifier, 'warehouse', status='ERROR',
                                          error_code='DATABASE_UNAVAILABLE')
+                        elif source != 'codes':
+                            self._source(identifier, source, status='ERROR',
+                                         error_code='PROVIDER_UNAVAILABLE')
                     if source == 'vpic':
                         vpic_done = True
+                launched = first_pass
+                first_pass = False
                 with self._lock:
                     job = self._jobs[identifier]
                     if vpic_done and not job['vehicle'] and job['motorium_vehicle']:
                         job['vehicle'] = dict(job['motorium_vehicle'])
                         job['warnings'].append(
                             'vPIC ვერ ჩაიტვირთა; გამოყენებულია Motorium-ის იდენტიფიკაცია.')
+                    # Without a vehicle from vPIC, a catalog-only identity is not enough.
+                    if vpic_done and not job['vehicle'] and 'motorium' not in started:
+                        start_motorium()
+                        launched = True
                     if job['vehicle'] and not local_started:
                         vehicle = dict(job['vehicle'])
                         if configuration:
@@ -431,14 +746,42 @@ class VINSearchCoordinator:
                                 job['warnings'].append(
                                     'დაზუსტებული კონფიგურაცია მომხმარებლისგანაა.')
                                 job['vehicle'] = vehicle
-                        pending[pool.submit(self._local, identifier, vehicle, deadline)] = 'local'
-                        local_started = True
-                    if (job['vehicle'] and local_started and not codes_started
-                            and 'motorium' not in pending.values()
-                            and 'local' not in pending.values()
+                        start('local', self._local, identifier, vehicle, deadline)
+                        local_started = launched = True
+                    if job['vehicle'] and not fluids_started:
+                        # Shell is the first oil chooser; the others only back it up.
+                        fluids_started = launched = True
+                        start_fluid('shell', dict(job['vehicle']), FALLBACK_SECONDS['shell'])
+                    shell_settled = fluids_started and 'shell' not in pending.values()
+                    if job['vehicle'] and shell_settled and not oil_fallback_decided:
+                        oil_fallback_decided = launched = True
+                        if job['sources']['shell']['status'] != 'OK':
+                            for name in ('pakelo', 'fuchs'):
+                                start_fluid(name, dict(job['vehicle']),
+                                            FALLBACK_SECONDS[name])
+                    catalog_pending = 'catalog_api' in pending.values()
+                    if use_catalog and not catalog_pending and vpic_done and not vehicle_checked:
+                        vehicle_checked = True
+                        self._check_catalog_vehicle(identifier, job)
+                    if not code_fallback_decided and (
+                            not use_catalog or (not catalog_pending and vpic_done)):
+                        code_fallback_decided = launched = True
+                        usable = (use_catalog and job['sources']['catalog_api']['status'] == 'OK'
+                                  and bool(job['catalog_items']))
+                        if not usable:
+                            start_motorium()
+                            if job['vehicle'] or vin is not None:
+                                start_fluid('jsfilter', dict(job['vehicle']),
+                                            FALLBACK_SECONDS['jsfilter'])
+                    if (job['vehicle'] and local_started and code_fallback_decided
+                            and not codes_started and vehicle_checked
+                            and not {'local', 'catalog_api', 'motorium', 'jsfilter'}
+                            & set(pending.values())
                             and time.monotonic() < deadline):
-                        pending[pool.submit(self._codes, identifier, deadline)] = 'codes'
-                        codes_started = True
+                        start('codes', self._codes, identifier, deadline)
+                        codes_started = launched = True
+                if not pending and not launched:
+                    break
             with self._lock:
                 job = self._jobs[identifier]
                 if job['vehicle'] and job['motorium_vehicle'] and not same_vehicle(
@@ -446,12 +789,18 @@ class VINSearchCoordinator:
                 ):
                     self._source(identifier, 'motorium', status='CONFLICTED',
                                  error_code='VEHICLE_CONTEXT_MISMATCH')
-                for source in job['sources'].values():
-                    if source['status'] in ('RUNNING', 'PENDING'):
+                for name, source in job['sources'].items():
+                    if source['status'] == 'PENDING' and name in FALLBACK_SOURCES \
+                            and name not in started and job['vehicle']:
+                        source.update(status='SKIPPED', error_code='NOT_NEEDED')
+                    elif source['status'] in ('RUNNING', 'PENDING'):
                         source.update(status='SKIPPED' if not local_started else 'ERROR',
                                       error_code='TIME_LIMIT' if pending else 'NO_VEHICLE')
-                failed = any(s['status'] in ('ERROR', 'PARTIAL', 'CONFLICTED', 'SKIPPED')
-                             for s in job['sources'].values())
+                failed = any(
+                    s['status'] in ('ERROR', 'PARTIAL', 'CONFLICTED', 'SKIPPED')
+                    and s.get('error_code') not in QUIET_CODES
+                    for s in job['sources'].values()
+                )
                 job['status'] = ('FAILED' if not job['vehicle'] else
                                  'PARTIAL' if failed else 'COMPLETE')
                 job['expires'] = time.monotonic() + self.ttl_seconds
@@ -465,3 +814,15 @@ class VINSearchCoordinator:
                 job['expires'] = time.monotonic() + self.ttl_seconds
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
+
+    def _check_catalog_vehicle(self, identifier: str, job: dict) -> None:
+        """Hard rule: catalog codes are ignored when its car contradicts the decoded one."""
+        if (not job['catalog_items'] or not job.get('catalog_label')
+                or job['sources']['vpic']['status'] != 'OK'):
+            return
+        if not vehicle_consistent(job['catalog_label'], job['vehicle']):
+            job['catalog_items'] = []
+            self._source(identifier, 'catalog_api', status='CONFLICTED',
+                         error_code='VEHICLE_MISMATCH')
+            job['warnings'].append(
+                'კატალოგის მანქანა VIN-ის ამოცნობას არ ემთხვევა; მისი კოდები არ გამოიყენება.')

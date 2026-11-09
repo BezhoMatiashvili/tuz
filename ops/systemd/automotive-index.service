@@ -1,0 +1,26 @@
+[Unit]
+Description=Refresh the automotive part-code index after a catalogue sync
+Wants=network-online.target
+After=network-online.target warehouse-sync.service
+
+[Service]
+Type=oneshot
+User=warehouse-sync
+Group=warehouse-sync
+WorkingDirectory=/opt/warehouse-sync
+UMask=0077
+Environment=PYTHONUNBUFFERED=1
+# Holds AUTOMOTIVE_ENRICHMENT_DATABASE_URL only; never the sync writer or an admin login.
+EnvironmentFile=/etc/warehouse-sync/automotive-enrichment.env
+ExecStart=/opt/warehouse-sync/.venv/bin/python -m automotive.worker --auto --once
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadOnlyPaths=/opt/warehouse-sync
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native

@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from automotive.repository import AutomotiveRepository
 
 
-def run_once(repository: AutomotiveRepository, batch_size: int = 100) -> bool:
+def run_once(repository: AutomotiveRepository, batch_size: int = 500) -> bool:
     try:
         job = repository.claim_job()
     except Exception:
@@ -36,7 +36,9 @@ def main() -> None:
     load_dotenv()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--once", action="store_true")
-    parser.add_argument("--batch-size", type=int, default=100)
+    parser.add_argument("--batch-size", type=int, default=500)
+    parser.add_argument("--auto", action="store_true",
+                        help="Queue an index job whenever the catalog changed")
     args = parser.parse_args()
     database_url = os.getenv("AUTOMOTIVE_ENRICHMENT_DATABASE_URL")
     if not database_url:
@@ -44,6 +46,8 @@ def main() -> None:
     repository = AutomotiveRepository(database_url)
     while True:
         try:
+            if args.auto:
+                repository.enqueue_index_if_needed()
             run_once(repository, args.batch_size)
         except RuntimeError:
             if args.once:

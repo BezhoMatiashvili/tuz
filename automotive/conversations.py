@@ -164,6 +164,9 @@ class ConversationStore:
         if len(vins) > 1:
             raise ConversationError("CONFLICTING_VINS", 422)
         incoming_vin = next(iter(vins), None)
+        if incoming_vin and hasattr(self.search_service, "prewarm"):
+            # Resolve the car now so the part question that follows is answered from cache.
+            self.search_service.prewarm(incoming_vin)
         safe_message = self._safe(message)
         with self._lock:
             conversation = self._conversation(identifier)

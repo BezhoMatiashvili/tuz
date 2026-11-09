@@ -19,7 +19,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from warehouse_sync.migrations import MIGRATIONS_DIRECTORY, apply_migrations_on_connection
 
 ROOT = Path(__file__).resolve().parents[1]
-AUTOMOTIVE_MIGRATION = "0006_automotive"
+AUTOMOTIVE_MIGRATION = "0007_content_hash_index"
 
 
 class LocalSetupError(RuntimeError):

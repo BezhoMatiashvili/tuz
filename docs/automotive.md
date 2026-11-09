@@ -120,10 +120,11 @@ provider URLs, filesystem paths or model-selected write commands.
 Enter a VIN and press **ყველა წყაროში ძიება**. This starts one read job across
 all **currently connected** sources: vPIC identification, warehouse discovery,
 applicable fitment evidence, maintenance specifications/product approvals, Motorium
-part-code candidates, code matching against our warehouse, and directional
+part-code candidates, Fuchs, Shell and Pakelo oil choices, JS Asakashi filters,
+code matching against our warehouse, and directional
 cross-reference evidence. The **VIN-ით ნაპოვნი ნაწილები · ყველა ჩართული წყარო** panel
 shows each source's progress, failures, counts and combined paginated results.
-VIN is transmitted to vPIC and Motorium; it is absent from job responses and URLs.
+VIN is transmitted to vPIC, Motorium, JS Asakashi and, only if configured, the catalog API. Fuchs, Shell and Pakelo receive the decoded make, model and year. Raw VIN is absent from job responses and URLs.
 
 Leave the optional part description blank for eight bounded category queries
 (general parts, oil/air/cabin filters, brake pads/discs, shock absorbers and suspension),
@@ -132,6 +133,15 @@ exhaustive factory EPC or every internet supplier**. Unconnected paid/manufactur
 catalogs remain external dependencies. Every snapshot has `coverage_complete: false`.
 `COMPLETE` means the bounded reads finished; it never means every part was discovered.
 A failed/truncated source produces `PARTIAL` while preserving other sources' records.
+
+A named part runs only the sources that can answer it: engine oil uses the Fuchs, Shell
+and Pakelo choosers, oil/air/cabin filters use JS Asakashi (its filter codes are searched
+in the warehouse), and other categories run Motorium plus the local catalog. Unrequested
+sources report `SKIPPED` with `NOT_REQUESTED` and do not make a job `PARTIAL`; a long
+supplier result list is not a failure either. A job can start from make, model and year
+(no VIN): vPIC, Motorium and JS Asakashi report `VIN_REQUIRED`, while the local catalog
+and oil choosers still run. Broad category reads (blank part description) run up to four
+Motorium lookups in parallel inside the same ten-per-minute budget.
 
 The job runs for at most 75 seconds, with a separate source deadline reserving time for
 local code matching. The app runs two read jobs concurrently and retains at most 20
@@ -185,7 +195,7 @@ candidate. Stale fingerprint-bound associations cannot confirm the changed produ
 No fitment evidence or mappings are fabricated. An empty list means no supported
 match was found, not that the warehouse has zero stock. The standalone `/inventory/vehicle` response is bounded
 to 30 rows (maximum 100); counts describe returned rows and `has_more` signals more
-records. Confirmed matches sort first. Quantity, price and currency remain unknown
+records. Confirmed matches sort first. Price and currency remain unknown
 until the source mappings are independently established.
 
 If your catalog has no make/model labels or applicable fitment records, search a known
@@ -212,10 +222,12 @@ Search joins indexed matches only when both source fingerprint and parser versio
 match the current warehouse record. Changed/unindexed rows are parsed directly using
 a server cursor. An obsolete association cannot return an old code after a catalog
 change. Large catalogs should be indexed before interactive use because the fallback
-scan may be expensive. Price, currency and stock remain null, with the catalog
-observation timestamp. `is_active` is never treated as stock.
+scan may be expensive. Price and currency remain null, with the catalog
+observation timestamp. `is_active` is never treated as stock. Stock comes from the
+synchronized source columns (below).
 
-Queue an index job using the authenticated API, then run:
+Queue an index job using the authenticated API, or let the worker queue one itself with
+`--auto` (see "Speed" below), then run:
 
 ```bash
 uv run python -m automotive.worker --once
@@ -320,6 +332,15 @@ model requests, history, logs, response payloads and URLs. Restarting loses conv
 run one application process for local use. These capability IDs do not replace staff
 authentication for public deployment.
 
+A message with a known vehicle (decoded VIN or make, model and year) and a part category,
+or a VIN with no category, is answered directly from the same read job without a model
+round trip: warehouse cards appear as the sources finish, brake questions show pad/disc
+candidates together with the front/rear question, and oil shows catalog grades the vehicle
+choosers listed (unverified) with the engine-code note. Messages containing a part code,
+engine details or other free text still use the model-selected read tools. The reply names
+each source that actually failed (`SOURCE_FAILED:<source>`); exact supplier-code hits in the
+warehouse remain even when the catalog name lacks the category word.
+
 Message submission returns immediately. The browser polls every two seconds; a turn
 has a 180-second deadline, and successful source results survive other source failures.
 The response includes `status` (`RUNNING`, `COMPLETE`, `PARTIAL`, `FAILED`), `answer`,
@@ -332,8 +353,64 @@ synonyms, “breaks” for brakes, and front/rear distinctions. Category filters
 before warehouse pagination, including VIN searches. Engine oil is distinct from oil
 filters. Missing brake subtype/axle or engine/oil evidence produces a clarification.
 Unverified oil candidates carry no suitability claim. Catalog cards say **Found in
-our catalog; stock unconfirmed.** Supplier-only identifiers are separately labeled
-**No warehouse match.** Prices and stock remain unknown.
+our catalog; stock unconfirmed.** only when the stock cells are missing; otherwise the
+card states the real availability (below). Supplier-only identifiers are separately labeled
+**No warehouse match.** Prices remain unknown.
+
+### Stock and the "suitable for this car" rule
+
+Stock is read from `warehouse.warehouse_products.source_columns`: `column_10` (the source
+column titled "1") is the quantity in the store; `column_12` ("TUZ 11") is held in
+inventory and reaches the store in one to two hours. `column_11` ("TUZ 6") has no agreed
+meaning and is never used. Products carry `stock: {store, tuz11}` (numbers, or null for a
+cell that is not a plain number). Counts are as fresh as the hourly sync; a card older than
+three hours adds `STOCK_MAY_BE_STALE`.
+
+In chat, an item is offered only when it is **in the store** (`IN_STORE`) or **in TUZ 11**
+(`WITHIN_1_2_HOURS`). Items with zero in both are not offered; if suitable items exist but
+none is stocked the reply says so. An exact code the customer typed is still answered, with
+"Not available now". Missing stock cells show "stock unconfirmed", never "in stock".
+
+With a selected car, an item must also be **derived from the car's requirement**, not from
+its name: an exact code from a VIN source (Motorium, JS Asakashi), an oil grade the vehicle
+choosers recommend, the engine family the chooser gave (oil filters and sump plugs only), or
+reviewed fitment evidence. A product that merely names the make and model is not offered in
+chat (the direct panel still lists such candidates). Each card shows why it was offered
+(`matched_via`), and fitment stays unknown unless evidence verifies it.
+
+**Name fallback.** When no code could be derived for the car and a part category was asked
+(not oil), the bot offers in-stock items whose catalog name contains the make and model
+(common abbreviations such as MB and VW, flexible model spelling). A year range stated right
+after the model (`08-`, `98-03`, `2010 >`) must contain the car's year, otherwise the item is
+dropped; a name with no year is kept and says so. Every such card is labelled "Matched by the
+car's name only; please verify compatibility" and the reply carries `NAME_MATCH_ONLY`. If any
+code-derived offer exists the fallback is not used. Chassis-only names (for example `MB W212`)
+are not matched by name; a catalog API (below) is the fix for those.
+
+**Optional catalog API (`CATALOG_API_KEY`).** A TecDoc-style service (default: RapidAPI
+"Auto Parts Catalog", about $39-69 a month) turns the VIN into OE and part numbers per part
+group (oil filter, air and cabin filter, brake pads and discs, shock absorbers). The numbers
+are searched in the warehouse like any other source code and cards show
+"Catalog API OE: ...". It is off when the key is empty. The VIN is sent to this provider when it
+is on. After adding the key in `.env` run `uv run python -m automotive --check-catalog-api`
+(it asks for a VIN privately and prints only counts and sample codes). The vehicle's own
+part-group ids come from its category tree (`products-groups-variant-1`), not from fixed ids,
+and part numbers are trusted only together with their brand (`MANN` matches `MANN-FILTER`),
+because a bare number can collide with another brand's. Verified live with one VIN (a 2015
+E 400 Coupe): the exact catalog vehicle was found and oil filter, air filter, cabin filter,
+brake pad and brake disc part numbers were matched in the warehouse; coverage on other cars
+still has to be measured. Settings: `CATALOG_API_KEY`, `CATALOG_API_BASE_URL`,
+`CATALOG_API_HOST`, `CATALOG_API_KEY_HEADER`.
+
+Flow for an oil change (`ზეთის შეცვლა`, "oil change"): vPIC gives the trim, fuel and body;
+Shell/Pakelo/Fuchs are matched by trim, fuel and body (not by displacement, which decoders
+disagree on) and give the SAE grade, product line, capacity and engine code. Engine oils of
+that grade are found in the catalog (same brand and line first, then the same grade from any
+brand; diesel-only lines are excluded for petrol cars and the reverse). Oil filters and
+sump plugs are found by exact engine family (`M 276.850` becomes `M276`, which matches
+`M276` but never `M272/273`) and by Motorium codes. The reply lists what the car needs
+(grade, capacity, engine) and which part has no stocked match. If the source cannot pin the
+engine, the bot asks for it instead of listing oils.
 
 Strict schemas are sent as described in Anthropic's
 [strict tool-use documentation](https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use).
@@ -365,6 +442,76 @@ returns an ungrounded-response status. The UI clears dependent results when the 
 or code changes and suppresses stale in-flight responses. No conversation history or
 raw VIN is kept in browser storage.
 
+## Speed, accuracy rules and evaluation
+
+### Why answers are fast
+
+- **Indexed code search.** `automotive.part_numbers` holds every product's codes, keyed by a
+  stock-independent hash (`automotive.content_hash`, migration `0007`), so the hourly stock
+  changes no longer make products look stale. A code lookup is about 60 ms instead of 1 s.
+  Build it once with `uv run python -m automotive.worker --auto --once` (about a minute for
+  65,000 products); `ops/systemd/automotive-index.timer` repeats it hourly after the sync. The
+  worker needs only `AUTOMOTIVE_ENRICHMENT_DATABASE_URL`. Rows never indexed or parsed by an
+  older parser are still found by a direct scan, so a missing index slows answers but never
+  loses a match.
+- **Fast tier first.** vPIC, the catalog API and Shell start together; the warehouse code
+  search starts as soon as they finish. Motorium and JS Asakashi (code sources) run only when
+  the catalog API is off, failed, empty or contradicted the decoded car, and Pakelo and Fuchs
+  only when Shell cannot resolve the engine. Fallbacks get a short deadline (Motorium 7 s,
+  JS Asakashi 5 s, Pakelo and Fuchs 4 s). Sources not needed show `NOT_NEEDED` and never make an
+  answer partial.
+- **Caches.** Catalog article lists (by catalog vehicle and part group), vehicle part groups,
+  the VIN to catalog-vehicle lookup (keyed by an HMAC of the VIN) and chooser answers (by make,
+  model, year, trim, fuel, body) are kept for 24 hours and shared by every customer with that
+  car. Stock is read fresh on every answer. When a VIN first appears the car is resolved in the
+  background (`prewarm`), so the part question that follows is mostly answered from cache.
+- **Parallel and streaming.** Part groups are fetched four at a time, the page polls every
+  0.4 s at first, and cards appear in a live bubble as sources finish.
+- Each source reports `elapsed_ms` in the progress data.
+
+### Hard rules (always on)
+
+1. Only active products are offered (`is_active`).
+2. Front/rear: items named for the other axle are dropped (the catalogue abbreviations `წნ` and
+   `უკ` count); an item with no axle word stays, labelled "axle not stated", and ranks last.
+3. A code match that is another kind of part (a disc for a pad request, a filter for engine oil,
+   or any word in `not_the_part`) is dropped.
+4. If the catalog API's vehicle contradicts the decoded car, its codes are ignored
+   (`VEHICLE_MISMATCH`). Several catalog vehicles for one VIN already means "do not guess".
+5. A bare number is trusted only with its brand. OEM-labelled codes shorter than 6 characters,
+   or all-digit codes shorter than 8, are never searched.
+6. Stock older than `hide_after_hours` (24) is not stated as a fact: the customer is asked to
+   confirm. Older than `stale_hours` (3) adds a confirm-in-store warning.
+7. Oil quantity: the reply shows whether the stocked pack sizes add up to the engine's litres.
+8. A typed code is answered as typed; only `is_active` and the stock label apply to it.
+
+### Staff rules: `automotive/rules.toml`
+
+Edit the file and restart the app. It is validated at startup; a mistake stops the app and
+names the section. Sections: `[stock]` (minimum quantities, stale hours), `[[brand_alias]]`
+(brands that are one brand), `[[not_the_part]]` (words that remove an item from a category),
+`[[oil_approval]]` (approvals a car needs; oils stating one rank first, others are labelled
+"approval not stated", `strict = true` hides them), `[[never_offer]]` (a product code never
+offered, optionally for one make and model) and `[[staff_confirmed]]` (a fitment staff
+verified, offered first as "Confirmed by our staff", still subject to stock and `is_active`).
+The oil-approval, never-offer and staff-confirmed sections ship as commented templates: staff
+fill them in; nothing is invented. A staff-confirmed fitment is not the evidence-reviewed
+`VERIFIED` status.
+
+### Measuring: `--evaluate`
+
+```bash
+uv run python -m automotive --evaluate vins.csv --misses-out misses.csv
+```
+
+`vins.csv` has one VIN per line (first column; a header and `#` comments are fine) and is
+git-ignored. For each VIN and request (default: oil change, front brake pads, air filter, cabin
+filter; override with `--categories "a,b"`) it prints the car, seconds, in-store and TUZ 11 offers,
+the result (`OFFERS`, `NONE_IN_STOCK`, `NO_CODES`, `NO_VEHICLE`), the rules that rejected items
+and slow or failed sources, then totals per request. VINs appear as `VIN#n`. The misses CSV has
+no VIN (make, model, year, trim, request, reason) so staff can add rules where the bot found
+nothing. The command writes nothing to the database.
+
 ## Data sources, permission and coverage
 
 The original sources and the subsequently requested public Motorium connector are
@@ -376,6 +523,8 @@ listed below. Motorium is an observed web protocol, not an official supported AP
 | [NHTSA vPIC](https://vpic.nhtsa.dot.gov/api/) | Initial vehicle decoding from manufacturer VIN submissions; no certified fitment, oil specification or product approval | Public service with automated rate control; follow published terms and validate regional coverage; no paid subscription |
 | Owned/authorized supplier evidence | Operator-imported fitments, directional references, maintenance specs and actual product approvals | Operator must possess explicit reuse rights; provenance labels alone are not proof of licence or truth |
 | [Motorium](https://motorium.ge/) | Public assistant and product JSON-LD return supplier MPN/OEM-labeled candidates for VIN + part query | Public read access observed; reuse rights are not independently recorded. No automatic evidence approval or paid subscription. See [protocol and limitations](integrations/motorium.md). |
+| [Fuchs](https://www.fuchs.com/de/en/oil-chooser/), [Shell](https://www.shell.com/motorist/find-the-right-oil.html), [Pakelo](https://pakelo.com/en/find-your-oil), [JS Filter](https://www.jsfilter.jp/catalogue/) | Provisional oil or filter rows after decoded make/model/year, or a VIN filter table when the catalogue returns one row | Public read-only lookups. Multiple engines return a clarification and no product. See [fluid connectors](integrations/fluids.md). |
+| Partsouq, Megazip, Amayama, Emex | Not connected | Anonymous capture was blocked or did not expose a stable catalog call. No guessed client is enabled. |
 | Anthropic API | Language/tool orchestration; supplies no technical evidence | Metered API under the operator's Anthropic account/terms; send only sanitized minimum context |
 
 Other named supplier candidates, the original nine codes, original sample VIN, and full

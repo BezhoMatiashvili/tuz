@@ -12,3 +12,8 @@ prompt.txt
 .codex/
 .agents/
 node_modules/
+
+# Local customer VIN lists for --evaluate and its output
+vins*.csv
+vins*.txt
+misses*.csv

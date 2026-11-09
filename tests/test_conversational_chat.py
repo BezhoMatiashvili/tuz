@@ -169,12 +169,11 @@ class ConversationalChatTests(unittest.TestCase):
             response(tool('search_inventory', {'code': 'AP104/2', 'manufacturer': 'Maker'})),
             finish('r2', 'r3'),
         ]
-        result = self.turn('rear ones', category='rear brake pads', vin=VIN,
-                           vehicle=VEHICLE, search_service=coordinator)
+        result = self.turn('what fits', vin=VIN, vehicle=VEHICLE, search_service=coordinator)
         self.repo.search_parts.assert_called_once_with('AP104/2', manufacturer='Maker', limit=100)
         self.assertEqual(len(result['cards']), 1)
         self.assertEqual(result['supplier_only'][0]['availability'], 'No warehouse match.')
-        coordinator.start.assert_called_once_with(VIN, 'rear brake pads', 2013, VEHICLE)
+        coordinator.start.assert_called_once_with(VIN, '', 2013, VEHICLE)
 
     def test_conflicting_supplier_identity_never_authorizes_code(self):
         coordinator = Mock()
@@ -190,8 +189,7 @@ class ConversationalChatTests(unittest.TestCase):
             response(tool('search_inventory', {'code': 'BAD123', 'manufacturer': 'Maker'})),
             finish('r2'),
         ]
-        result = self.turn('rear pads', category='rear brake pads', vin=VIN,
-                           vehicle=VEHICLE, search_service=coordinator)
+        result = self.turn('what fits', vin=VIN, vehicle=VEHICLE, search_service=coordinator)
         self.repo.search_parts.assert_not_called()
         self.assertEqual(result['supplier_only'][0]['status'], 'CONFLICTED')
 
@@ -213,8 +211,8 @@ class ConversationalChatTests(unittest.TestCase):
         ]
         with patch('automotive.vehicle_inventory.VehicleInventoryService.fitment_entries',
                    return_value={'p1': {'status': 'VERIFIED', 'compatible': True}}):
-            result = self.turn('rear pads', category='rear brake pads', vin=VIN,
-                               vehicle=VEHICLE, search_service=coordinator)
+            result = self.turn('what fits', vin=VIN, vehicle=VEHICLE,
+                               search_service=coordinator)
         self.assertEqual(result['vehicle'], changed)
         self.assertEqual(result['cards'], [])
         self.assertEqual(result['result_ids'], ['r2'])
@@ -315,17 +313,12 @@ class ConversationalChatTests(unittest.TestCase):
         self.assertEqual(result['cards'][0]['fitment_status'], 'UNKNOWN')
         self.assertIsNone(result['cards'][0]['compatible'])
 
-    def test_oil_without_engine_or_evidence_requires_clarification_even_if_model_omits_check(self):
-        oil = {**PRODUCT, 'product_name': 'Engine oil 5W-30'}
-        self.repo.search_products.return_value = {'items': [oil]}
-        self.repo.get_product.return_value = oil
-        self.client.messages.create.side_effect = [
-            response(tool('search_products', {'query': 'oil'})), finish('r1'),
-        ]
+    def test_oil_without_a_resolved_grade_asks_for_the_engine_and_lists_no_guesses(self):
         result = self.turn('which oil', category='engine oil', vehicle=VEHICLE)
         self.assertIn('exact engine code', result['answer'])
-        self.assertIsNone(result['cards'][0]['compatible'])
-        self.assertEqual(result['cards'][0]['fitment_status'], 'UNKNOWN')
+        self.assertEqual(result['cards'], [])
+        self.repo.search_products.assert_not_called()  # No all-oils fallback.
+        self.client.messages.create.assert_not_called()
 
     def test_mechanical_fitment_cannot_verify_oil_suitability(self):
         from unittest.mock import patch
@@ -333,12 +326,16 @@ class ConversationalChatTests(unittest.TestCase):
         oil = {**PRODUCT, 'product_name': 'Engine oil 5W-30'}
         self.repo.search_products.return_value = {'items': [oil]}
         self.repo.get_product.return_value = oil
+        self.repo.search_parts.return_value = {'items': [oil]}
         self.client.messages.create.side_effect = [
-            response(tool('search_products', {'query': 'engine oil'})), finish('r1'),
+            response(tool('search_inventory', {'code': 'AP104/2', 'manufacturer': None})),
+            finish('r1'),
         ]
+        entry = {'product': oil, 'status': 'VERIFIED', 'compatible': True,
+                 'match_type': 'VERIFIED_FITMENT', 'evidence': [], 'warnings': []}
         with patch('automotive.vehicle_inventory.VehicleInventoryService.fitment_entries',
-                   return_value={'p1': {'status': 'VERIFIED', 'compatible': True}}):
-            result = self.turn('engine oil', category='engine oil', vehicle=VEHICLE)
+                   return_value={'p1': entry}):
+            result = self.turn('engine oil AP104/2', category='engine oil', vehicle=VEHICLE)
         card = result['cards'][0]
         self.assertIsNone(card['compatible'])
         self.assertEqual(card['fitment_status'], 'UNKNOWN')
@@ -394,6 +391,380 @@ class ConversationalChatTests(unittest.TestCase):
         result = self.turn('rear ones', category='rear brake pads')
         self.repo.search_products.assert_called_once_with('rear brake pads', limit=100)
         self.assertEqual(len(result['cards']), 1)
+
+    def snapshot(self, **updates):
+        supplier = {'provider_product_id': 1, 'name': 'Rear brake pads', 'mpn': 'AP104/2',
+                    'manufacturer': 'Maker', 'oem_codes': [], 'status': 'PROVISIONAL'}
+        base = {
+            'search_id': 'a' * 32, 'status': 'COMPLETE', 'vehicle': VEHICLE,
+            'items': [{'warehouse_records': [], 'supplier_records': [supplier],
+                       'status': 'PROVISIONAL', 'source_names': ['motorium']}],
+            'next_offset': None, 'sources': [],
+        }
+        return {**base, **updates}
+
+    def test_vehicle_question_with_vin_is_answered_without_a_model_round_trip(self):
+        row = {'product': PRODUCT, 'status': 'UNKNOWN', 'compatible': None,
+               'match_type': 'CODE_CANDIDATE', 'evidence': [], 'warnings': []}
+        coordinator = Mock()
+        coordinator.start.return_value = self.snapshot(items=[{
+            'warehouse_records': [row], 'supplier_records': [], 'status': 'UNKNOWN',
+            'source_names': ['warehouse'],
+        }])
+        result = self.turn(f'რა ნაწილები გაქვთ {VIN}', vin=VIN, search_service=coordinator)
+        self.client.messages.create.assert_not_called()
+        coordinator.start.assert_called_once_with(VIN, '', 2013, VEHICLE)
+        self.assertEqual(result['cards'][0]['product']['source_product_id'], 'p1')
+        self.assertIn('search results', result['answer'])
+        self.assertNotIn(VIN, json.dumps(result))
+
+    def test_only_failed_sources_are_named_and_long_lists_are_not_failures(self):
+        coordinator = Mock()
+        coordinator.start.return_value = self.snapshot(status='PARTIAL', sources=[
+            {'source_id': 'motorium', 'status': 'ERROR', 'error_code': 'PROVIDER_UNAVAILABLE'},
+            {'source_id': 'warehouse', 'status': 'PARTIAL', 'error_code': 'RESULT_LIMIT'},
+            {'source_id': 'fuchs', 'status': 'SKIPPED', 'error_code': 'NOT_REQUESTED'},
+            {'source_id': 'shell', 'status': 'DISABLED', 'error_code': None},
+            {'source_id': 'pakelo', 'status': 'CONFLICTED', 'error_code': 'MULTIPLE_ENGINES'},
+        ])
+        result = self.turn('brake pads', category='front brake pads', vin=VIN,
+                           search_service=coordinator)
+        self.assertIn('SOURCE_FAILED:motorium', result['warnings'])
+        self.assertEqual([w for w in result['warnings'] if w.startswith('SOURCE_FAILED')],
+                         ['SOURCE_FAILED:motorium'])
+        self.assertNotIn('SOME_SOURCES_UNAVAILABLE', result['warnings'])
+
+    def test_brakes_show_code_derived_items_with_the_question_and_hide_name_only_matches(self):
+        by_code = {'product': PRODUCT, 'status': 'UNKNOWN', 'compatible': None,
+                   'match_type': 'CODE_CANDIDATE', 'evidence': [], 'warnings': [],
+                   'provenance': ['Motorium: AP104/2']}
+        other = {**PRODUCT, 'source_product_id': 'p2'}
+        by_name = {'product': other, 'status': 'UNKNOWN', 'compatible': None,
+                   'match_type': 'CATALOG_TEXT', 'evidence': [], 'warnings': []}
+        self.repo.get_product.side_effect = lambda i: copy.deepcopy(
+            {'p1': PRODUCT, 'p2': other}[i])
+        coordinator = Mock()
+        coordinator.start.return_value = self.snapshot(items=[
+            {'warehouse_records': [by_code], 'supplier_records': [], 'status': 'UNKNOWN',
+             'source_names': ['warehouse']},
+            {'warehouse_records': [by_name], 'supplier_records': [], 'status': 'UNKNOWN',
+             'source_names': ['warehouse']},
+        ])
+        result = self.turn('breaks', category='brakes', vehicle=VEHICLE, search_service=coordinator)
+        self.client.messages.create.assert_not_called()
+        self.assertEqual(result['status'], 'CLARIFICATION')
+        self.assertIn('pads or discs', result['answer'])
+        self.assertEqual([c['product']['source_product_id'] for c in result['cards']], ['p1'])
+        self.assertEqual(result['cards'][0]['basis'], 'code')
+        self.assertEqual(result['cards'][0]['matched_via'], ['Motorium: AP104/2'])
+
+    def test_exact_supplier_code_hit_keeps_a_catalog_name_without_the_category_word(self):
+        branded = {**PRODUCT, 'product_name': 'MAKER 104'}
+        self.repo.get_product.return_value = branded
+        row = {'product': branded, 'status': 'UNKNOWN', 'compatible': None,
+               'match_type': 'CODE_CANDIDATE', 'evidence': [], 'warnings': []}
+        coordinator = Mock()
+        coordinator.start.return_value = self.snapshot(items=[{
+            'warehouse_records': [row], 'supplier_records': [], 'status': 'UNKNOWN',
+            'source_names': ['warehouse', 'motorium'],
+        }])
+        result = self.turn('brake pads', category='front brake pads', vin=VIN,
+                           search_service=coordinator)
+        self.assertEqual(result['cards'][0]['product']['product_name'], 'MAKER 104')
+
+    def test_make_model_year_without_vin_still_searches_and_asks_for_the_vin(self):
+        coordinator = Mock()
+        coordinator.start.return_value = self.snapshot(items=[])
+        result = self.turn('front brake pads', category='front brake pads',
+                           vehicle=VEHICLE, search_service=coordinator)
+        coordinator.start.assert_called_once_with(None, 'front brake pads', 2013, VEHICLE)
+        self.client.messages.create.assert_not_called()
+        self.assertIn('VIN_NOT_PROVIDED', result['warnings'])
+
+    def oil_setup(self, filter_items=None, oil_stock=None, filter_stock=None):
+        oil = {**PRODUCT, 'source_product_id': 'oil1', 'brand': 'SHELL',
+               'product_name': 'Shell Helix Ultra 5W-40 4L',
+               'stock': oil_stock or {'store': 16.0, 'tuz11': 0.0}}
+        other = {**PRODUCT, 'source_product_id': 'oil2', 'brand': 'MOBIL',
+                 'product_name': 'MOBIL 5W40 1L', 'stock': {'store': 0.0, 'tuz11': 3.0}}
+        filt = {**PRODUCT, 'source_product_id': 'f1', 'brand': 'MANN',
+                'product_name': 'ზეთის ფილტრი', 'part_role': 'oil_filter',
+                'stock': filter_stock or {'store': 0.0, 'tuz11': 2.0}}
+        products = {'oil1': oil, 'oil2': other, 'f1': filt}
+        self.repo.get_product.side_effect = lambda i: copy.deepcopy(products[i])
+
+        def oils(grade, brand=None, limit=100):
+            items = [oil] if brand else [oil, other]
+            return {'items': copy.deepcopy(items if grade == '5W-40' else [])}
+
+        self.repo.search_engine_oils.side_effect = oils
+        self.repo.search_engine_family.return_value = {
+            'items': copy.deepcopy([filt] if filter_items is None else filter_items)}
+        coordinator = Mock()
+        coordinator.start.return_value = self.snapshot(items=[], fluids=[{
+            'provider': 'Shell', 'status': 'PROVISIONAL', 'engine_code': 'M 276.850',
+            'items': [{'kind': 'oil', 'product_name': 'Helix Ultra 5W-40', 'viscosity': '5W-40',
+                       'capacity': '6.5'}]}])
+        return coordinator
+
+    def test_oil_change_finds_the_required_grade_and_engine_filter_in_stock(self):
+        coordinator = self.oil_setup()
+        result = self.turn(f'I need an oil change {VIN}', category='I need an oil change',
+                           vin=VIN, search_service=coordinator)
+        self.client.messages.create.assert_not_called()
+        self.assertEqual(result['requirements']['grades'], ['5W-40'])
+        self.assertEqual(result['requirements']['engine_code'], 'M 276.850')
+        self.assertEqual(result['requirements']['capacity_l'], 6.5)
+        self.assertNotIn('missing', result['requirements'])
+        self.assertIn('requirement', result['answer'])
+        ids = [c['product']['source_product_id'] for c in result['cards']]
+        self.assertEqual(ids, ['oil1', 'f1', 'oil2'])  # Store first, then TUZ 11.
+        oil, filt, other = result['cards']
+        self.assertEqual(oil['basis'], 'oil_grade_brand')
+        self.assertEqual(oil['availability_status'], 'IN_STORE')
+        self.assertIn('In the store: 16', oil['availability'])
+        self.assertEqual(filt['basis'], 'engine')
+        self.assertEqual(filt['availability_status'], 'WITHIN_1_2_HOURS')
+        self.assertIn('1-2 hours', filt['availability'])
+        self.assertEqual(other['basis'], 'oil_grade')
+        self.assertEqual(oil['pack_litres'], 4.0)
+        self.assertEqual(oil['fitment_status'], 'UNKNOWN')
+        self.assertIsNone(oil['compatible'])
+        self.repo.search_engine_family.assert_called_once_with('M276', limit=50)
+
+    def test_oil_change_reports_the_part_with_no_stocked_match(self):
+        coordinator = self.oil_setup(filter_items=[])
+        result = self.turn(f'oil change {VIN}', category='oil change', vin=VIN,
+                           search_service=coordinator)
+        self.assertEqual(result['requirements']['missing'], ['oil_filter'])
+        self.assertEqual(result['cards'][0]['product']['source_product_id'], 'oil1')
+
+    def test_oil_change_never_offers_an_engine_filter_that_is_out_of_stock(self):
+        coordinator = self.oil_setup(filter_stock={'store': 0.0, 'tuz11': 0.0})
+        result = self.turn(f'oil change {VIN}', category='oil change', vin=VIN,
+                           search_service=coordinator)
+        self.assertNotIn('f1', [c['product']['source_product_id'] for c in result['cards']])
+        self.assertEqual(result['requirements']['missing'], ['oil_filter'])
+
+    def test_suitable_items_that_are_all_out_of_stock_say_so_instead_of_listing_them(self):
+        coordinator = self.oil_setup(oil_stock={'store': 0.0, 'tuz11': 0.0})
+        self.repo.search_engine_oils.side_effect = lambda g, brand=None, limit=100: {
+            'items': [copy.deepcopy(self.repo.get_product('oil1'))] if g == '5W-40' else []}
+        self.repo.search_engine_family.return_value = {'items': []}
+        result = self.turn(f'what oil {VIN}', category='engine oil', vin=VIN,
+                           search_service=coordinator)
+        self.assertEqual(result['cards'], [])
+        self.assertIn('none is in the store or TUZ 11', result['answer'])
+
+    def test_a_typed_code_is_answered_even_when_not_in_stock(self):
+        unavailable = {**PRODUCT, 'stock': {'store': 0.0, 'tuz11': 0.0}}
+        self.repo.search_parts.return_value = {'items': [copy.deepcopy(unavailable)]}
+        self.repo.get_product.return_value = unavailable
+        self.client.messages.create.side_effect = [
+            response(tool('search_inventory', {'code': 'AP104/2', 'manufacturer': None})),
+            finish('r1'),
+        ]
+        card = self.turn('Do you have AP104/2?')['cards'][0]
+        self.assertEqual(card['availability_status'], 'UNAVAILABLE')
+        self.assertIn('Not available now', card['availability'])
+
+    def test_missing_stock_cells_are_unconfirmed_not_in_stock_and_not_hidden(self):
+        row = {'product': PRODUCT, 'status': 'UNKNOWN', 'compatible': None,
+               'match_type': 'CODE_CANDIDATE', 'evidence': [], 'warnings': []}
+        coordinator = Mock()
+        coordinator.start.return_value = self.snapshot(items=[{
+            'warehouse_records': [row], 'supplier_records': [], 'status': 'UNKNOWN',
+            'source_names': ['warehouse']}])
+        result = self.turn('rear brake pads', category='rear brake pads', vin=VIN,
+                           search_service=coordinator)
+        self.assertEqual(result['cards'][0]['availability_status'], 'UNKNOWN')
+        self.assertIn('stock unconfirmed', result['cards'][0]['availability'])
+
+    def test_stale_stock_asks_the_customer_to_confirm(self):
+        from datetime import UTC, datetime, timedelta
+
+        old = {**PRODUCT, 'stock': {'store': 2.0, 'tuz11': 0.0},
+               'last_observed_at': datetime.now(UTC) - timedelta(hours=9)}
+        self.repo.get_product.return_value = old
+        row = {'product': old, 'status': 'UNKNOWN', 'compatible': None,
+               'match_type': 'CODE_CANDIDATE', 'evidence': [], 'warnings': []}
+        coordinator = Mock()
+        coordinator.start.return_value = self.snapshot(items=[{
+            'warehouse_records': [row], 'supplier_records': [], 'status': 'UNKNOWN',
+            'source_names': ['warehouse']}])
+        result = self.turn('rear brake pads', category='rear brake pads', vin=VIN,
+                           search_service=coordinator)
+        self.assertIn('STOCK_MAY_BE_STALE', result['warnings'])
+
+    def name_rows(self):
+        names = {'n1': 'ხუნდი წინა Example Car 08-', 'n2': 'ხუნდი წინა Example Car 15-',
+                 'n3': 'ხუნდი წინა Example Car', 'n4': 'ხუნდი წინა Example Car 05-10',
+                 'n5': 'ხუნდი წინა Example Car 10-'}
+        stocks = {'n1': {'store': 3.0, 'tuz11': 0.0}, 'n2': {'store': 3.0, 'tuz11': 0.0},
+                  'n3': {'store': 0.0, 'tuz11': 2.0}, 'n4': {'store': 3.0, 'tuz11': 0.0},
+                  'n5': {'store': 0.0, 'tuz11': 0.0}}
+        products = {i: {**PRODUCT, 'source_product_id': i, 'product_name': n,
+                        'stock': stocks[i]} for i, n in names.items()}
+        self.repo.get_product.side_effect = lambda i: copy.deepcopy(products[i])
+        return [{'product': p, 'status': 'UNKNOWN', 'compatible': None,
+                 'match_type': 'CATALOG_TEXT', 'evidence': [], 'warnings': []}
+                for p in products.values()]
+
+    def test_without_any_code_in_stock_name_matches_are_offered_year_checked_and_labelled(self):
+        coordinator = Mock()
+        coordinator.start.return_value = self.snapshot(items=[
+            {'warehouse_records': [row], 'supplier_records': [], 'status': 'UNKNOWN',
+             'source_names': ['warehouse']} for row in self.name_rows()])
+        result = self.turn('front brake pads', category='front brake pads', vin=VIN,
+                           search_service=coordinator)
+        cards = {c['product']['source_product_id']: c for c in result['cards']}
+        # n2 and n4 state a range that excludes 2013; n5 has no stock.
+        self.assertEqual(set(cards), {'n1', 'n3'})
+        self.assertEqual(cards['n1']['basis'], 'name_year')
+        self.assertEqual(cards['n3']['basis'], 'name')
+        self.assertEqual(cards['n3']['availability_status'], 'WITHIN_1_2_HOURS')
+        self.assertIn('verify compatibility', ' '.join(cards['n1']['warnings']))
+        self.assertIn('NAME_MATCH_ONLY', result['warnings'])
+        self.assertEqual([c['product']['source_product_id'] for c in result['cards']],
+                         ['n1', 'n3'])  # Store first, then TUZ 11.
+
+    def test_name_matches_are_not_used_when_a_code_derived_offer_exists(self):
+        by_code = {'product': {**PRODUCT, 'stock': {'store': 1.0, 'tuz11': 0.0}},
+                   'status': 'UNKNOWN', 'compatible': None, 'match_type': 'CODE_CANDIDATE',
+                   'evidence': [], 'warnings': [], 'provenance': ['Catalog API: X']}
+        self.repo.get_product.side_effect = None
+        self.repo.get_product.return_value = by_code['product']
+        coordinator = Mock()
+        coordinator.start.return_value = self.snapshot(items=[
+            {'warehouse_records': [row], 'supplier_records': [], 'status': 'UNKNOWN',
+             'source_names': ['warehouse']} for row in [by_code]])
+        result = self.turn('front brake pads', category='rear brake pads', vin=VIN,
+                           search_service=coordinator)
+        self.assertEqual([c['basis'] for c in result['cards']], ['code'])
+        self.assertNotIn('NAME_MATCH_ONLY', result['warnings'])
+
+    def test_name_matches_are_never_used_for_oil(self):
+        coordinator = Mock()
+        coordinator.start.return_value = self.snapshot(items=[
+            {'warehouse_records': [row], 'supplier_records': [], 'status': 'UNKNOWN',
+             'source_names': ['warehouse']} for row in self.name_rows()])
+        result = self.turn('engine oil', category='engine oil', vin=VIN,
+                           search_service=coordinator)
+        self.assertEqual(result['cards'], [])
+        self.assertNotIn('NAME_MATCH_ONLY', result['warnings'])
+
+    def test_no_codes_for_the_car_says_so_instead_of_guessing(self):
+        coordinator = Mock()
+        coordinator.start.return_value = self.snapshot(items=[])
+        result = self.turn('front brake pads', category='front brake pads', vin=VIN,
+                           search_service=coordinator)
+        self.assertEqual(result['cards'], [])
+        self.assertIn('not guessing', result['answer'])
+
+    def code_snapshot(self, products, **updates):
+        rows = [{'product': p, 'status': 'UNKNOWN', 'compatible': None,
+                 'match_type': 'CODE_CANDIDATE', 'evidence': [], 'warnings': [],
+                 'provenance': ['Catalog API: X']} for p in products]
+        by_id = {p['source_product_id']: p for p in products}
+        self.repo.get_product.side_effect = lambda i: copy.deepcopy(by_id[i])
+        coordinator = Mock()
+        coordinator.start.return_value = self.snapshot(items=[
+            {'warehouse_records': [row], 'supplier_records': [], 'status': 'UNKNOWN',
+             'source_names': ['warehouse']} for row in rows], **updates)
+        return coordinator
+
+    def pad(self, identifier, name, store=3.0, tuz11=0.0, **extra):
+        return {**PRODUCT, 'source_product_id': identifier, 'product_name': name,
+                'stock': {'store': store, 'tuz11': tuz11}, **extra}
+
+    def test_a_rear_pad_set_is_never_offered_for_a_front_request(self):
+        coordinator = self.code_snapshot([
+            self.pad('rear', 'ხუნდი უკანა'), self.pad('front', 'ხუნდი წნ'),
+            self.pad('unsaid', 'სამუხრუჭე ხუნდი')])
+        result = self.turn('front brake pads', category='front brake pads', vin=VIN,
+                           search_service=coordinator)
+        self.assertEqual([c['product']['source_product_id'] for c in result['cards']],
+                         ['front', 'unsaid'])  # An unstated axle ranks last.
+        self.assertEqual([c['axle'] for c in result['cards']], ['MATCH', 'UNSTATED'])
+        self.assertIn('confirm front or rear', ' '.join(result['cards'][1]['warnings']))
+        self.assertEqual(result['diagnostics']['rejections'], {'axle': 1})
+
+    def test_wear_sensors_and_other_part_types_are_dropped_from_code_matches(self):
+        from automotive.rules import Rules
+
+        self.service.rules = Rules(not_the_part={'brake_pads': ('სენს',)})
+        coordinator = self.code_snapshot([
+            self.pad('pad', 'ხუნდი წნ'), self.pad('sensor', 'ხუნდის სენსორი წნ'),
+            self.pad('disc', 'სამუხრუჭე დისკი წნ')])
+        result = self.turn('front brake pads', category='front brake pads', vin=VIN,
+                           search_service=coordinator)
+        self.assertEqual([c['product']['source_product_id'] for c in result['cards']], ['pad'])
+        self.assertEqual(result['diagnostics']['rejections'], {'part_type': 2})
+
+    def test_never_offer_removes_a_product_for_the_car_but_not_a_typed_code(self):
+        from automotive.rules import NeverOffer, Rules
+
+        self.service.rules = Rules(never_offer=(NeverOffer('AP104/2', 'Example', None, 'bad'),))
+        coordinator = self.code_snapshot([self.pad('p1', 'ხუნდი წნ', product_code='AP104/2')])
+        result = self.turn('front brake pads', category='front brake pads', vin=VIN,
+                           search_service=coordinator)
+        self.assertEqual(result['cards'], [])
+        self.assertEqual(result['diagnostics']['rejections'], {'never_offer': 1})
+        self.repo.search_parts.return_value = {'items': [self.pad('p1', 'ხუნდი წნ',
+                                                                    product_code='AP104/2')]}
+        self.client.messages.create.side_effect = [
+            response(tool('search_inventory', {'code': 'AP104/2', 'manufacturer': None})),
+            finish('r1')]
+        typed = self.turn('Do you have AP104/2?')
+        self.assertEqual(len(typed['cards']), 1)
+
+    def test_staff_confirmed_fitments_are_offered_first_and_labelled(self):
+        from automotive.rules import Rules, StaffConfirmed
+
+        self.service.rules = Rules(staff_confirmed=(StaffConfirmed(
+            'Example', 'Car', 2010, 2015, 'brake_pads', 'AP104/2', None, 'checked'),))
+        confirmed = self.pad('staff', 'ხუნდი წნ', product_code='AP104/2')
+        self.repo.search_parts_many.return_value = {'AP104/2': [copy.deepcopy(confirmed)]}
+        coordinator = self.code_snapshot([confirmed, self.pad('other', 'ხუნდი წნ')])
+        result = self.turn('front brake pads', category='front brake pads', vin=VIN,
+                           search_service=coordinator)
+        first = result['cards'][0]
+        self.assertEqual((first['product']['source_product_id'], first['basis']),
+                         ('staff', 'staff_rule'))
+        self.assertEqual(first['matched_via'], ['Confirmed by our staff: checked'])
+        self.assertEqual(len(result['cards']), 2)
+
+    def test_stock_older_than_a_day_is_not_stated_as_a_fact(self):
+        from datetime import UTC, datetime, timedelta
+
+        old = self.pad('old', 'ხუნდი წნ', last_observed_at=datetime.now(UTC) - timedelta(hours=30))
+        coordinator = self.code_snapshot([old])
+        result = self.turn('front brake pads', category='front brake pads', vin=VIN,
+                           search_service=coordinator)
+        card = result['cards'][0]
+        self.assertEqual(card['availability_status'], 'UNKNOWN')
+        self.assertIn('stock data is old', card['availability'])
+        self.assertNotIn('In the store', card['availability'])
+
+    def test_stock_minimums_come_from_the_rules(self):
+        from automotive.rules import Rules
+
+        self.service.rules = Rules(min_store=2.0, min_tuz11=5.0)
+        coordinator = self.code_snapshot([self.pad('few', 'ხუნდი წნ', store=2.0, tuz11=5.0)])
+        result = self.turn('front brake pads', category='front brake pads', vin=VIN,
+                           search_service=coordinator)
+        self.assertEqual(result['cards'], [])  # Neither quantity is above its minimum.
+        self.assertIn('none is in the store or TUZ 11', result['answer'])
+
+    def test_informational_warnings_keep_a_complete_answer_complete(self):
+        from datetime import UTC, datetime, timedelta
+
+        stale = self.pad('s', 'ხუნდი წნ', last_observed_at=datetime.now(UTC) - timedelta(hours=5))
+        coordinator = self.code_snapshot([stale])
+        result = self.turn('front brake pads', category='front brake pads', vin=VIN,
+                           search_service=coordinator)
+        self.assertIn('STOCK_MAY_BE_STALE', result['warnings'])
+        self.assertEqual(result['status'], 'OK')  # Not "partial": nothing is missing.
 
     def test_eight_tool_and_four_model_budgets(self):
         self.client.messages.create.return_value = response(*[
