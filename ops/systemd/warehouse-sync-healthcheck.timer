@@ -1,0 +1,10 @@
+[Unit]
+Description=Check warehouse synchronisation freshness every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+Unit=warehouse-sync-healthcheck.service
+
+[Install]
+WantedBy=timers.target

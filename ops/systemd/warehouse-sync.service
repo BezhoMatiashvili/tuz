@@ -1,0 +1,54 @@
+[Unit]
+Description=Read-only warehouse catalogue synchronisation
+Wants=network-online.target
+After=network-online.target
+OnFailure=warehouse-sync-alert@%n.service
+
+[Service]
+Type=oneshot
+User=warehouse-sync
+Group=warehouse-sync
+WorkingDirectory=/opt/warehouse-sync
+UMask=0077
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/etc/warehouse-sync/runtime.env
+Environment=WAREHOUSE_DATABASE_URL_FILE=%d/warehouse-database-url
+Environment=WAREHOUSE_SOURCE_PASSWORD_FILE=%d/warehouse-source-password
+Environment=WAREHOUSE_HMAC_KEY_FILE=%d/warehouse-hmac-key
+LoadCredentialEncrypted=warehouse-database-url:/etc/credstore.encrypted/warehouse-database-url
+LoadCredentialEncrypted=warehouse-source-password:/etc/credstore.encrypted/warehouse-source-password
+LoadCredentialEncrypted=warehouse-hmac-key:/etc/credstore.encrypted/warehouse-hmac-key
+ExecStart=/usr/local/libexec/warehouse-sync-run
+StateDirectory=warehouse-sync
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadOnlyPaths=/opt/warehouse-sync
+ReadWritePaths=/var/lib/warehouse-sync
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service @network-io
+IPAddressDeny=any
+# The production installer replaces these examples with the actual WireGuard
+# proxy subnet and every resolved Supabase database address. Leaving only this
+# deny rule is intentional and fail-closed.
+# IPAddressAllow=10.66.0.0/24
+# IPAddressAllow=SUPABASE_DATABASE_ADDRESS/32
+
+[Install]
+WantedBy=multi-user.target

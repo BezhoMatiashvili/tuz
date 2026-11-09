@@ -1,0 +1,37 @@
+[Unit]
+Description=Encrypted logical backup for warehouse PostgreSQL data
+Wants=network-online.target
+After=network-online.target
+OnFailure=warehouse-sync-alert@%n.service
+
+[Service]
+Type=oneshot
+User=warehouse-backup
+Group=warehouse-backup
+UMask=0077
+EnvironmentFile=/etc/warehouse-sync/backup.env
+Environment=PGSERVICEFILE=%d/warehouse-backup-pg-service
+Environment=PGPASSFILE=%d/warehouse-backup-pgpass
+Environment=RCLONE_CONFIG=%d/warehouse-rclone.conf
+Environment=WAREHOUSE_BACKUP_RECIPIENT_FILE=%d/warehouse-backup-age-recipient
+LoadCredentialEncrypted=warehouse-backup-pg-service:/etc/credstore.encrypted/warehouse-backup-pg-service
+LoadCredentialEncrypted=warehouse-backup-pgpass:/etc/credstore.encrypted/warehouse-backup-pgpass
+LoadCredentialEncrypted=warehouse-rclone.conf:/etc/credstore.encrypted/warehouse-rclone.conf
+LoadCredentialEncrypted=warehouse-backup-age-recipient:/etc/credstore.encrypted/warehouse-backup-age-recipient
+ExecStart=/usr/local/libexec/warehouse-backup
+StateDirectory=warehouse-backup
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/warehouse-backup
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+IPAddressDeny=any
+# Replace with the actual backup destination and Supabase database address ranges.
+# IPAddressAllow=BACKUP_DESTINATION_ADDRESS/32
+# IPAddressAllow=SUPABASE_DATABASE_ADDRESS/32
+

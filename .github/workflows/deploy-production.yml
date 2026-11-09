@@ -1,0 +1,48 @@
+name: Approved production deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Full approved Git commit SHA to activate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warehouse-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy after protected-environment approval
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.revision }}
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+      - run: uv sync --extra dev --locked
+      - run: uv run python -m unittest discover -s tests -v
+      - name: Activate the reviewed revision on the dedicated worker
+        env:
+          DEPLOY_HOST: ${{ secrets.WAREHOUSE_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.WAREHOUSE_DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.WAREHOUSE_DEPLOY_SSH_KEY }}
+          REVISION: ${{ inputs.revision }}
+        run: |
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_SSH_KEY"
+          install -d -m 700 "$RUNNER_TEMP/warehouse-ssh"
+          printf '%s' "$DEPLOY_SSH_KEY" > "$RUNNER_TEMP/warehouse-ssh/id_ed25519"
+          chmod 600 "$RUNNER_TEMP/warehouse-ssh/id_ed25519"
+          ssh -i "$RUNNER_TEMP/warehouse-ssh/id_ed25519" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "sudo /usr/local/sbin/warehouse-activate-release '$REVISION'"
+          rm -f "$RUNNER_TEMP/warehouse-ssh/id_ed25519"

@@ -1,0 +1,18 @@
+[Unit]
+Description=Send a safe warehouse synchronisation alert for %i
+
+[Service]
+Type=oneshot
+User=warehouse-sync
+Group=warehouse-sync
+EnvironmentFile=/etc/warehouse-sync/alert.env
+Environment=STATE_DIRECTORY=/var/lib/warehouse-sync
+ExecStart=/usr/local/libexec/warehouse-sync-alert %i
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadOnlyPaths=/usr/local/libexec
+

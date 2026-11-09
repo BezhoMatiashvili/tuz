@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${STATE_DIRECTORY:?systemd StateDirectory is required}"
+: "${WAREHOUSE_BACKUP_DESTINATION:?set an off-host rclone destination}"
+: "${WAREHOUSE_BACKUP_RECIPIENT_FILE:?encrypted age recipient credential is required}"
+
+recipient=$(tr -d '\r\n' < "$WAREHOUSE_BACKUP_RECIPIENT_FILE")
+[[ -n "$recipient" ]] || exit 2
+date_utc=$(date -u +%F)
+staging="$STATE_DIRECTORY/warehouse-${date_utc}.dump.age"
+umask 077
+
+pg_dump --format=custom --no-owner --no-privileges "service=warehouse_backup" \
+  | age -r "$recipient" -o "$staging"
+rclone copyto "$staging" "${WAREHOUSE_BACKUP_DESTINATION%/}/daily/warehouse-${date_utc}.dump.age"
+
+if [[ $(date -u +%d) == 01 ]]; then
+  rclone copyto "$staging" "${WAREHOUSE_BACKUP_DESTINATION%/}/monthly/warehouse-$(date -u +%Y-%m).dump.age"
+fi
+
+# The only deletion capability delegated to this role is the bounded retention
+# function; rerun it later if it reports a positive count.
+psql "service=warehouse_backup" --no-psqlrc --set=ON_ERROR_STOP=1 \
+  --command='SELECT warehouse.prune_product_versions();' >/dev/null
+rm -f "$staging"

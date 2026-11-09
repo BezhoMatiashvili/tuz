@@ -1,0 +1,8 @@
+# Security-sensitive paths require the repository security owner as an approver.
+# Replace the placeholder with an existing GitHub username or team before
+# enabling branch protection's "require review from Code Owners" setting.
+/migrations/ @REPLACE_WITH_SECURITY_OWNER
+/ops/ @REPLACE_WITH_SECURITY_OWNER
+/.github/ @REPLACE_WITH_SECURITY_OWNER
+/warehouse_sync/config.py @REPLACE_WITH_SECURITY_OWNER
+/warehouse_sync/repository.py @REPLACE_WITH_SECURITY_OWNER

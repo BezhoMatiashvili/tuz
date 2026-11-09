@@ -1,0 +1,19 @@
+[Unit]
+Description=Alert when warehouse synchronisation is overdue
+After=warehouse-sync.service
+
+[Service]
+Type=oneshot
+User=warehouse-sync
+Group=warehouse-sync
+EnvironmentFile=/etc/warehouse-sync/alert.env
+Environment=STATE_DIRECTORY=/var/lib/warehouse-sync
+ExecStart=/usr/local/libexec/warehouse-sync-healthcheck
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/warehouse-sync
+

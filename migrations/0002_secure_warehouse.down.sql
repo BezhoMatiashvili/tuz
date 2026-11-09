@@ -1,0 +1,2 @@
+-- IRREVERSIBLE: raw source HTML is intentionally destroyed by 0002.
+-- Production rollbacks use a new forward migration after restoring a tested backup.

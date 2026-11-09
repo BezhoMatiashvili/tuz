@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+state_directory="${STATE_DIRECTORY:-/var/lib/warehouse-sync}"
+last_success="$state_directory/last-success"
+now=$(date +%s)
+if [[ ! -f "$last_success" ]] || (( now - $(stat -c %Y "$last_success") > 5400 )); then
+  /usr/local/libexec/warehouse-sync-alert missed_run
+fi

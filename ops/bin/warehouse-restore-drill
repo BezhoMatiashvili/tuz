@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${PGSERVICE:?set an isolated restore service name}"
+: "${WAREHOUSE_BACKUP_IDENTITY_FILE:?set the offline age identity path}"
+: "${WAREHOUSE_RESTORE_DRILL_CONFIRM:?explicit confirmation is required}"
+[[ "$WAREHOUSE_RESTORE_DRILL_CONFIRM" == "RESTORE_ISOLATED_DATABASE" ]] || exit 2
+dump_file="${1:?path to one encrypted backup is required}"
+[[ -r "$dump_file" ]] || exit 2
+
+target_database=$(psql "service=$PGSERVICE" --no-psqlrc -Atqc 'SELECT current_database()')
+[[ "$target_database" == warehouse_restore_* ]] || exit 2
+
+age -d -i "$WAREHOUSE_BACKUP_IDENTITY_FILE" "$dump_file" \
+  | pg_restore --clean --if-exists --no-owner --no-privileges --dbname="service=$PGSERVICE"
+psql "service=$PGSERVICE" --no-psqlrc --set=ON_ERROR_STOP=1 -c \
+  "SELECT count(*) AS product_count, count(*) FILTER (WHERE integrity_tag IS NULL) AS unsigned_products FROM warehouse.warehouse_products;"

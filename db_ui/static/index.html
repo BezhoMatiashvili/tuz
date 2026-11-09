@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Warehouse / Data explorer</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark">W<span>.</span></div><div><strong>Warehouse</strong><small>DATA EXPLORER</small></div></div>
+    <div class="sidebar-label">WORKSPACE <span>01</span></div>
+    <button class="nav active" data-view="overview"><span class="nav-icon">▦</span> Overview <span class="nav-arrow">↗</span></button>
+    <button class="nav" data-view="sql"><span class="nav-icon">⌘</span> SQL editor <span class="shortcut">⌘ ↵</span></button>
+    <div class="sidebar-label tables-label">DATABASE <button id="refresh" title="Refresh schema" aria-label="Refresh schema">↻</button></div>
+    <div class="search-wrap"><span>⌕</span><input id="search" placeholder="Find a table..." aria-label="Find a table"></div>
+    <div id="table-list" class="table-list"><p class="sidebar-hint">Connecting to database...</p></div>
+    <div class="sidebar-footer"><span class="status-dot"></span><div><strong id="connection-title">Connecting</strong><small id="connection-subtitle">PostgreSQL</small></div><span class="footer-icon">◈</span></div>
+  </aside>
+  <main class="main">
+    <header class="topbar"><div class="breadcrumb"><span>WORKSPACE</span><b>/</b><strong id="crumb">Overview</strong></div><div class="top-right"><span class="live-dot"></span> LOCAL EXPLORER <span class="top-divider"></span><span>POSTGRESQL</span></div></header>
+    <div class="content" id="content">
+      <div id="notice" class="notice" hidden></div>
+      <section id="overview-view" class="view">
+        <div class="eyebrow"><span class="eyebrow-line"></span> YOUR DATABASE, AT A GLANCE</div>
+        <div class="page-heading"><div><h1>Data, in perspective<span>.</span></h1><p>Explore your warehouse, understand its structure, and find what you need.</p></div><button class="primary" id="open-sql">Open SQL editor <span>↗</span></button></div>
+        <div class="stats"><div><span class="stat-label">DATABASE ENGINE</span><strong>PostgreSQL</strong><small>Connected workspace</small></div><div><span class="stat-label">AVAILABLE TABLES</span><strong id="table-count">—</strong><small>Tables &amp; views</small></div><div><span class="stat-label">SCHEMAS</span><strong id="schema-count">—</strong><small>Available to your role</small></div><div><span class="stat-label">QUERY MODE</span><strong class="mode">Read only <i>↗</i></strong><small>Browse with confidence</small></div></div>
+        <div class="section-heading"><div><div class="eyebrow">THE DIRECTORY</div><h2>Explore your tables</h2><p>A closer look at the data that powers your warehouse.</p></div><span class="section-count" id="directory-count"></span></div>
+        <div class="directory-head"><span>TABLE / DESCRIPTION</span><span>SCHEMA</span><span>COLUMNS</span><span></span></div><div id="directory" class="directory"></div>
+      </section>
+      <section id="table-view" class="view" hidden>
+        <button class="back" id="back">← &nbsp; All tables</button><div class="eyebrow"><span class="eyebrow-line"></span> TABLE EXPLORER</div>
+        <div class="page-heading table-heading"><div><div class="table-path" id="table-path"></div><h1 id="table-title"></h1><p id="table-description"></p></div><button class="secondary" id="table-query">Open in SQL editor ↗</button></div>
+        <div class="tab-bar"><button class="tab active" data-tab="data">Rows <span id="row-tab-count"></span></button><button class="tab" data-tab="schema">Schema <span id="column-tab-count"></span></button></div>
+        <div id="data-panel"><div class="panel-toolbar"><div><h3>Table rows</h3><p>Select a row to inspect its fields and values.</p></div><div class="result-actions"><div class="exports" aria-label="Export table"><span>Export all</span><button data-export="xlsx" data-source="table">Excel</button><button data-export="csv" data-source="table">CSV</button><button data-export="json" data-source="table">JSON</button></div><div class="pagination"><button id="prev-page" aria-label="Previous page">←</button><span id="page-number">Page 1</span><button id="next-page" aria-label="Next page">→</button></div></div></div><div id="table-data" class="results-wrap"></div></div>
+        <div id="schema-panel" hidden><div class="panel-toolbar"><div><h3>Columns &amp; definitions</h3><p>Names, types, and meaning of each field.</p></div></div><div id="columns-list"></div></div>
+      </section>
+      <section id="sql-view" class="view" hidden>
+        <div class="eyebrow"><span class="eyebrow-line"></span> YOUR QUERY WORKSPACE</div><div class="page-heading"><div><h1>SQL editor<span>.</span></h1><p>Ask your database a question. Results appear below.</p></div><div class="read-only-pill"><span class="live-dot"></span> READ ONLY</div></div>
+        <div class="editor"><div class="editor-top"><span><i>◈</i> &nbsp; query.sql</span><span>POSTGRESQL</span></div><div class="editor-area"><div class="line-number">01</div><textarea id="query" spellcheck="false" aria-label="SQL query" autocomplete="off">SELECT *
+FROM warehouse.warehouse_products;</textarea><div id="suggestions" class="suggestions" hidden></div></div><div class="editor-bottom"><span>Autocomplete: type to suggest · ↑ ↓ to navigate · Tab to insert</span><button class="primary" id="run-query">▶ &nbsp; Run query <kbd>Ctrl ↵</kbd></button></div></div>
+        <div class="panel-toolbar results-heading"><div><div class="eyebrow">QUERY OUTPUT</div><h3>Results</h3><p id="query-status" role="status">Run a query to see your results here.</p></div><div id="query-actions" class="result-actions" hidden><div class="exports" aria-label="Export query results"><span>Export all</span><button data-export="xlsx" data-source="query">Excel</button><button data-export="csv" data-source="query">CSV</button><button data-export="json" data-source="query">JSON</button></div><div class="pagination"><button id="query-prev" aria-label="Previous results page">←</button><span id="query-page">Page 1</span><button id="query-next" aria-label="Next results page">→</button></div></div></div><div id="query-results" class="results-wrap empty-state"><div><span>⌘</span><strong>Ready when you are</strong><p>Write a query above and run it to explore your data.</p></div></div>
+      </section>
+    </div>
+    <footer class="main-footer"><span>WAREHOUSE DATA EXPLORER</span><span>BUILT FOR CLARITY &nbsp; ✳</span></footer>
+  </main>
+</div>
+<dialog id="row-dialog"><div class="dialog-head"><div><div class="eyebrow">ROW INSPECTOR</div><h2>Record details</h2><p>Field values and what they mean.</p></div><button id="close-dialog" aria-label="Close">×</button></div><div id="row-detail"></div></dialog>
+</body></html>

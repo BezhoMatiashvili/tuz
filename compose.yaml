@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:16.6-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in local .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in local .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in local .env}
+    ports:
+      - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_HOST_PORT:-55432}:5432"
+    volumes:
+      - warehouse-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  db-ui:
+    build:
+      context: .
+      dockerfile: db_ui/Dockerfile
+    environment:
+      DB_UI_PGHOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in local .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in local .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in local .env}
+    ports:
+      - "127.0.0.1:${DB_UI_HOST_PORT:-8766}:8765"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  warehouse-postgres:

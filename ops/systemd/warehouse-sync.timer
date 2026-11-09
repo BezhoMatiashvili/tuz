@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the warehouse synchroniser hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=5m
+AccuracySec=1m
+Unit=warehouse-sync.service
+
+[Install]
+WantedBy=timers.target

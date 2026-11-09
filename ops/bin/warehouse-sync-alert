@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+recipient="${WAREHOUSE_ALERT_EMAIL:-}"
+reason="${1:-sync_error}"
+if [[ "$reason" == "warehouse-sync.service" && -r "${STATE_DIRECTORY:-}/last-failure" ]]; then
+  reason=$(<"${STATE_DIRECTORY}/last-failure")
+fi
+case "$reason" in
+  authentication_rejected|source_protocol_error|configuration_error|sync_error|missed_run)
+    ;;
+  warehouse-backup.service) reason="backup_failure" ;;
+  *)
+    reason="sync_error"
+    ;;
+esac
+[[ -n "$recipient" ]] || exit 0
+printf 'Warehouse sync alert: %s\nSee restricted system journal and runbook; no credential or URL is included.\n' "$reason" \
+  | /usr/bin/mail -s "Warehouse sync: $reason" "$recipient"

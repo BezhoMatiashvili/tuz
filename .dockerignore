@@ -1,0 +1,10 @@
+**
+!requirements.txt
+!db_ui/
+!db_ui/**
+!warehouse_sync/
+!warehouse_sync/**
+!migrations/
+!migrations/**
+**/__pycache__/
+**/*.pyc

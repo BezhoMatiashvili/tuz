@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -u -o pipefail
+
+state_directory="${STATE_DIRECTORY:-/var/lib/warehouse-sync}"
+mkdir -p "$state_directory"
+
+set +e
+/opt/warehouse-sync/.venv/bin/python -m warehouse_sync
+status=$?
+set -e
+
+case "$status" in
+  0)
+    touch "$state_directory/last-success"
+    rm -f "$state_directory/last-failure"
+    ;;
+  10) printf '%s\n' 'authentication_rejected' > "$state_directory/last-failure" ;;
+  11) printf '%s\n' 'source_protocol_error' > "$state_directory/last-failure" ;;
+  2)  printf '%s\n' 'configuration_error' > "$state_directory/last-failure" ;;
+  *)  printf '%s\n' 'sync_error' > "$state_directory/last-failure" ;;
+esac
+exit "$status"
