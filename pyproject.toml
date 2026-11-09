@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Read-only warehouse catalogue synchronizer for PostgreSQL"
 requires-python = ">=3.11"
 dependencies = [
-    "anthropic==0.72.0",
+    "anthropic==2.6.0",
     "fastapi==0.155.0",
     "httpx==0.28.1",
     "uvicorn==0.54.0",
