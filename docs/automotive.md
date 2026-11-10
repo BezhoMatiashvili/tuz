@@ -21,12 +21,15 @@ uv run python -m automotive
 ```
 
 `--setup-local` is for an **existing, migrated local warehouse**. It reads the local
-admin `DATABASE_URL` from `.env`, accepts only loopback hosts, applies only migration
-0006 after confirming earlier migrations are already complete, and creates independent
-runtime/enrichment logins. It generates missing VIN/operator secrets and saves them
+admin `DATABASE_URL` from `.env`, accepts only loopback hosts, applies only the
+automotive migrations (through 0008) after confirming earlier migrations are already
+complete, and creates independent runtime, enrichment and knowledge-validator logins.
+It generates missing VIN/operator secrets and saves them
 privately in `.env` (0600), without printing passwords. SQL role creation uses SCRAM
 verifiers rather than plaintext passwords. It never copies, imports or updates warehouse
-products. Existing automotive database URLs are preserved rather than overwritten.
+products. Existing automotive database URLs are preserved rather than overwritten: when
+runtime and enrichment URLs already exist, a rerun only adds the missing
+`AUTOMOTIVE_VALIDATOR_DATABASE_URL`.
 If older warehouse migrations are pending, complete the existing migration procedure
 first; this helper stops instead of changing the warehouse tables.
 
@@ -44,7 +47,9 @@ manager or Python's `secrets.token_urlsafe(32)`. Keep the VIN hash key stable ac
 restarts; rotating it makes old cache entries unreachable until expiry/cleanup.
 
 `ANTHROPIC_API_KEY` enables chat. `ANTHROPIC_MODEL` defaults to `claude-haiku-5-5`;
-actual model/key access must be checked in the target workspace. Set
+actual model/key access must be checked in the target workspace. The default chat engine
+has a model setting of its own, `AUTOMOTIVE_ASSISTANT_MODEL` (`claude-sonnet-5-5`); see
+"Assistant engine (model-driven)" below. Set
 `ANTHROPIC_WORKSPACE_ID` for an unscoped key; omit it for a key already scoped to the
 intended workspace, as described in the official
 [authentication documentation](https://platform.claude.com/docs/en/manage-claude/authentication).
@@ -58,6 +63,11 @@ binds to loopback, validates host and origin, disables access logs and proxy hea
 and applies per-process rate limits (60 API requests/minute, 10 provider requests/minute
 per client). It is a local application; internet-facing deployment requires the existing
 [production runbook](production-runbook.md) and a separate access-control design.
+
+That access-control design now exists: the same process also serves the garage's public
+site, a staff login and a dashboard, and this workspace moved from `/` to `/staff` behind
+that login together with `/api/v1/*`. See [garage-site.md](garage-site.md) for the routes,
+roles, security model and what is still required before it is reachable from the internet.
 
 ## Migration and database capabilities
 
@@ -80,6 +90,13 @@ pending review and enrichment cannot update evidence to approve itself. The owne
 reviews through the separate administration channel. If capability roles are created
 after migration, rerun the provisioning script to apply grants. Keep `automotive` out
 of Data API exposed schemas. Existing sync-writer privileges are unchanged.
+
+Migration `0008_automotive_knowledge` adds the private `automotive_knowledge` schema
+described in [Learned knowledge base](#learned-knowledge-base). It creates no grants for
+the enrichment role. Runtime may read active accepted facts and enqueue candidates only
+through `automotive_knowledge.enqueue`; the separate `automotive_validator` capability
+claims jobs and publishes results. Rerunning the provisioning script reapplies exactly
+these grants.
 
 The paired down script removes **only automotive data**. It is destructive to imports,
 indexes, jobs and cached identifications. Existing production rollback policy prefers
@@ -328,6 +345,9 @@ available in an expandable section.
 
 ### How replies are written
 
+*Applies only when `AUTOMOTIVE_CHAT_ENGINE` is `scripted` or `orchestrated`; the default
+engine writes its own replies, see "Assistant engine (model-driven)".*
+
 Replies are built by the backend (`automotive/replies.py`) from the verified answer only: the
 car, how many parts were found, how many are in the store and how many can come from the TUZ 11
 warehouse in 1-2 hours, at most one question, and at most one short note (said once per
@@ -399,6 +419,43 @@ SELECT question, status, COUNT(*) FROM turns
 WHERE status != 'COMPLETE' GROUP BY question, status ORDER BY 3 DESC LIMIT 20;
 ```
 
+#### Daily review: `python -m automotive.chat_review`
+
+`uv run python -m automotive.chat_review` asks again every logged request that ended with
+no parts and no question. It opens both logs read-only (`--log staff|site|both`, the last
+`--since-hours 24`), takes the newest conversations up to `--limit 40` such turns, and
+replays each conversation from its first message in a fresh conversation of the assistant
+engine, with a larger budget (8 model requests and 90 seconds a turn) and no chat log, so
+a replay never shows up among the chats. A turn is a **miss** when its replay ends with at
+least one part that is in the store or at the warehouse: the catalogue had it and the chat
+showed nothing. The judgement is the engine's own; the command holds no matching rules and
+leaves no message out for being short or a greeting.
+
+- Messages are replayed as logged, `[VIN]` included. Staff turns are also given the car the
+  log recorded beside them (the form's car and what the VIN decoded to); the public chat
+  has no form. A turn that had a VIN and whose replay finds nothing in stock is reported as
+  **needs VIN**: not a miss, and not proof that nothing was missed.
+- "No question" comes from the assistant engine's own record of the turn. Turns of the
+  older engines have none: there an answer that ends with a question mark counts as a
+  question, and the report says how many turns were decided that way.
+- Reports go to `data/chat_logs/reviews/chat-review-YYYY-MM-DD.md` and `.json` (`--out`;
+  directory 0700, files 0600, git-ignored): a summary table and a section for each miss
+  with the customer's words, both answers, the car and up to five of the parts found. They
+  hold customer wording, so treat them like the log. The command itself prints three lines
+  of counts.
+- Cost: only the replays call the model; they read free sources (no paid catalogue) and
+  write nothing to PostgreSQL. `--budget-usd 1.0` ends a run once the replays' token usage
+  has cost that much (counted at $0.10/$0.50 per million input/output tokens for Haiku 5.5,
+  $2/$10 for Sonnet 5.5), and the report says how many turns were left unchecked. One
+  replayed message is assumed, not yet measured, to cost about $0.007 on Haiku 5.5 and
+  $0.14 on Sonnet 5.5. `--dry-run` lists what would be replayed with that estimate and
+  calls no model; `--model ID` replays with another model.
+- `ops/systemd/automotive-chat-review.service` and `.timer` run it daily at 22:30
+  (Asia/Tbilisi), after the evening sync.
+
+*The three paragraphs that follow describe the older engines and apply only when
+`AUTOMOTIVE_CHAT_ENGINE` is `scripted` or `orchestrated`.*
+
 A message with a known vehicle (decoded VIN or make, model and year) and a part category,
 or a VIN with no category, is answered directly from the same read job without a model
 round trip: warehouse cards appear as the sources finish, brake questions show pad/disc
@@ -430,8 +487,13 @@ Stock is read from `warehouse.warehouse_products.source_columns`: `column_10` (t
 column titled "1") is the quantity in the store; `column_12` ("TUZ 11") is held in
 inventory and reaches the store in one to two hours. `column_11` ("TUZ 6") has no agreed
 meaning and is never used. Products carry `stock: {store, tuz11}` (numbers, or null for a
-cell that is not a plain number). Counts are as fresh as the hourly sync; a card older than
-three hours adds `STOCK_MAY_BE_STALE`.
+cell that is not a plain number). Counts are as fresh as the last sync, which runs at 09:00
+and 21:00 Tbilisi time; a card older than 13 hours adds `STOCK_MAY_BE_STALE`.
+
+*The rest of this section is how the older engines choose what to offer and applies only
+when `AUTOMOTIVE_CHAT_ENGINE` is `scripted` or `orchestrated`; the assistant engine reads
+the same stock columns, shows a matching part that is out of stock (marked so) and judges
+fit as its own section describes.*
 
 In chat, an item is offered only when it is **in the store** (`IN_STORE`) or **in TUZ 11**
 (`WITHIN_1_2_HOURS`). Items with zero in both are not offered; if suitable items exist but
@@ -513,11 +575,14 @@ raw VIN is kept in browser storage.
 
 ### Why answers are fast
 
+*Describes the older engines (`AUTOMOTIVE_CHAT_ENGINE=scripted` or `orchestrated`) and the
+direct VIN search; the assistant engine's speed is given under "Cost and speed" below.*
+
 - **Indexed code search.** `automotive.part_numbers` holds every product's codes, keyed by a
-  stock-independent hash (`automotive.content_hash`, migration `0007`), so the hourly stock
-  changes no longer make products look stale. A code lookup is about 60 ms instead of 1 s.
+  stock-independent hash (`automotive.content_hash`, migration `0007`), so stock changes no
+  longer make products look stale. A code lookup is about 60 ms instead of 1 s.
   Build it once with `uv run python -m automotive.worker --auto --once` (about a minute for
-  65,000 products); `ops/systemd/automotive-index.timer` repeats it hourly after the sync. The
+  65,000 products); `ops/systemd/automotive-index.timer` repeats it hourly, so it catches up within an hour of each sync. The
   worker needs only `AUTOMOTIVE_ENRICHMENT_DATABASE_URL`. Rows never indexed or parsed by an
   older parser are still found by a direct scan, so a missing index slows answers but never
   loses a match.
@@ -549,6 +614,10 @@ raw VIN is kept in browser storage.
 
 ### Hard rules (always on)
 
+*These rules are code of the older engines and apply in full only when
+`AUTOMOTIVE_CHAT_ENGINE` is `scripted` or `orchestrated`; the assistant engine enforces
+rules 1 and 6 in code and leaves the judgement of fit to the model.*
+
 1. Only active products are offered (`is_active`).
 2. Front/rear: items named for the other axle are dropped (the catalogue abbreviations `წნ` and
    `უკ` count); an item with no axle word stays, labelled "axle not stated", and ranks last.
@@ -558,12 +627,15 @@ raw VIN is kept in browser storage.
    (`VEHICLE_MISMATCH`). Several catalog vehicles for one VIN already means "do not guess".
 5. A bare number is trusted only with its brand. OEM-labelled codes shorter than 6 characters,
    or all-digit codes shorter than 8, are never searched.
-6. Stock older than `hide_after_hours` (24) is not stated as a fact: the customer is asked to
-   confirm. Older than `stale_hours` (3) adds a confirm-in-store warning.
+6. Stock older than `hide_after_hours` (25) is not stated as a fact: the customer is asked to
+   confirm. Older than `stale_hours` (13) adds a confirm-in-store warning.
 7. Oil quantity: the reply shows whether the stocked pack sizes add up to the engine's litres.
 8. A typed code is answered as typed; only `is_active` and the stock label apply to it.
 
 ### Staff rules: `automotive/rules.toml`
+
+*The assistant engine reads `[stock]`, `[[brand_alias]]` and `[[never_offer]]` only; the
+other sections take effect when `AUTOMOTIVE_CHAT_ENGINE` is `scripted` or `orchestrated`.*
 
 Edit the file and restart the app. It is validated at startup; a mistake stops the app and
 names the section. Sections: `[stock]` (minimum quantities, stale hours), `[[brand_alias]]`
@@ -578,6 +650,10 @@ fill them in; nothing is invented. A staff-confirmed fitment is not the evidence
 
 ### Measuring: `--evaluate`
 
+*Its result columns describe the older engines' lookup, so run it with
+`AUTOMOTIVE_CHAT_ENGINE` set to `scripted` or `orchestrated`; the assistant engine is
+measured with `--evaluate-assistant`.*
+
 ```bash
 uv run python -m automotive --evaluate vins.csv --misses-out misses.csv
 ```
@@ -591,6 +667,10 @@ no VIN (make, model, year, trim, request, reason) so staff can add rules where t
 nothing. The command writes nothing to the database.
 
 ### Measuring conversations: `--evaluate-chat`
+
+*Its scripts and checks were written for the older engines' backend-written replies and
+apply when `AUTOMOTIVE_CHAT_ENGINE` is `scripted` or `orchestrated`; the assistant engine
+is measured with `--evaluate-assistant`.*
 
 ```bash
 uv run python -m automotive --evaluate-chat mock                       # offline, CI
@@ -607,7 +687,355 @@ attempts counted separately. `--judge` (live only) asks the model to rate each t
 5. Live mode skips expectations tied to the synthetic catalog; `{VIN1}` is the first VIN in the
 file and VINs are never printed. `tests/test_conversation_eval.py` runs the mock suite as a test.
 
+## Assistant engine (model-driven)
+
+Since 2026-11-10 both chats, the staff chat at `/staff` and the widget on the public site,
+are answered by the assistant engine (`AUTOMOTIVE_CHAT_ENGINE=assistant`, the default). The
+two older engines stay selectable; the sections that describe them say so.
+
+### Why the engine changed
+
+Both chat logs (498 turns) were read and every failed request was checked against the
+catalogue. On the engine that was live, 12 of 74 requests for a car or a part ended with
+parts (staff chat 10 of 50, public widget 2 of 24), although the parts were usually in
+stock. The causes, each traced to code:
+
+1. A rule dropped every row found through the catalogue's own text once a car was known.
+   18 turns ended in "could not confirm an offer" this way.
+2. The search found only rows that contain the make and model as words. The catalogue
+   writes `MB W212`, `BMW F10`, `MMC L200`, `VAG GOLF 7`: 27 Mitsubishi rows were seen
+   where 3,078 exist, 8 E-Class rows where about 886 exist.
+3. Parts were recognised by 20 fixed patterns, which reach 30% of the catalogue.
+4. The model had to quote the customer word for word for every fact, so "Camry" gave no
+   make and the bot asked for it.
+5. Rules in front of the model swallowed answers ("yes", "ორივე", `W212`) and deleted
+   questions, and most questions had no buttons.
+6. The design depended on part numbers that the free sources rarely give for a typed car.
+7. Matches that were out of stock were hidden without a word (9 turns).
+
+The common cause: the catalogue is typed by hand, and a hand-written rule covers only the
+spellings its author thought of. Replacement rules tried on the real rows picked wrong
+parts too (`>2009` means "from 2009" on some rows and "up to 2009" on others), so this
+engine takes rules out of the path instead of adding more.
+
+### How a turn works
+
+The model works like a counter clerk who can read the whole catalogue. No list or pattern
+in the code decides what the customer means, which rows fit or what to ask.
+
+1. **Before the model.** The store (`automotive/conversations.py`) keeps the VIN checks,
+   redaction and turn bookkeeping and reads nothing out of the message. A VIN is decoded
+   by the backend and never sent to the model, which sees `[VIN]` and the decoded facts.
+   The turn (`automotive/assistant.py`) attaches data only: exact hits for part numbers
+   typed in the message, fresh copies of the rows shown last turn, the model's own notes,
+   and the question it asked last time with its options and which one was tapped.
+   The staff page sends its vehicle form with every message. It reaches the model apart
+   from the conversation, as `staff_form`: the car fields a clerk filled in, and the
+   facts decoded from the VIN in the form's VIN field. The form may be left over from
+   the customer before, so it is the car only while no message names one: a make, model,
+   year or engine stated in a message outranks it, and then the form's VIN is not this
+   car's either.
+2. **What the model knows.** The instructions (`automotive/assistant_prompt.py`) and a
+   catalogue guide computed from the live catalogue (`automotive/assistant_catalog.py`):
+   how makes are written and how often, part names and abbreviations, year notations, each
+   with a real example. Beside each part name the guide says what the part is in plain
+   English (`სტაბ კრონშტეინი` is the stabiliser link, `სტაბ მილისა` the bar's bushing): a
+   model read that from the rows that carry the name (`--read-part-names`, below), because
+   the shop's names are not what their literal translations say. Nothing in the guide is
+   written by hand; it is built once per catalogue snapshot and cached with the provider.
+3. **Searching.** The model calls read tools, several at once, with words it chooses
+   (a Camry is a Toyota, a 2015 E-Class is a `W212`, `კალოტკა` means brake pad). A search
+   that finds nothing answers with how the catalogue does write that car and part and
+   with near spellings, so the model corrects itself.
+4. **Judging and answering.** The model reads the rows, decides which fit this car, and
+   ends the turn with one `finish` call: the reply, the rows it chose (each with a
+   confidence, the words of the row it rests on, a reason and a group), a question with
+   2 to 8 answer buttons when the answer changes which rows are right, next-step buttons,
+   the car as it understood it, and notes for the next turn.
+5. **Code keeps facts honest.** Cards are built from database rows by id with stock read
+   again: name, price and stock are never model text. A row the model names must be one
+   it was shown and still be in the catalogue, the quoted words must be in the row,
+   `confirmed` needs a number from a car-specific source of this conversation, the text
+   states no price, a reply that asks carries its buttons, and a `[[never_offer]]` entry
+   of `rules.toml` is a veto. A failed check goes back to the model with the reason, at
+   most twice; after that the valid part of its answer is used.
+6. **No dead end.** Every reply holds parts, or a question with buttons, or next-step
+   buttons. A model or network failure gives an apology with a retry button. A matching
+   part that is out of stock is shown, marked so.
+
+The reply follows the customer's language (Georgian, English, Russian; Georgian typed in
+Latin letters is answered in Georgian script). Labels of the page stay Georgian or English.
+Web research is not part of a live turn any more.
+
+The engine prepares itself when a conversation opens (it builds the catalogue index and
+has the provider read the fixed part of the prompt), so both screens open the conversation
+when the customer starts to write, not when the message is sent.
+
+### Tools
+
+| Tool | What it reads |
+|---|---|
+| `search_catalog` | The shop's catalogue by make, vehicle and part terms and exclusions the model chooses. Up to 30 rows, in-store first, with totals, the other vehicle texts and part names that matched, near spellings, rows filed under a word one letter away, and rows in stock that carry the numbers of an out-of-stock row. Matching is string mechanics only: a Georgian word matches as the start of a word, a Latin word a whole word however it is spaced (`CR-V`, `CRV`), and a number of three or more digits also the code that carries it behind letters (`150` finds `J150`, as customers say "Prado 150"). |
+| `lookup_codes` | Part numbers, exactly: the brand's own, the shop's and cross numbers, what the crawled parts catalogue says a number is and which cars it lists. |
+| `equivalents` | Rows that share reference numbers with a row (one shared number is flagged as a hint only). |
+| `supplier_parts` | Outside catalogues for this car and part group, through the existing source federation, for at most 6 seconds. |
+| `oil_guide` | The Shell, Pakelo and Fuchs oil selectors: grades, capacity and engine code. |
+| `finish` | Ends the turn (see step 4). |
+
+All tools are read-only. Rows reach the model under per-conversation handles (`r1`, `r2`),
+and the shop's own stock numbers are given only in the staff chat.
+
+### Confidence levels
+
+Every part shown carries one of four levels; both screens show it as a fixed label with
+the model's reason under it. When every part of a group rests on the same level and the
+same reason, the label and the reason stand once under the group's heading and not on
+each card; "Show more" keeps that right as parts are added. A level a screen has no label
+for is shown without one.
+
+| Level | Meaning | Label |
+|---|---|---|
+| `confirmed` | A part number from a source specific to this car is on the row. | Matches by part number |
+| `listed` | The row's own text names this model with a year range or generation that includes the car. | Listed for this model and year |
+| `check` | The fit rests on the model's name alone or on indirect evidence; the reason says what to check. | Needs checking |
+| `spec` | The row's text ties the product to no car (an engine oil, a fluid, a universal item); it was chosen because its specification is what the car needs, and the reason names that specification. | Chosen by specification |
+
+One more judgement, `depends`, is internal: rows that fit only if the customer answers the
+open question one way are held back until that answer.
+
+### Settings
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AUTOMOTIVE_CHAT_ENGINE` | `assistant` | `assistant`, `orchestrated` or `scripted`. Empty selects by `AUTOMOTIVE_CHAT_ORCHESTRATION`, as before this engine existed. |
+| `AUTOMOTIVE_ASSISTANT_MODEL` | `claude-sonnet-5-5` | The model of this engine. Empty uses `ANTHROPIC_MODEL`. |
+| `AUTOMOTIVE_ASSISTANT_EFFORT` | `low` | `low`, `medium`, `high`, or empty for the API default. |
+| `AUTOMOTIVE_ASSISTANT_THINKING` | empty | Empty keeps the model's own default; `off` asks for no thinking before an answer. |
+| `AUTOMOTIVE_ASSISTANT_TURN_SECONDS` | 30 | Seconds one turn may take (10 to 120). |
+| `AUTOMOTIVE_ASSISTANT_MAX_REQUESTS` | 4 | Model requests in one turn (1 to 8). |
+| `AUTOMOTIVE_ASSISTANT_MAX_TOOL_CALLS` | 10 | Read-tool calls in one turn (1 to 20). |
+| `AUTOMOTIVE_ASSISTANT_CACHE_TTL` | `1h` | How long the provider keeps the fixed part of the prompt ready: `1h` or `5m`. With an hour the first message after a quiet spell does not wait for the prompt to be read again; writing it costs twice the input price instead of 1.25 times. |
+| `AUTOMOTIVE_ASSISTANT_NAMES_PATH` | `data/assistant/part_names.json` | The file with what the catalogue's part names mean, printed in the guide. Empty, or a file that does not exist: the guide lists the names without meanings. |
+
+The part-name file is made by a model, not by hand, and `data/` is not in the repository:
+run `uv run python -m automotive --read-part-names` once on every machine that serves the
+chat (175 names cost $1.15 on Opus 5.5 on 2026-11-10), and again when the catalogue gains
+new part names; it reads only the names that have no reading yet, `--all` reads every name
+anew. Each reading is at most 12 words and comes from the name's most written forms and
+example rows (vehicle text, brand, number, cross numbers). The file is plain JSON, so a
+parts person can correct a reading in it; the engine picks the change up by itself.
+
+When the provider's account refuses every request, the chat cannot answer and asking again
+does not help. The engine tells the three causes apart from a passing fault: no credit
+(`PROVIDER_BILLING`, the provider's "Your credit balance is too low"), a key that does not
+work (`AUTHENTICATION_ERROR`) and no access to the model (`ACCESS_DENIED`). The customer
+reads that the assistant is not available right now and is pointed to the part search and
+the phone, with no "try again" from the engine; the staff chat adds the cause under the
+reply ("the Anthropic account is out of credit"); and the server log gets one line per
+such turn at error level, `assistant_provider_account status=PROVIDER_BILLING`, which is
+the line to watch for. This happened on 2026-11-10 when testing used up the account's
+credit. An evaluation run stops at the first such turn, charges nothing for it and marks
+the rest "not run".
+
+To go back to an older engine set `AUTOMOTIVE_CHAT_ENGINE=orchestrated` (AI-led routing,
+below) or `AUTOMOTIVE_CHAT_ENGINE=scripted` (backend-written replies) in `.env` and
+restart. Their code and tests are untouched, and both screens still draw their turns:
+`automotive/chat_contract.py` reads the question, the next steps and a confidence level
+out of what an older engine sends.
+
+### Cost and speed
+
+Measured on 2026-11-10 with `--evaluate-assistant conversations`: 72 test conversations
+(87 turns) on the real model and catalogue, 3 of them skipped for want of a private VIN.
+
+| | Haiku 5.5 | Sonnet 5.5, run 1 | Sonnet 5.5, run 2 | Sonnet 5.5, thinking off |
+|---|---|---|---|---|
+| Conversations passed | 52 of 69 | 63 of 69 | 63 of 69 | 61 of 69 |
+| Expected rows found | 78 of 91 | 78 of 88 | 81 of 88 | 71 of 84 |
+| Wrong rows offered | 12 | 0 | 2 | 7 |
+| Questions without buttons | 0 of 26 | 0 of 26 | 0 of 26 | 0 of 29 |
+| Median seconds, all turns | 7.6 | 6.7 | 7.6 | 9.0 |
+| Median seconds, turns that look for a part | 8.7 | 7.1 | 8.1 | 9.3 |
+| 90th percentile seconds, all turns | 11.6 | 9.2 | 11.4 | 12.7 |
+| Cost per turn | $0.0017 | $0.025 | $0.026 | $0.027 |
+
+Sonnet 5.5 at low effort with thinking left on is the default: it finds as many of the
+expected rows as Haiku and offers almost no wrong ones, and it is no slower. It costs
+about 15 times more per turn, about 2.5 cents. Greetings and part-number look-ups take 3
+to 5 seconds, because nothing answers before the model. In the browser walks of the same
+day the median was 5.9 s at $0.023 a turn (28 turns on both screens) and, in the final
+walk on the engine as it is now, 7.9 s at $0.029 a turn (35 turns); see
+[the walk's note](automotive-review/assistant-chat-qa.md).
+
+The engine changed after the model was chosen (the catalogue-wide check, the part-name
+readings, the one-hour prompt cache, the wider number match). The last complete run of the
+72 conversations passed 66 with 4 wrong rows, all of them spark plugs offered as "needs
+checking". On the final code a run reached 39 conversations before the API account ran out
+of credit: 38 passed, no wrong row, 7.5 s at the median for a turn that looks for a part
+(10.5 s at the 90th percentile) and 3.8 s for a quick turn, about 3 cents a turn.
+
+The catalogue-wide check of the same day (`--evaluate-assistant catalogue`): a second
+model asked for 147 sampled stocked parts in customers' words, in four ways of writing.
+
+| | Found after 1 turn | after 2 | after 3 |
+|---|---|---|---|
+| Before the fixes it led to | 40% | 63% | 71% |
+| After them, the same requests | 46% | 80% | 86% |
+| Fresh requests after them (39, then 19 after the part-name readings) | 46%, 42% | 74%, 89% | 90%, 89% |
+
+Requests that name a model were found in 97% of the fresh cases; requests that name only
+a make ("a bushing for a Honda") are the weak ones. A stronger model that reviewed the
+offers called 4 of 24 rows wrong in the last sample, all of them shown as "needs
+checking" and none of those presented as listed or confirmed. Known weak spots: when
+variants differ by engine and only one is in stock the engine often shows it as "needs
+checking" where it should ask; and when a row names only the chassis, the heading the
+engine gives a variant comes from its reading of the part number and can be wrong. The
+full account is in `IMPLEMENTATION_PROGRESS.md`; reports and the judged rows for a parts
+person are in `data/assistant_eval/`.
+
+### Running the checks
+
+```bash
+uv run python -m automotive --evaluate-assistant conversations   # the test conversations
+uv run python -m automotive --evaluate-assistant catalogue       # does it find what is stocked?
+uv run python -m automotive.chat_review                          # the last day's misses, from the logs
+node tests/browser/assistant_chat_walk.mjs                       # both screens in a browser
+uv run python -m automotive --read-part-names                    # what new part names mean, for the guide
+```
+
+All five call the real model and cost money. The two evaluations and the name reader append what they spend
+to a ledger (`--ledger`, default `AUTOMOTIVE_EVAL_LEDGER` or
+`data/assistant_eval/cost_ledger.jsonl`) and do not start, or go on, once its total reaches
+`--budget` (40 USD by default).
+
+- `conversations` runs `tests/fixtures/assistant/conversations.json` through the same
+  conversation store the chats use and checks each turn against what should and must not
+  be offered, whether a question has its buttons, questions about things already known,
+  the reply language, seconds and requests. `--model ID` compares another model,
+  `--audience staff|public` chooses the chat, `--only TAG,ID` narrows the run, `--parallel N`
+  runs conversations side by side, `--report-out FILE` keeps the full report. Scenarios
+  with a VIN take it from a private `vins.csv` (`--vins`); without one they run on a
+  stand-in, a VIN of no car that the run itself decodes to the scenario's car, so the
+  model's side of the VIN path is tested without customer data. A VIN is never printed.
+  Run it with `--parallel 2` when the seconds matter: more conversations side by side
+  wait for each other and the measured seconds grow.
+- `catalogue` samples stocked rows (`--sample`, 150 by default; `--seed`), has a writer
+  model phrase what a customer who needs that row would type and answer the engine's
+  questions from the row, and counts how often the engine shows the row or one sharing
+  two or more numbers within three turns. A stronger model then reviews a sample of the
+  offers (`--review`, 60 by default; `--csv-out FILE` exports them for a parts person).
+- `chat_review` is described under "Local chat log" above.
+- The browser walk is described in its own header and in
+  [the walk's note](automotive-review/assistant-chat-qa.md); `WALK_DRY=1` runs it on
+  scripted replies without the model.
+
+Without a model call: `tests/test_assistant_catalog.py`, `tests/test_assistant.py` (a
+scripted model), `tests/test_assistant_eval.py`, `tests/test_chat_contract.py`,
+`tests/test_chat_review.py`, `tests/test_site_chat.py`, and the two screen suites
+`node tests/site_chat_widget_test.mjs` and `node tests/automotive_chat_ui_test.cjs`.
+
 ## Data sources, permission and coverage
+
+### AI-led conversational routing
+
+*Applies only when `AUTOMOTIVE_CHAT_ENGINE=orchestrated` (or when it is empty and
+`AUTOMOTIVE_CHAT_ORCHESTRATION=true`); the default engine is described above.*
+
+`AUTOMOTIVE_CHAT_ORCHESTRATION=true` enables the bounded AI-led conversation flow
+when settings are loaded from the environment. Set it to `false` to restore the
+legacy routing path. Unambiguous greetings, exact part codes, and references to
+previously shown products remain immediate. Ordinary vehicle requests and answers
+to pending vehicle questions reach intent extraction before a missing-detail question
+is chosen, including Georgian inflections, transliteration, and corrections.
+
+Each conversational turn has one deadline (`AUTOMOTIVE_CHAT_TURN_SECONDS`, 75 seconds by
+default), shared by model requests, provider reads, and automatic web research. When the
+catalog sources link no product for a requested part, the backend searches the web for
+that part's OE and aftermarket numbers and looks up exact matches in the warehouse; those
+cards say the number came from a web source and fitment must be verified. This research
+alone takes 20-40 seconds. Motorium is disabled by default (`MOTORIUM_ENABLED=false`). Limits are six model requests, ten client
+tool executions, and two native Anthropic web searches, including continuations.
+Standalone search retains its separate budget. Successful partial findings remain
+available if a source fails or time expires. Vehicle revisions invalidate dependent
+results and prevent superseded turns from publishing old configurations.
+
+`AUTOMOTIVE_CACHE_PATH` defaults to `data/automotive-cache.sqlite3`, a private,
+versioned SQLite cache for catalog, chooser, and cited research results. Successful
+entries expire after 24 hours and empty entries after 60 seconds. Stock, credentials,
+and raw VINs are excluded; warehouse offers refresh synchronized inventory records.
+
+Customer-stated details, source-supported candidates, and selected configuration
+remain separate through follow-ups. The assistant asks one targeted question when
+variants need distinguishing. Sources and excerpts appear as source assertions,
+with vehicle applicability explicitly unconfirmed. A supplier assertion or web
+excerpt does not establish reviewed fitment, oil approval, interchangeability,
+warehouse price, or stock. Retrieved material never becomes approved evidence
+automatically. Unsupported catalog routes and unavailable AI/search produce a
+capability limitation while retaining successful reads.
+
+Deterministic regression and browser checks exercise extraction, scattered details,
+short vehicle answers, corrections, vehicle switching, citations, stale revisions,
+and responsive layout. Synthetic provider/model responses verify those contracts;
+they do not prove live provider coverage, model interpretation quality, oil
+requirements, or cached/cold lookup latency. Keep bounded live acceptance runs
+separate from deterministic tests. See the
+[conversation and browser QA report](automotive-review/orchestration-surface-qa.md)
+for the recorded interface checks and screenshots.
+
+### Learned knowledge base
+
+Ordinary chat lookups can gradually build a reusable store of vehicle identity, oil
+viscosity, approvals, capacity, product recommendations, part numbers and fitment.
+The flow is: check stored facts, research what is missing, answer normally, validate
+findings in the background, then save accepted facts. Nothing is crawled or backfilled.
+
+- **Exact profiles.** Facts are keyed by the normalized configuration: make, model,
+  year, trim, generation, engine code, displacement, cylinders, aspiration, fuel, body,
+  transmission, drive and market. Unknown details are never wildcards, and literal
+  qualifiers such as "3.0 twin turbo" join the profile. An E400 coupe finding never
+  answers another E-Class configuration.
+- **Separate claims.** Each finding is stored as its own claim with source URL, provider
+  IDs, observation time, parser version and restrictions. Accepting one never accepts
+  another.
+- **Independent judge.** A separate worker runs `AUTOMOTIVE_JUDGE_MODEL` with Claude web
+  search and fetch. It researches the frozen request first, without seeing candidates,
+  then returns a typed verdict per claim. Backend checks reject citations that were not
+  fetched in this attempt, quotes absent from the fetched text, sources sharing the
+  candidate's dataset, broader or narrower applicability, and values or units missing
+  from the cited passages. Only `accepted` claims are published.
+- **Machine-accepted, not VERIFIED.** Reused facts are labelled `MACHINE_ACCEPTED` and
+  keep provisional compatibility; human-reviewed evidence remains a separate path.
+  Warehouse offers are still refreshed from current inventory reads.
+- **Reuse.** A complete hit skips supplier reads and judge work; partial hits research
+  only the missing categories. Facts stay reusable for `AUTOMOTIVE_KNOWLEDGE_FRESHNESS_DAYS`
+  (180 by default). A new contrary observation suspends the affected fact until an
+  operator resolves it.
+- **Budgets.** At most `AUTOMOTIVE_KNOWLEDGE_DAILY_ATTEMPTS` (25) research attempts per
+  UTC day, including retries; one concurrent attempt; five searches, five fetches and
+  two minutes per attempt. Technical failures retry once; excess work stays queued.
+  Unsuccessful candidate payloads are pruned after 30 days.
+
+Enable it after migration 0008, a validator login and source reuse policies exist. Only
+sources whose terms allow reuse should be authorized; the migration owner records them:
+
+```sql
+INSERT INTO automotive_knowledge.source_policies (source, reuse_permission, dataset, configured_by)
+VALUES ('shell', 'authorized', 'oats', 'operator-name');
+```
+
+Valid sources are `vpic`, `catalog_api`, `motorium`, `shell`, `pakelo`, `fuchs` and
+`jsfilter`. Findings from sources without an `owned` or `authorized` policy are never
+queued. Then set `AUTOMOTIVE_KNOWLEDGE_ENABLED=true`, restart the application and run
+the validator separately:
+
+```bash
+uv run python -m automotive.knowledge_worker process          # continuous
+uv run python -m automotive.knowledge_worker process --once   # one attempt
+uv run python -m automotive.knowledge_worker status
+uv run python -m automotive.knowledge_worker revoke --fact-id ID --actor NAME --reason TEXT
+```
+
+Database or judge failures leave the ordinary chat workflow unchanged.
 
 The original sources and the subsequently requested public Motorium connector are
 listed below. Motorium is an observed web protocol, not an official supported API.
@@ -619,7 +1047,8 @@ listed below. Motorium is an observed web protocol, not an official supported AP
 | Owned/authorized supplier evidence | Operator-imported fitments, directional references, maintenance specs and actual product approvals | Operator must possess explicit reuse rights; provenance labels alone are not proof of licence or truth |
 | [Motorium](https://motorium.ge/) | Public assistant and product JSON-LD return supplier MPN/OEM-labeled candidates for VIN + part query | Public read access observed; reuse rights are not independently recorded. No automatic evidence approval or paid subscription. See [protocol and limitations](integrations/motorium.md). |
 | [Fuchs](https://www.fuchs.com/de/en/oil-chooser/), [Shell](https://www.shell.com/motorist/find-the-right-oil.html), [Pakelo](https://pakelo.com/en/find-your-oil), [JS Filter](https://www.jsfilter.jp/catalogue/) | Provisional oil or filter rows after decoded make/model/year, or a VIN filter table when the catalogue returns one row | Public read-only lookups. Multiple engines return a clarification and no product. See [fluid connectors](integrations/fluids.md). |
-| Partsouq, Megazip, Amayama, Emex | Not connected | Anonymous capture was blocked or did not expose a stable catalog call. No guessed client is enabled. |
+| Partsouq, Megazip, Amayama, Emex | Not connected to live search | Anonymous capture was blocked or did not expose a stable catalog call. Partsouq, 7zap and RealOEM pages can be loaded from operator-recorded HAR files by the [parts catalog crawler](parts-crawler.md). |
+| [Parts catalog crawler](parts-crawler.md) (RockAuto, MANN-FILTER, NGK, CatCar, vPIC, FAPI format) | `GET /parts/catalog` and `/parts/alternatives` read the crawled `parts_catalog` schema | Crawled source assertions, always `PROVISIONAL`; never reviewed evidence or a fitment guarantee |
 | Anthropic API | Language/tool orchestration; supplies no technical evidence | Metered API under the operator's Anthropic account/terms; send only sanitized minimum context |
 
 Other named supplier candidates, the original nine codes, original sample VIN, and full

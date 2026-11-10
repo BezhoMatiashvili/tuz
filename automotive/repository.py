@@ -23,7 +23,7 @@ PRODUCT_COLUMNS = f"""p.source_product_id, p.product_code, p.product_name, p.pro
     p.original_code, p.duplicate_code, p.brand, p.last_observed_at, p.row_hash,
     p.source_columns->>'{STORE_COLUMN}' AS stock_store,
     p.source_columns->>'{TUZ11_COLUMN}' AS stock_tuz11"""
-# Index freshness ignores the hourly stock columns (see migration 0007). A row is stale
+# Index freshness ignores the stock columns (see migration 0007). A row is stale
 # when it was never indexed, the parser changed, or its descriptive content changed.
 CONTENT_HASH = "automotive.content_hash(p.source_columns)"
 STALE_ROWS = f"""(s.source_product_id IS NULL OR s.parser_version <> %s
@@ -196,6 +196,35 @@ class AutomotiveRepository:
                             product = matches.setdefault(item.normalized, {}).setdefault(
                                 row["source_product_id"], _product(row))
                             product.setdefault("matched_codes", []).append(asdict(item))
+        return {key: list(found.values()) for key, found in matches.items()}
+
+    def search_code_tokens(self, codes: list[str]) -> dict[str, list[dict]]:
+        """Exact matches for externally quoted codes, treating every '/' in the code fields
+        as a separator ('AC0253C/A2058350147' lists two numbers): {normalized: products}.
+
+        Separate from the stored index, which keeps compact slashes ('AP104/2') whole.
+        """
+        wanted = sorted({c for c in (normalize_code(code) for code in codes)
+                         if c and '/' not in c})
+        if not wanted:
+            return {}
+        matches: dict[str, dict[str, dict]] = {}
+        with self._connect() as conn:
+            rows = conn.execute(
+                sql.SQL("""WITH p AS (SELECT {}, '/' || regexp_replace(upper(concat_ws('/',
+                    p.product_code, p.original_code, p.duplicate_code)), '[^A-Z0-9/]', '', 'g')
+                    || '/' AS code_tokens FROM warehouse.warehouse_products p WHERE p.is_active)
+                SELECT p.*, c.code AS quoted_code FROM p JOIN unnest(%s::text[]) AS c(code)
+                ON position('/' || c.code || '/' IN p.code_tokens) > 0
+                ORDER BY p.source_product_id LIMIT 500""").format(sql.SQL(PRODUCT_COLUMNS)),
+                (wanted,),
+            )
+            for row in rows:
+                product = matches.setdefault(row["quoted_code"], {}).setdefault(
+                    row["source_product_id"], _product(row))
+                product.setdefault("matched_codes", []).append(
+                    {"original": row["quoted_code"], "normalized": row["quoted_code"],
+                     "field": "code_list", "manufacturer": None, "raw_value": None})
         return {key: list(found.values()) for key, found in matches.items()}
 
     def get_product(self, product_id: str) -> dict | None:

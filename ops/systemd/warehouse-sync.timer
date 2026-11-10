@@ -1,8 +1,9 @@
 [Unit]
-Description=Run the warehouse synchroniser hourly
+Description=Run the warehouse synchroniser twice a day
 
 [Timer]
-OnCalendar=hourly
+OnCalendar=*-*-* 09:00:00 Asia/Tbilisi
+OnCalendar=*-*-* 21:00:00 Asia/Tbilisi
 Persistent=true
 RandomizedDelaySec=5m
 AccuracySec=1m

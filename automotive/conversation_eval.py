@@ -25,6 +25,7 @@ from automotive import grounding
 from automotive.categories import PATTERNS, category_for_query, matches_category
 from automotive.codes import normalize_code, parse_codes, product_codes
 from automotive.dialogue import VIN
+from automotive.evidence import applies_to, verified_record
 
 DEFAULT_SCENARIOS = Path(__file__).resolve().parent.parent / 'tests' / 'fixtures' / 'conversations'
 RESULT_ACTS = {'results', 'no_results', 'none_in_stock', 'no_vehicle_codes', 'oil_resolved',
@@ -71,7 +72,7 @@ MOCK_PRODUCTS = [
     _product('rd1', 'სამუხრუჭე დისკი უკანა', 'ATE', '24.0110', fits=('HONDA',)),
     _product('af1', 'ჰაერის ფილტრი', 'MANN', 'C 2201', store=4,
              fits=('HONDA', 'MERCEDES-BENZ'),
-             last_observed_at=datetime.now(UTC) - timedelta(hours=5)),  # A stale-stock note.
+             last_observed_at=datetime.now(UTC) - timedelta(hours=14)),  # A stale-stock note.
     _product('cf1', 'სალონის ფილტრი', 'MANN', 'CU 2335', tuz11=1, fits=('HONDA',)),
     _product('of1', 'ზეთის ფილტრი K24', 'MANN', 'W 610/3', store=5, part_role='oil_filter',
              family='K24', fits=('HONDA',)),
@@ -281,6 +282,110 @@ class MockModel:
                             'input': {'answer': act, 'result_ids': refs}})
 
 
+class MockVehicleCatalog:
+    """Explicit synthetic variants; no model-invented engine facts enter the fixtures."""
+
+    def resolve_vehicle(self, vehicle: dict, *, deadline: float | None = None) -> dict:
+        candidates = []
+        for identifier, fuel, engine, trim in (
+            (1, 'Gasoline', 'M276.850', 'E 400'),
+            (2, 'Diesel', 'OM642.838', 'E 350 CDI'),
+        ):
+            stated = str(vehicle.get('fuel') or vehicle.get('fuel_type') or '').casefold()
+            if stated and stated != fuel.casefold():
+                continue
+            candidate = {**vehicle, 'fuel': fuel, 'engine_code': engine, 'trim': trim,
+                         'vehicle_id': identifier, 'type_id': 1,
+                         'label': f'E-Class Coupe {trim}', 'status': 'SOURCE_ASSERTION'}
+            candidates.append(candidate)
+        return {'status': 'AMBIGUOUS' if len(candidates) > 1 else 'RESOLVED',
+                'records': candidates, 'candidates': candidates,
+                'applicability': dict(vehicle),
+                'sources': [{'provider': 'Synthetic Catalog', 'fixture': True}],
+                'unresolved_fields': ['fuel'] if len(candidates) > 1 else []}
+
+
+class MockAISearch(MockSearch):
+    def __init__(self, repository: MockRepository) -> None:
+        super().__init__(repository)
+        self._catalog = MockVehicleCatalog()
+
+    def start(self, vin: str | None, part_query: str = '', model_year: int | None = None,
+              configuration: dict | None = None, *, deadline: float | None = None) -> dict:
+        result = super().start(vin, part_query, model_year, configuration)
+        vehicle = result['vehicle']
+        if not vehicle.get('fuel') and not vehicle.get('fuel_type'):
+            result['fluids'] = [{'provider': 'Shell', 'status': 'CONFLICTED',
+                                 'candidates': ['E 400 3.0 petrol', 'E 350 CDI 3.0 diesel']}]
+        elif str(vehicle.get('fuel')).casefold() == 'diesel' and result['fluids']:
+            result['fluids'][0]['engine_code'] = 'OM642.838'
+            result['fluids'][0]['items'][0]['capacity'] = '8.0'
+        self._jobs[result['search_id']] = copy.deepcopy(result)
+        return result
+
+
+class MockAIModel(MockModel):
+    """Offline extraction fixtures for the AI contract, not a production parser.
+
+    This tests orchestration and storage with known model outputs. It does not
+    measure a live model's ability to understand Georgian or transliteration.
+    """
+
+    @staticmethod
+    def _intent(message: str) -> dict:
+        fields = []
+        patterns = (
+            ('make', r'მერსედესსზე|მერსედესზე|mersedesze|Mercedes(?:-Benz)?', 'Mercedes-Benz'),
+            ('model', r'\bE(?:-Class)?\b', 'E-Class'),
+            ('body', r'კუპე|coupe', 'Coupe'),
+            ('model_year', r'\b2015\b', 2015),
+            ('displacement_l', r'\b3[.,]0\b', 3.0),
+            ('fuel', r'ბენზინი|petrol|gasoline', 'Gasoline'),
+            ('fuel', r'დიზელი|diesel', 'Diesel'),
+        )
+        for field, pattern, value in patterns:
+            found = re.search(pattern, message, re.I)
+            if found:
+                fields.append({'field': field, 'value': value, 'quote': found.group()})
+        part = re.search(r'ზეთის\s+შეცვლა|oil\s+change', message, re.I)
+        return {'fields': fields, 'requested_parts': [
+            {'category': 'oil_change', 'quote': part.group()}] if part else [],
+            'references': [],
+            'correction': bool(re.search(r'actually|სინამდვილეში', message, re.I))}
+
+    def create(self, **kwargs: Any) -> SimpleNamespace:
+        self.calls += 1
+        messages = kwargs['messages']
+        initial = json.loads(messages[0]['content'])
+        last = messages[-1]['content']
+        if isinstance(last, str):
+            return self._reply({'type': 'tool_use', 'id': f'intent{self.calls}',
+                                'name': 'resolve_vehicle',
+                                'input': self._intent(initial['question'])})
+        refs = []
+        current = dict(initial.get('current_vehicle') or {})
+        claims = []
+        for block in last:
+            data = json.loads(block.get('content') or '{}')
+            if data.get('result_id'):
+                refs.append(data['result_id'])
+            current.update({key: item['value'] for key, item in
+                            (data.get('customer_stated') or {}).items()})
+            claims.extend(item['claim_id'] for item in data.get('claims') or [])
+        previous_tools = [b.get('name') for b in messages[-2]['content']
+                          if b.get('type') == 'tool_use']
+        category = initial.get('requested_category') or bool(
+            self._intent(initial['question'])['requested_parts'])
+        if ('resolve_vehicle' in previous_tools and category
+                and all(current.get(k) for k in ('make', 'model', 'model_year'))):
+            return self._reply({'type': 'tool_use', 'id': f'discover{self.calls}',
+                                'name': 'discover_parts', 'input': {}})
+        return self._reply({'type': 'tool_use', 'id': f'finish{self.calls}',
+                            'name': 'finish_response', 'input': {
+                                'result_ids': refs, 'product_ids': [], 'claim_ids': claims,
+                                'question_field': None, 'presentation': 'concise'}})
+
+
 class Counting:
     """Counts calls on a wrapped service so a turn can be checked for 'did not search'."""
 
@@ -307,7 +412,7 @@ READS = {'search_parts', 'search_parts_many', 'search_products', 'search_engine_
          'inventory_products', 'vehicle_specifications'}
 
 
-def mock_store() -> Any:
+def mock_store(*, orchestration: bool = False) -> Any:
     """A ConversationStore over the synthetic catalog and the scripted model."""
     from dataclasses import fields
 
@@ -320,9 +425,12 @@ def mock_store() -> Any:
     options = {'anthropic_api_key': 'mock-key', 'vin_hmac_key': 'm' * 32}
     if 'chat_rephrase' in {f.name for f in fields(Settings)}:
         options['chat_rephrase'] = True
-    chat = ChatService(repository, MockVinService(), Settings(**options), client=MockModel(),
+    options['chat_orchestration'] = orchestration
+    chat = ChatService(repository, MockVinService(), Settings(**options),
+                       client=MockAIModel() if orchestration else MockModel(),
                        rules=load_rules())
-    return ConversationStore(chat, MockSearch(repository))
+    search = MockAISearch(repository) if orchestration else MockSearch(repository)
+    return ConversationStore(chat, search)
 
 
 def live_store() -> Any:
@@ -345,6 +453,36 @@ def load_scenarios(path: Path | str = DEFAULT_SCENARIOS) -> list[dict]:
     return scenarios
 
 
+def load_ai_scenarios() -> list[dict]:
+    """Small AI-contract regressions kept separate from legacy conversation fixtures."""
+    vehicle = {'make': 'Mercedes-Benz', 'model': 'E-Class', 'model_year': 2015,
+               'displacement_l': 3.0, 'body': 'Coupe'}
+    expect = {'vehicle': vehicle, 'category': 'oil_change', 'no_redundant_clarification': True,
+              'within_budget': True, 'tools_required': ['resolve_vehicle', 'discover_parts'],
+              'model_calls_max': 6, 'task_completion': True}
+    scenarios = []
+    for name, message in (
+        ('exact-georgian-typo', 'მერსედესსზე E კლასის კუპე 2015 3.0 ძრავის ზეთის შეცვლა მინდა'),
+        ('georgian-inflection', 'მერსედესზე E კლასის კუპე 2015 3.0 ძრავის ზეთის შეცვლა'),
+        ('transliteration', 'mersedesze E coupe 2015 3.0 engine oil change'),
+        ('mixed-language', 'Mercedes E კუპე 2015 3.0 ძრავის ზეთის შეცვლა'),
+    ):
+        scenarios.append({'id': f'ai-{name}', 'tags': ['ai', 'intent', 'ambiguity'], 'turns': [
+            {'say': message, 'kind': 'oil', 'expect': copy.deepcopy(expect)}]})
+    scenarios.append({'id': 'ai-scattered-details', 'tags': ['ai', 'multiturn'], 'turns': [
+        {'say': 'მერსედესსზე', 'kind': 'vehicle', 'expect': {
+            'vehicle': {'make': 'Mercedes-Benz'}, 'no_redundant_clarification': True}},
+        {'say': 'E კლასის კუპე', 'kind': 'vehicle', 'expect': {
+            'vehicle': {'make': 'Mercedes-Benz', 'model': 'E-Class', 'body': 'Coupe'},
+            'no_redundant_clarification': True}},
+        {'say': '2015 3.0 ძრავის ზეთის შეცვლა', 'kind': 'oil', 'expect': copy.deepcopy(expect)},
+        {'say': 'ბენზინი', 'kind': 'oil', 'expect': {
+            **copy.deepcopy(expect), 'cards_min': 1,
+            'vehicle': {**vehicle, 'fuel': 'Gasoline', 'engine_code': 'M276.850'}}},
+    ]})
+    return scenarios
+
+
 def legacy_language(message: str) -> str:
     """The language the old interface chose per message: any Georgian letter means ka."""
     return 'ka' if re.search(r'[\u10a0-\u10ff]', message) else 'en'
@@ -362,6 +500,74 @@ def _hide(text: str, vins: dict[str, str]) -> str:
 
 def _key(value: Any) -> str:
     return re.sub(r'[^a-z0-9ა-ჰ]+', '', str(value or '').casefold())
+
+
+def turn_metrics(turn: dict, payload: dict, context: dict, *, final_ms: float) -> dict:
+    """Observable task outcomes, attribution, tool selection and resource usage.
+
+    A terminal transport status alone does not complete a parts task. A useful
+    offer, or source-backed alternatives with one distinguishing question, does.
+    These counters supplement the existing hard grounding checks.
+    """
+    pending = payload.get('pending') or {}
+    field = pending.get('field')
+    vehicle = payload.get('vehicle') or {}
+    stated = payload.get('customer_stated') or {}
+    act = payload.get('act') or ''
+    if not field:
+        field = {'clarify_year': 'model_year', 'clarify_model': 'model',
+                 'clarify_make': 'make'}.get(act)
+    def known(key: str) -> bool:
+        return vehicle.get(key) not in (None, '') or bool(stated.get(key))
+
+    redundant = bool(field and known(field))
+    if act == 'clarify_vehicle':
+        redundant = all(known(key) for key in ('make', 'model', 'model_year'))
+    terminal = payload.get('status') in {'COMPLETE', 'PARTIAL'}
+    offers = bool(payload.get('cards') or payload.get('supplier_only'))
+    alternatives = bool(payload.get('resolution_candidates')) and bool(pending) and not redundant
+    nontechnical = turn.get('kind') in {'greeting', 'small_talk', 'reference', 'acknowledge'}
+    count = 0
+    grounded = 0
+    for claim in payload.get('claims') or []:
+        if not isinstance(claim, dict):
+            continue
+        count += 1
+        if (claim.get('vehicle_revision') != payload.get('vehicle_revision')
+                or not applies_to(claim, vehicle)):
+            continue
+        if claim.get('status') == 'VERIFIED':
+            supported = verified_record(claim)
+        else:
+            supported = claim.get('status') == 'SOURCE_ASSERTION' and (
+                bool(claim.get('sources')) or (
+                    str(claim.get('source_url') or '').startswith('https://')
+                    and bool(claim.get('supporting_excerpt'))
+                    and claim.get('statement') == claim.get('supporting_excerpt')))
+        grounded += bool(supported)
+    usage = payload.get('usage') or {}
+    requests = {name: int(usage.get(name) or 0) for name in (
+        'model_requests', 'tool_executions', 'web_searches', 'input_tokens', 'output_tokens',
+        'cache_read_input_tokens', 'cache_creation_input_tokens')}
+    requests['model_requests'] = max(requests['model_requests'], context.get('model_calls', 0))
+    tools = [str(stage['stage']) for stage in
+             (payload.get('diagnostics') or {}).get('stage_timings') or []
+             if isinstance(stage, dict) and stage.get('stage') != 'finish_response']
+    tools.extend(str(row['tool']) for row in payload.get('results') or []
+                 if isinstance(row, dict) and row.get('tool'))
+    tools = list(dict.fromkeys(tools))
+    cache_hits = int((payload.get('diagnostics') or {}).get('cache_hits') or 0)
+    cache_hits += sum(bool((row.get('data') or {}).get('cache_hit'))
+                      for row in payload.get('results') or [] if isinstance(row, dict))
+    latency_class = 'research' if requests['web_searches'] else 'cached' if cache_hits else 'cold'
+    return {'task_completion': terminal and not redundant
+                               and (offers or alternatives or nontechnical),
+            'redundant_clarification': redundant, 'claim_count': count, 'grounded_claims': grounded,
+            'tools': tools, 'requests': requests, 'final_ms': round(final_ms),
+            'latency_class': latency_class, 'cache_hits': cache_hits,
+            'within_budget': final_ms <= 30_000 and requests['model_requests'] <= 6
+                             and requests['tool_executions'] <= 10
+                             and requests['web_searches'] <= 2}
 
 
 def run_turn(store: Any, conversation: str, message: str, language: str, vin: str | None,
@@ -431,6 +637,16 @@ def check_turn(turn: dict, payload: dict, context: dict, live: bool) -> dict:
     if 'quick_replies_min' in expect:
         hard['quick_replies'] = len(payload.get('quick_replies') or []) >= expect[
             'quick_replies_min']
+    metrics = turn_metrics(turn, payload, context, final_ms=context.get('final_ms', 0))
+    if expect.get('no_redundant_clarification'):
+        hard['no_redundant_clarification'] = not metrics['redundant_clarification']
+    for name in ('within_budget', 'task_completion'):
+        if name in expect:
+            hard[name] = metrics[name] == expect[name]
+    if 'tools_required' in expect:
+        hard['tools_required'] = set(expect['tools_required']) <= set(metrics['tools'])
+    if 'tools_forbidden' in expect:
+        hard['tools_forbidden'] = not set(expect['tools_forbidden']) & set(metrics['tools'])
     soft: dict[str, bool] = {
         'short': len(shown) <= SHORT_REPLY,
         'one_question': shown.count('?') <= 1,
@@ -445,7 +661,7 @@ def check_turn(turn: dict, payload: dict, context: dict, live: bool) -> dict:
         soft['personal'] = any(name in _key(answer) for name in names)
     if cards:
         soft['specific'] = bool(re.search(r'\d', answer))
-    return {'hard': hard, 'soft': soft, 'problems': found}
+    return {'hard': hard, 'soft': soft, 'problems': found, 'metrics': metrics}
 
 
 def _reply_language(turn: dict, message: str, previous: str) -> str:
@@ -487,6 +703,7 @@ def run_scenario(store: Any, scenario: dict, vins: dict[str, str], *, live: bool
             context['searched'] = any(counters[n].calls > before[n]
                                       for n in ('search', 'repository'))
             context['model_calls'] = counters['model'].calls - before['model']
+            context['final_ms'] = final_ms
             context['messages'].append(message)
             result = check_turn(turn, payload, context, live)
             context['previous'].append(str(payload.get('answer') or ''))
@@ -511,6 +728,22 @@ def summarize(results: list[dict]) -> dict:
     soft = [ok for t in turns for ok in t['soft'].values()]
     failures = Counter(name for t in turns for name, ok in t['hard'].items() if not ok)
     misses = Counter(name for t in turns for name, ok in t['soft'].items() if not ok)
+    metrics = [t['metrics'] for t in turns if isinstance(t.get('metrics'), dict)]
+    requests = Counter()
+    selections = Counter()
+    for metric in metrics:
+        requests.update(metric['requests'])
+        selections.update(metric['tools'])
+    claim_count = sum(m['claim_count'] for m in metrics)
+    grounded_claims = sum(m['grounded_claims'] for m in metrics)
+    latency = {}
+    for kind in ('cached', 'cold', 'research'):
+        group = [m for m in metrics if m['latency_class'] == kind]
+        if group:
+            latency[kind] = {'turns': len(group),
+                             'median_ms': round(statistics.median(m['final_ms'] for m in group)),
+                             'max_ms': max(m['final_ms'] for m in group),
+                             'under_five_seconds': sum(m['final_ms'] <= 5000 for m in group)}
     speed = {}
     for kind in sorted({t['kind'] for t in turns}):
         group = [t for t in turns if t['kind'] == kind]
@@ -531,6 +764,18 @@ def summarize(results: list[dict]) -> dict:
         'hard_pass_rate': round(sum(hard) / len(hard), 3) if hard else 1.0,
         'naturalness': round(sum(soft) / len(soft), 3) if soft else 1.0,
         'hard_failures': dict(failures.most_common()), 'soft_misses': dict(misses.most_common()),
+        'orchestration': {
+            'task_completion_rate': round(sum(m['task_completion'] for m in metrics) / len(metrics),
+                                          3) if metrics else None,
+            'redundant_clarifications': sum(m['redundant_clarification'] for m in metrics),
+            'grounded_claims': grounded_claims, 'claim_count': claim_count,
+            'grounded_claim_rate': round(grounded_claims / claim_count, 3) if claim_count else 1.0,
+            'budget_violations': sum(not m['within_budget'] for m in metrics),
+            'tool_selections': dict(selections), 'requests': dict(requests),
+            'latency': latency,
+            'median_ms': round(statistics.median(m['final_ms'] for m in metrics)) if metrics else 0,
+            'max_ms': max((m['final_ms'] for m in metrics), default=0),
+        },
         'speed': speed,
     }
 
@@ -588,6 +833,7 @@ def evaluate(store: Any, scenarios: list[dict], vins: dict[str, str], out: TextI
     client = chat.client if chat.client is not None else chat._client()
     counters['model'] = Counting(client.messages, {'create'})
     chat.client = SimpleNamespace(messages=counters['model'],
+                                  models=getattr(client, 'models', None),
                                   close=getattr(client, 'close', lambda: None))
     results = []
     for scenario in scenarios:
@@ -616,6 +862,15 @@ def print_summary(summary: dict, out: TextIO) -> None:
               f"checks): {summary['naturalness']:.1%}\n")
     out.write(f"- hard failures: {summary['hard_failures'] or '-'}\n")
     out.write(f"- soft misses: {summary['soft_misses'] or '-'}\n")
+    orchestration = summary.get('orchestration')
+    if orchestration:
+        out.write(f"- task completion: {orchestration['task_completion_rate']}; redundant "
+                  f"clarifications: {orchestration['redundant_clarifications']}; grounded "
+                  f"claims: {orchestration['grounded_claims']}/{orchestration['claim_count']}; "
+                  f"budget violations: {orchestration['budget_violations']}\n")
+        out.write(f"- request usage: {orchestration['requests']}; tool selections: "
+                  f"{orchestration['tool_selections']}\n")
+        out.write(f"- cached/cold/research latency: {orchestration['latency']}\n")
     for kind, data in summary['speed'].items():
         first = data['median_first_card_ms']
         out.write(f"- speed {kind}: {data['turns']} turns, median {data['median_ms']} ms, "

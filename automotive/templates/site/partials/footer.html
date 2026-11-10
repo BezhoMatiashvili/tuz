@@ -1,0 +1,19 @@
+{% from "partials/macros.html" import icon, tt with context %}
+<footer class="footer">
+  <div class="stripe" aria-hidden="true"></div>
+  <div class="wrap footer__in">
+    <a class="footer__logo" href="#top" aria-label="Garage 1886, {{ t['nav.home'] }}">
+      <img src="{{ asset('site/img/logo-full.svg') }}" width="248" height="100" alt="" loading="lazy" decoding="async">
+    </a>
+    <nav class="footer__nav" aria-label="{{ tt('footer.nav', t['nav.menu']) }}">
+      <a href="#parts">{{ t["nav.parts"] }}</a>
+      <a href="#services">{{ t["nav.services"] }}</a>
+      <a href="#story">{{ t["nav.story"] }}</a>
+      <a href="#visit">{{ t["nav.visit"] }}</a>
+      <a href="{{ alternates[other] }}" hreflang="{{ other }}" lang="{{ other }}">{{ t["nav.language"] }}</a>
+    </nav>
+    {# The year comes from the server; the page script fills it in if an older process
+       rendered this page without one. #}
+    <p class="footer__rights">&copy; <span data-year>{% if year is defined %}{{ year }}{% endif %}</span> Garage 1886. {{ t["footer.rights"] }}</p>
+  </div>
+</footer>

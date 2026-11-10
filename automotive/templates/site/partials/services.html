@@ -1,0 +1,63 @@
+{% from "partials/macros.html" import icon, tt with context %}
+{# A four-column bento: the Service mural as a 2 x 2 tile, one cell per service and one
+   call or ask cell. `flow` cells wrap around the photo (four beside it, then rows of four),
+   so the last cells widen until every row is full: no empty cell for any count. #}
+{% set ask = chat_on or c.brand.phone %}
+{% set flow = services|length + (1 if ask else 0) %}
+{% set rest = (flow - 4) % 4 if flow > 4 else 0 %}
+{% set red = [3, services|length]|min %}
+{% macro span(position) -%}
+  {%- if flow == 1 %} cell--w2 cell--h2
+  {%- elif flow == 2 or (flow == 3 and position == 3) %} cell--w2
+  {%- elif rest == 1 and position == flow %} cell--w4
+  {%- elif rest == 2 and position > flow - 2 %} cell--w2
+  {%- elif rest == 3 and position == flow %} cell--w2
+  {%- endif %}
+  {#- Phones use two columns: the call or ask cell is always a full row, and so is the
+      last service when their number is odd. -#}
+  {%- if (ask and position == flow) or (services|length % 2 == 1 and position == services|length) %} cell--m2{% endif %}
+{%- endmacro %}
+{% set currency = c.brand.currency or "₾" %}
+<section id="services" class="services section" aria-labelledby="services-title">
+  <div class="wrap">
+    <header class="section__head">
+      <h2 class="t-h2" id="services-title">{{ c.services_intro.title }}</h2>
+      {% if c.services_intro.intro %}
+      <p class="t-lead">{{ c.services_intro.intro }}</p>
+      {% endif %}
+    </header>
+    <ul class="bento{% if services|length < 2 %} bento--few{% endif %}">
+      <li class="bento__photo" data-reveal>
+        <img src="{{ asset('site/img/service-mural.webp') }}" srcset="{{ asset('site/img/service-mural-640.webp') }} 640w, {{ asset('site/img/service-mural.webp') }} 960w" sizes="(min-width: 1200px) 554px, (min-width: 640px) 50vw, 100vw" width="960" height="830" alt="{{ t['services.photo_alt'] }}" loading="lazy" decoding="async">
+      </li>
+      {% for service in services %}
+      <li class="cell{% if loop.index == red %} cell--wall wall{% endif %}{{ span(loop.index) }}" data-reveal>
+        {{ icon(service.icon, "cell__icon") }}
+        <h3 class="t-h3 cell__title">{{ service.title }}</h3>
+        {% if service.summary %}
+        <p class="cell__text">{{ service.summary }}</p>
+        {% endif %}
+        {% if service.price_from is not none %}
+        {# Georgian writes the amount first (25 ₾), English the sign (₾25). #}
+        {% set amount = service.price_from|round|num %}
+        {% set price = (amount ~ "\u00a0" ~ currency) if lang == "ka" else (currency ~ amount) %}
+        <p class="cell__price">{{ tt("services.price_from", t["services.from"] ~ " {price}")|replace("{price}", price) }}</p>
+        {% endif %}
+      </li>
+      {% endfor %}
+      {% if ask %}
+      <li class="cell cell--ask{{ span(flow) }}" data-reveal>
+        <h3 class="t-h3 cell__title">{{ tt("services.ask_title", t["chat.title"]) }}</h3>
+        <div class="cell__actions">
+          {% if c.brand.phone %}
+          <a class="btn btn--ink" href="tel:{{ c.brand.phone|tel }}">{{ icon("phone") }}<span>{{ t["nav.call"] }}</span></a>
+          {% endif %}
+          {% if chat_on %}
+          <button class="btn btn--ink" type="button" data-chat-open>{{ icon("chat-text") }}<span>{{ t["hero.cta_chat"] }}</span></button>
+          {% endif %}
+        </div>
+      </li>
+      {% endif %}
+    </ul>
+  </div>
+</section>

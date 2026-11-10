@@ -606,7 +606,7 @@ class ConversationalChatTests(unittest.TestCase):
         from datetime import UTC, datetime, timedelta
 
         old = {**PRODUCT, 'stock': {'store': 2.0, 'tuz11': 0.0},
-               'last_observed_at': datetime.now(UTC) - timedelta(hours=9)}
+               'last_observed_at': datetime.now(UTC) - timedelta(hours=14)}
         self.repo.get_product.return_value = old
         row = {'product': old, 'status': 'UNKNOWN', 'compatible': None,
                'match_type': 'CODE_CANDIDATE', 'evidence': [], 'warnings': []}
@@ -781,7 +781,7 @@ class ConversationalChatTests(unittest.TestCase):
     def test_informational_warnings_keep_a_complete_answer_complete(self):
         from datetime import UTC, datetime, timedelta
 
-        stale = self.pad('s', 'ხუნდი წნ', last_observed_at=datetime.now(UTC) - timedelta(hours=5))
+        stale = self.pad('s', 'ხუნდი წნ', last_observed_at=datetime.now(UTC) - timedelta(hours=14))
         coordinator = self.code_snapshot([stale])
         result = self.turn('front brake pads', category='front brake pads', vin=VIN,
                            search_service=coordinator)

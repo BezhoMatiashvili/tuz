@@ -1,0 +1,42 @@
+{% from "partials/macros.html" import icon, tt with context %}
+{% set milestones = c.story.milestones|selectattr("year")|list %}
+<section id="story" class="story section" aria-labelledby="story-title">
+  {# The words, and beside them the wall in the shop that says the same thing in paint. #}
+  <div class="story__intro">
+    <div class="story__lead">
+      <h2 class="t-h2" id="story-title">{{ c.story.title }}</h2>
+      {% if c.story.statement %}
+      <p class="story__statement">{{ c.story.statement }}</p>
+      {% endif %}
+    </div>
+    <figure class="story__wall" data-reveal>
+      <img src="{{ asset('site/img/story-mural.webp') }}" srcset="{{ asset('site/img/story-mural-520.webp') }} 520w, {{ asset('site/img/story-mural.webp') }} 780w" sizes="(min-width: 1200px) 512px, (min-width: 720px) 43vw, (min-width: 568px) 520px, calc(100vw - 32px)" width="780" height="936" alt="{{ tt('story.wall_alt', c.story.title) }}" loading="lazy" decoding="async">
+      <div class="stripe" aria-hidden="true"></div>
+    </figure>
+  </div>
+  {% if milestones|length >= 3 %}
+  <div class="story__col">
+    <ol class="timeline" aria-label="{{ tt('story.timeline', c.story.title) }}">
+      {% for milestone in milestones %}
+      <li class="timeline__item" data-reveal="rise">
+        <p class="timeline__year">{{ milestone.year }}</p>
+        <div class="timeline__body">
+          {% if milestone.title %}
+          <h3 class="t-h3">{{ milestone.title }}</h3>
+          {% endif %}
+          {% if milestone.text %}
+          <p>{{ milestone.text }}</p>
+          {% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+  {% endif %}
+  {# The lettering painted on the shop wall, lifted off its photo and set back on red. #}
+  <figure class="letterband wall">
+    <img src="{{ asset('site/img/lettering.webp') }}" width="800" height="232" alt="" loading="lazy" decoding="async">
+    <figcaption class="sr-only">{{ tt("story.band_caption", t["services.photo_alt"]) }} <q lang="en">More than a Garage</q></figcaption>
+  </figure>
+  <div class="stripe" aria-hidden="true"></div>
+</section>

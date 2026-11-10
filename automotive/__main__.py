@@ -133,16 +133,74 @@ def main() -> None:
     parser.add_argument("--evaluate-chat", choices=("mock", "live"),
                         help="Run scripted conversations and score accuracy, feel and speed")
     parser.add_argument("--vins", metavar="FILE",
-                        help="VIN list for --evaluate-chat live ({VIN1} is the first line)")
+                        help="VIN list for --evaluate-chat live ({VIN1} is the first line); "
+                             "for --evaluate-assistant, name,VIN lines that fill {VIN:name} "
+                             "(default: vins.csv, scenarios without their VIN are skipped)")
     parser.add_argument("--scenarios", metavar="PATH",
                         help="Scenario file or directory (default: tests/fixtures/conversations)")
-    parser.add_argument("--only", metavar="TAG", help="Run scenarios with this tag or id")
+    parser.add_argument("--only", metavar="TAG",
+                        help="Run scenarios with this tag or id (--evaluate-assistant takes "
+                             "several, comma-separated)")
     parser.add_argument("--judge", action="store_true",
                         help="Live only: one model rating of each transcript's natural feel")
     parser.add_argument("--report-out", metavar="FILE", help="Write the full report as JSON")
+    parser.add_argument("--evaluate-assistant", choices=("conversations", "catalogue"),
+                        help="Run the assistant engine on the real model and catalogue: its "
+                             "test conversations, or the catalogue-wide check that samples "
+                             "stocked rows and has a writer model ask for each (spends "
+                             "money; see --budget)")
+    parser.add_argument("--sample", type=int, metavar="N",
+                        help="Rows of --evaluate-assistant catalogue (default: 150)")
+    parser.add_argument("--seed", type=int, metavar="N",
+                        help="Seed of the catalogue sample (default: 1)")
+    parser.add_argument("--review", type=int, metavar="N",
+                        help="Turns with cards that a stronger model reviews after "
+                             "--evaluate-assistant catalogue (default: 60; 0 skips it)")
+    parser.add_argument("--csv-out", metavar="FILE",
+                        help="Write the reviewed offers as CSV for a parts person")
+    parser.add_argument("--requests-from", metavar="FILE",
+                        help="Take rows and requests from an earlier catalogue report; "
+                             "with --only misses just the rows it missed, with --only "
+                             "ID,ID those rows")
+    parser.add_argument("--read-part-names", action="store_true",
+                        help="Have a model read what the part names of the catalogue guide "
+                             "mean, from the rows that carry them, and keep the readings in "
+                             "AUTOMOTIVE_ASSISTANT_NAMES_PATH for the assistant's guide "
+                             "(spends money; see --budget)")
+    parser.add_argument("--all", action="store_true",
+                        help="With --read-part-names: read every name again, not only the "
+                             "names without a reading")
+    parser.add_argument("--model", metavar="ID",
+                        help="Model for --evaluate-assistant (default: the configured one) "
+                             "or --read-part-names (default: claude-opus-5-5)")
+    parser.add_argument("--audience", choices=("staff", "public"),
+                        help="Which chat --evaluate-assistant talks to (default: public)")
+    parser.add_argument("--budget", type=float, metavar="USD",
+                        help="Stop --evaluate-assistant once the ledger total reaches this; "
+                             "--read-part-names does not start beyond it (default: 40)")
+    parser.add_argument("--ledger", metavar="FILE",
+                        help="Spending ledger for --evaluate-assistant and --read-part-names "
+                             "(default: AUTOMOTIVE_EVAL_LEDGER or "
+                             "data/assistant_eval/cost_ledger.jsonl)")
+    parser.add_argument("--parallel", type=int, default=1, metavar="N",
+                        help="Conversations --evaluate-assistant runs side by side")
     args = parser.parse_args()
     if args.check_catalog_api:
         check_catalog_api(parser)
+        return
+    if args.read_part_names:
+        import sys
+
+        from automotive import assistant_names
+
+        assistant_names.run(parser, args, sys.stdout)
+        return
+    if args.evaluate_assistant:
+        import sys
+
+        from automotive import assistant_eval
+
+        assistant_eval.run(parser, args, sys.stdout)
         return
     if args.evaluate_chat:
         run_chat_evaluation(parser, args)
@@ -176,11 +234,15 @@ def main() -> None:
 
     from automotive.api import create_app
     from automotive.config import Settings
+    from automotive.site import check_serving
 
+    base = Settings.from_env()
     settings = replace(
-        Settings.from_env(),
-        allowed_origins=(f"http://localhost:{args.port}", f"http://127.0.0.1:{args.port}"),
+        base,
+        allowed_origins=(f"http://localhost:{args.port}", f"http://127.0.0.1:{args.port}",
+                         *base.public_origins),
     )
+    check_serving(settings)
     uvicorn.run(
         create_app(settings=settings), host="127.0.0.1", port=args.port,
         access_log=False, proxy_headers=False,

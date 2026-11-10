@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#111110">
+<title>{{ t["login.title"] }} | Garage 1886</title>
+<link rel="icon" type="image/svg+xml" href="{{ asset('admin/img/mark.svg') }}">
+<link rel="stylesheet" href="{{ asset('admin/css/login.css') }}">
+<link rel="modulepreload" href="{{ asset('admin/js/strings.js') }}">
+<script type="module" src="{{ asset('admin/js/login.js') }}"></script>
+</head>
+<body>
+{# The sign-in page is reached only by typing /login: nothing on the public site links here. #}
+<main class="login" id="main">
+  <div class="login__panel">
+    <p class="login__brand"><span class="login__mark" aria-hidden="true"></span><span>GARAGE 1886</span></p>
+    <h1 class="login__title" data-string="title">{{ t["login.title"] }}</h1>
+    <p class="login__note" data-string="staff_only">{{ t["login.staff_only"] }}</p>
+    {# method="post" only so a broken script can never put the password in the address bar;
+       the real submit is fetch() in login.js. #}
+    <form class="login__form" id="login-form" method="post" novalidate>
+      <div class="login__field">
+        <label class="login__label" for="login-username" data-string="username">{{ t["login.username"] }}</label>
+        <input class="login__input" id="login-username" name="username" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="64" required autofocus>
+      </div>
+      <div class="login__field">
+        <label class="login__label" for="login-password" data-string="password">{{ t["login.password"] }}</label>
+        <div class="login__password">
+          <input class="login__input" id="login-password" name="password" type="password" autocomplete="current-password" maxlength="512" required>
+          <button class="login__toggle" id="login-toggle" type="button" aria-pressed="false" data-shown="false" hidden>
+            <svg class="login__eye login__eye--show" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg>
+            <svg class="login__eye login__eye--hide" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M4 4l16 16"/><path d="M9.9 5.8c.7-.2 1.4-.3 2.1-.3 6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-3 3.8"/><path d="M6.3 7.3A16.6 16.6 0 0 0 2.5 12S6 18.5 12 18.5c1.4 0 2.7-.3 3.8-.8"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+          </button>
+        </div>
+      </div>
+      <p class="login__error" id="login-error" role="alert" hidden>
+        <svg class="login__error-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path class="login__error-shape" d="M8 2.5h8l5.5 5.5v8L16 21.5H8L2.5 16V8z"/><path class="login__error-mark" d="M12 7.5v5.5"/><path class="login__error-mark" d="M12 16.5h.01"/></svg>
+        <span data-text></span>
+      </p>
+      <button class="login__submit" id="login-submit" type="submit"><span data-label>{{ t["login.submit"] }}</span></button>
+    </form>
+    <noscript><p class="login__error login__error--static">JavaScript: ჩართეთ ბრაუზერში, რომ შეხვიდეთ. Turn on JavaScript to sign in.</p></noscript>
+  </div>
+  <button class="login__language" id="login-language" type="button" hidden></button>
+</main>
+<script type="application/json" id="login-data">{{ data|tojson }}</script>
+</body>
+</html>

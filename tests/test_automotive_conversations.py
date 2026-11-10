@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import httpx
 
-from automotive.api import create_app
+from automotive.api import ConversationTurn, VehicleConfiguration, create_app
 from automotive.config import Settings
 from automotive.conversations import ConversationError, ConversationStore
 
@@ -89,6 +89,90 @@ class ConversationTests(unittest.TestCase):
         with self.assertRaises(ConversationError):
             self.store.get(cid, turn["turn_id"])
         self.assertTrue(self.engine.calls[0][1]["cancelled"]())
+
+    def test_ai_state_survives_followup_and_revision_rejects_old_progress(self):
+        self.engine.settings = Settings(chat_orchestration=True)
+        self.engine.respond_conversation = lambda message, **kwargs: (
+            self.engine.calls.append((message, kwargs)) or {
+                "status": "CLARIFICATION", "answer": "Petrol or diesel?", "cards": [],
+                "vehicle": {"make": "MERCEDES-BENZ", "model": "E-Class", "model_year": 2015,
+                            "displacement_l": 3.0},
+                "vehicle_revision": kwargs["dialogue"]["vehicle_revision"] + 1,
+                "customer_stated": {"make": {"value": "MERCEDES-BENZ", "text": "მერსედესსზე"}},
+                "resolution_candidates": [{"engine_code": "M276", "fuel": "Gasoline"}],
+                "selected_configuration": {}, "unresolved_fields": ["fuel"],
+                "clarification_choices": ["Petrol", "Diesel"],
+                "pending": {"act": "clarify_engine", "question": "Petrol or diesel?"},
+            })
+        cid = self.store.create()["conversation_id"]
+        first = self.store.submit(cid, "მერსედესსზე 2015 ზეთის შეცვლა")
+        result = self.finish(cid, first["turn_id"])
+        self.assertEqual(result["vehicle_revision"], 1)
+        second = self.store.submit(cid, "petrol")
+        self.finish(cid, second["turn_id"])
+        state = self.engine.calls[-1][1]["dialogue"]
+        self.assertEqual(state["vehicle_revision"], 1)
+        self.assertEqual(state["unresolved_fields"], ["fuel"])
+        self.assertEqual(state["customer_stated"]["make"]["text"], "მერსედესსზე")
+        self.assertEqual(state["pending"]["question"], "Petrol or diesel?")
+
+    def test_ai_correction_supersedes_active_turn_without_old_result(self):
+        self.engine.settings = Settings(chat_orchestration=True)
+        self.engine.release.clear()
+        cid = self.store.create()["conversation_id"]
+        first = self.store.submit(cid, "2015 Mercedes E-Class oil")
+        self.assertTrue(self.engine.started.wait(1))
+        second = self.store.submit(cid, "Actually diesel")
+        first_kwargs = self.engine.calls[0][1]
+        first_kwargs["progress"]({"vehicle_revision": 0, "vehicle": {"make": "OLD"},
+                                  "cards": [self.engine.card("obsolete")]})
+        self.engine.release.set()
+        result = self.finish(cid, second["turn_id"])
+        self.assertNotIn("obsolete", str(result))
+        self.assertTrue(first_kwargs["cancelled"]())
+        with self.assertRaises(ConversationError):
+            self.store.get(cid, first["turn_id"])
+        self.assertIn("2015 Mercedes", self.engine.calls[-1][1]["history"][-1]["question"])
+
+    def test_default_turn_deadline_is_thirty_seconds(self):
+        cid = self.store.create()["conversation_id"]
+        turn = self.store.submit(cid, "hello")
+        stored = self.store._conversations[cid]["turns"][turn["turn_id"]]
+        self.assertEqual(stored["deadline"] - stored["started"], 30)
+
+    def test_older_revision_cannot_replace_newer_progress_for_same_turn(self):
+        self.engine.release.clear()
+        cid = self.store.create()["conversation_id"]
+        submitted = self.store.submit(cid, "oil")
+        self.assertTrue(self.engine.started.wait(1))
+        publish = self.engine.calls[0][1]["progress"]
+        publish({"vehicle_revision": 3, "vehicle": {"make": "NEW"}, "cards": []})
+        publish({"vehicle_revision": 2, "vehicle": {"make": "OLD"},
+                 "cards": [self.engine.card("obsolete")]})
+        result = self.store.get(cid, submitted["turn_id"])
+        self.assertEqual(result["vehicle"], {"make": "NEW"})
+        self.assertEqual(result["vehicle_revision"], 3)
+        self.assertNotIn("obsolete", str(result))
+        self.engine.release.set()
+
+    def test_configuration_and_response_preserve_displacement_and_references(self):
+        from pydantic import ValidationError
+
+        vehicle = VehicleConfiguration(displacement_l=3.0, fuel_type="Diesel", trim="E 350")
+        self.assertEqual(vehicle.model_dump()["displacement_l"], 3.0)
+        for size in (0, 21, "3.0"):
+            with self.assertRaises(ValidationError):
+                VehicleConfiguration(displacement_l=size)
+        result = ConversationTurn(
+            conversation_id="c", turn_id="t", status="COMPLETE", vehicle_revision=4,
+            resolution_candidates=[{"engine_code": "OM642"}],
+            clarification_choices=["Diesel", "Petrol"],
+            claims=[{"claim_id": "c1", "text": "Source assertion"}],
+            citations=[{"url": "https://example.com/catalog"}],
+        ).model_dump()
+        self.assertEqual(result["vehicle_revision"], 4)
+        self.assertEqual(result["claims"][0]["claim_id"], "c1")
+        self.assertEqual(result["citations"][0]["url"], "https://example.com/catalog")
 
     def test_vehicle_change_invalidates_pending_turn_and_history(self):
         self.engine.release.clear()

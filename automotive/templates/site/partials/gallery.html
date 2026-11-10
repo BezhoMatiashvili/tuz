@@ -1,0 +1,20 @@
+{% from "partials/macros.html" import icon, tt with context %}
+{% if gallery %}
+<section class="gallery section{% if gallery|length < 3 %} gallery--few{% endif %}" aria-labelledby="gallery-title">
+  <div class="wrap gallery__head">
+    <h2 class="t-h2" id="gallery-title">{{ c.gallery.title }}</h2>
+    {# Shown by the script only when the row really overflows. #}
+    <div class="gallery__nav" hidden>
+      <button class="iconbtn iconbtn--line" type="button" data-gallery="-1" aria-label="{{ tt('gallery.prev', t['gallery.hint']) }}">{{ icon("caret-left") }}</button>
+      <button class="iconbtn iconbtn--line" type="button" data-gallery="1" aria-label="{{ tt('gallery.next', t['gallery.hint']) }}">{{ icon("caret-right") }}</button>
+    </div>
+  </div>
+  <ul class="gallery__row" tabindex="0" aria-labelledby="gallery-title">
+    {% for photo in gallery %}
+    <li class="gallery__item">
+      <img src="{{ photo.src }}" width="{{ photo.width }}" height="{{ photo.height }}" alt="{{ photo.alt }}" loading="lazy" decoding="async">
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}

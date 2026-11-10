@@ -9,6 +9,17 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'automotive_enrichment') THEN
         CREATE ROLE automotive_enrichment NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'automotive_validator') THEN
+        CREATE ROLE automotive_validator NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'parts_crawler') THEN
+        CREATE ROLE parts_crawler NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+    END IF;
+    -- Garage site: staff accounts and editable content (schema garage, migration 0012).
+    -- Attach it only to the site login; never to the runtime, enrichment or crawler logins.
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'garage_site') THEN
+        CREATE ROLE garage_site NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+    END IF;
     IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'automotive') THEN
         GRANT USAGE ON SCHEMA automotive, warehouse TO automotive_runtime, automotive_enrichment;
         GRANT SELECT ON warehouse.warehouse_products TO automotive_runtime, automotive_enrichment;
@@ -18,6 +29,15 @@ BEGIN
         GRANT UPDATE ON automotive.part_numbers, automotive.catalog_index_state,
             automotive.vehicle_configurations, automotive.vin_identifications,
             automotive.enrichment_jobs TO automotive_enrichment;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'automotive_knowledge') THEN
+        PERFORM automotive_knowledge.provision();
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'parts_catalog') THEN
+        PERFORM parts_catalog.provision();
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'garage') THEN
+        PERFORM garage.provision();
     END IF;
 END $$;
 -- Evidence review is a migration/operator-owner capability. The enrichment role

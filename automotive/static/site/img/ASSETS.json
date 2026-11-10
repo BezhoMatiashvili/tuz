@@ -1,0 +1,194 @@
+{
+  "generated_by": "scripts/build_site_assets.py",
+  "tools": {
+    "magick": "ImageMagick 7.1.2-27 (Beta) Q16-HDRI x86_64 24344 https://imagemagick.org",
+    "pdftocairo": "pdftocairo version 26.01.0",
+    "fonttools": "fonttools[woff]==4.60.1"
+  },
+  "steps": {
+    "art": {
+      "sources": {
+        "WhatsApp Image 2026-11-07 at 12.04.30 (4).jpeg": "7327ae8c085a179b31406338d40072c7fdf95c636d5874e7265adc4ecc486bdc",
+        "WhatsApp Image 2026-11-07 at 12.04.30 (3).jpeg": "0f2995f29a89b085600975c3f8e175c7ee55397dafe711ab64849725265e454b"
+      },
+      "files": [
+        {
+          "path": "burst-k-640.webp",
+          "bytes": 16204,
+          "sha256": "bd866ffa1e9d0bfcf8a3558878e5118525c99417e2ea4fbfbc73f4d728e7b3d9"
+        },
+        {
+          "path": "burst-k.webp",
+          "bytes": 26974,
+          "sha256": "d4624b9e4aac3ef651bd7b7c958c25cab9a0628351bc10ea8e332abc4640d069"
+        },
+        {
+          "path": "burst-w-640.webp",
+          "bytes": 19514,
+          "sha256": "1279585b91391f0603fc4e82fe6571df371dd6e694d5efd3319d86a38448adaa"
+        },
+        {
+          "path": "burst-w.webp",
+          "bytes": 33396,
+          "sha256": "1797f39ff8dcc30bc4c687862c7d267649428d171c38962cdc368464d0149b25"
+        },
+        {
+          "path": "grain.png",
+          "bytes": 7865,
+          "sha256": "f1fa890d89740d1ef0408414190aa82c3f6320812b471bd693e28de4cd31c51e"
+        },
+        {
+          "path": "lettering.webp",
+          "bytes": 55438,
+          "sha256": "84e448216b0c8ac2c26ffa50ca037c994f08d862abe425744a21fc390dca0a39"
+        },
+        {
+          "path": "sheen.webp",
+          "bytes": 464,
+          "sha256": "bc28265f638d9a9a7c65a6547079e993ea40aecbac27365b4ea5d6d0de871599"
+        }
+      ]
+    },
+    "logo": {
+      "sources": {
+        "garage.pdf": "0c7b590377e21b3752114b31e761165b4229d2d736252542e0cd9aec68066bc1"
+      },
+      "files": [
+        {
+          "path": "apple-touch-icon.png",
+          "bytes": 6943,
+          "sha256": "0672f90fd35a5aea3aeebea2570f34588c46ba7ba9044d7d0a5f313f29400116"
+        },
+        {
+          "path": "favicon.ico",
+          "bytes": 15086,
+          "sha256": "6479c29964f7c837cb2c910f274ffc147483f8efadb44281b18cec3d323846b3"
+        },
+        {
+          "path": "favicon.svg",
+          "bytes": 439,
+          "sha256": "e08d7d47db2f6b29cd6b34d995cb9014bbc64d99980f789631d196918153a7a2"
+        },
+        {
+          "path": "logo-full.svg",
+          "bytes": 34961,
+          "sha256": "9f05dd61e26568cb05517212fe8f67a085e3c06b7dc10cfdb80d9cb828090682"
+        },
+        {
+          "path": "wordmark.svg",
+          "bytes": 2457,
+          "sha256": "1a78c515e18f44621cbf367d611cafc2b6c605f57d1c87cbcc972e33357b3239"
+        }
+      ]
+    },
+    "photos": {
+      "sources": {
+        "garage.pdf": "0c7b590377e21b3752114b31e761165b4229d2d736252542e0cd9aec68066bc1",
+        "WhatsApp Image 2026-11-07 at 12.04.30 (4).jpeg": "7327ae8c085a179b31406338d40072c7fdf95c636d5874e7265adc4ecc486bdc",
+        "WhatsApp Image 2026-11-07 at 12.04.30 (3).jpeg": "0f2995f29a89b085600975c3f8e175c7ee55397dafe711ab64849725265e454b",
+        "WhatsApp Image 2026-11-07 at 12.04.30 (5).jpeg": "7e34cddc58761dd5aa83624fd05a9603bd7b6125e89460e212da95f7cad05d3c",
+        "WhatsApp Image 2026-11-07 at 12.04.30 (2).jpeg": "ce46fc5412a32dd6f01fbe6eaa8959d13ef78245063c9b9747b591b1f4e409cf",
+        "WhatsApp Image 2026-11-07 at 12.04.30.jpeg": "a3b85ff858baef281141c657f008bac39499ba8a6179a7f68263f79d6e1a1237",
+        "WhatsApp Image 2026-11-07 at 12.04.30 (1).jpeg": "46d949a05e3132b969c7b645e63be0ed2e71443012162b4f78637d60ab17b84e",
+        "WhatsApp Image 2026-11-07 at 12.04.30 (6).jpeg": "7ed677e10709fe11c557feea2bbf362b1fa0f1581fbe46e5cab4ba97c26648e4",
+        "WhatsApp Image 2026-11-10 at 14.20.03.jpeg": "00c9dc4fea3c7a2756d222b054845320f2eb8e100dbb4e0f7db8e6073ef58248",
+        "WhatsApp Image 2026-11-10 at 14.20.04.jpeg": "3ac6ee7b523acf07811b70dc2d2c6b48da353d06ff2f6d9741327412f07542ef",
+        "WhatsApp Image 2026-11-10 at 14.20.04 (1).jpeg": "779e0704285828aabb1d782dfbfd0b63846af4f5e9fd24f7cdda1208770a29b7",
+        "WhatsApp Image 2026-11-10 at 14.20.04 (2).jpeg": "51bd6fa4301b60e32ace4d9f7bde54d0008ce85a61ab61aeaa42bebf6cdb6a56",
+        "WhatsApp Image 2026-11-10 at 14.20.04 (3).jpeg": "7a0127a7d977f1e213df11585801a4bb24750f3c688ccfc2dfc21d0526b845ec"
+      },
+      "files": [
+        {
+          "path": "gallery/benz-1886-wall.webp",
+          "bytes": 115808,
+          "sha256": "5b9e7ab8ce52dc742e852e34f3c17a17d6cabddf01f6dc5d76e22e6791c79b6d"
+        },
+        {
+          "path": "gallery/brakes-wall.webp",
+          "bytes": 86072,
+          "sha256": "091146d22151ee3a923a63a48f151017255f3b2129210662e395cd2e647cacc4"
+        },
+        {
+          "path": "gallery/engine-close-wall.webp",
+          "bytes": 162646,
+          "sha256": "744fa6353506a68e455b0388c7487fcbf6450264ecf6bce4ab9f9cbd3f37d72f"
+        },
+        {
+          "path": "gallery/engine-wall.webp",
+          "bytes": 165114,
+          "sha256": "12ac71efa0ec79c895d20fc7c8ce3d30af4255bf7912169a724c6ce4797c999f"
+        },
+        {
+          "path": "gallery/horse-close-wall.webp",
+          "bytes": 109956,
+          "sha256": "1d4ec7b866eba78d651a530dc783c596e5667ca27e68817ba340ce7b3615cc40"
+        },
+        {
+          "path": "gallery/horse-wall.webp",
+          "bytes": 130684,
+          "sha256": "4050c2adf03f279ead947fe9c5e7d4870cf72e5184925af7424d03fd3604d330"
+        },
+        {
+          "path": "gallery/logo-wall.webp",
+          "bytes": 76236,
+          "sha256": "bff9ba5ada5f29c166b4123cfce50d1cfa232369086a297b0ef32b389cfe1fd9"
+        },
+        {
+          "path": "gallery/lubricants-clear-wall.webp",
+          "bytes": 88372,
+          "sha256": "121a39d27952c4eebeb59089bd849897a56c64f7e4cc5aa23fa125e8c6631936"
+        },
+        {
+          "path": "gallery/lubricants-wall.webp",
+          "bytes": 87380,
+          "sha256": "2da589b7873c91dca9b348fe72746dbbb169721cbe1e694d96d2b65337460e45"
+        },
+        {
+          "path": "gallery/manifest.json",
+          "bytes": 4368,
+          "sha256": "392abd8302e20c529ee41d021925a1a85d2414bb16e0db601ac9b09f1477d957"
+        },
+        {
+          "path": "gallery/route-66-wall.webp",
+          "bytes": 65830,
+          "sha256": "991556e9b218ea816ea38f726201f6574e62d2ff525c10bc223b8e6267e9a7a3"
+        },
+        {
+          "path": "gallery/service-wall.webp",
+          "bytes": 110508,
+          "sha256": "896fbb8092a3ac35edc0d15e21de6b0c24f06f22c8042a9bf26aa66f134174b5"
+        },
+        {
+          "path": "gallery/turbo-wall.webp",
+          "bytes": 119426,
+          "sha256": "cd043c62e96f1df71b682df3838fc91184d0857eff6d23ec147c6672550ed735"
+        },
+        {
+          "path": "og.jpg",
+          "bytes": 105042,
+          "sha256": "c5d55246f526b7a27c362ed0fe60bad637f698f9b518c99edd38b521db022fbb"
+        },
+        {
+          "path": "service-mural-640.webp",
+          "bytes": 55834,
+          "sha256": "c040431edf4da9c21b92298f0ee85071f3e69fdc8210c6fb26c1496808a41def"
+        },
+        {
+          "path": "service-mural.webp",
+          "bytes": 91542,
+          "sha256": "3adc368954cd2bbd3c2de52c9f44141c977837c8cd42419435c428b37da74c6c"
+        },
+        {
+          "path": "story-mural-520.webp",
+          "bytes": 53310,
+          "sha256": "e72b60ad921b07d2bfe7899738f2be61564c9f4921209edde94d76877a787111"
+        },
+        {
+          "path": "story-mural.webp",
+          "bytes": 95310,
+          "sha256": "7a6dc28ef2640f59ac127dfc72b11b9ace96167b62c5a371cff83403ef3049ef"
+        }
+      ]
+    }
+  }
+}

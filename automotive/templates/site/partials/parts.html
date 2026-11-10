@@ -1,0 +1,80 @@
+{% from "partials/macros.html" import icon, tt with context %}
+<section id="parts" class="parts" aria-labelledby="parts-title">
+  <header class="parts__head wall">
+    <div class="wrap">
+      <h2 class="t-h2" id="parts-title">{{ c.parts.title }}</h2>
+      {% if c.parts.intro %}
+      <p class="t-lead">{{ c.parts.intro }}</p>
+      {% endif %}
+    </div>
+  </header>
+  <div class="stripe" aria-hidden="true"></div>
+
+  <div class="parts__body wrap">
+    <form class="pf" id="parts-form" role="search" aria-labelledby="parts-title" novalidate autocomplete="off">
+      <fieldset class="seg">
+        <legend>{{ t["parts.mode"] }}</legend>
+        <div class="seg__track">
+          <label class="seg__opt"><input type="radio" name="mode" value="car" checked><span>{{ t["parts.mode_car"] }}</span></label>
+          <label class="seg__opt"><input type="radio" name="mode" value="vin"><span>{{ t["parts.mode_vin"] }}</span></label>
+          <label class="seg__opt"><input type="radio" name="mode" value="name"><span>{{ t["parts.mode_name"] }}</span></label>
+        </div>
+      </fieldset>
+
+      <div class="field" data-modes="vin" hidden>
+        <div class="field__top">
+          <label for="pf-vin">{{ t["parts.vin"] }}</label>
+          <span class="field__count" id="pf-vin-count" aria-hidden="true">0/17</span>
+        </div>
+        <input class="input input--vin" id="pf-vin" name="vin" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="17" enterkeyhint="search" aria-describedby="pf-vin-hint">
+        <p class="field__hint" id="pf-vin-hint">{{ t["parts.vin_hint"] }}</p>
+      </div>
+
+      {# The recognised car, VIN progress and VIN errors. Announced politely. #}
+      <p class="pf__status" id="pf-status" role="status" aria-live="polite"></p>
+
+      <div class="field" data-modes="car">
+        <label for="pf-make">{{ t["parts.make"] }}</label>
+        <select class="input input--select" id="pf-make" name="make">
+          <option value="">{{ t["parts.any_make"] }}</option>
+        </select>
+      </div>
+      <div class="pf__row" data-modes="car">
+        <div class="field">
+          <label for="pf-model">{{ t["parts.model"] }}</label>
+          <select class="input input--select" id="pf-model" name="model" disabled>
+            <option value="">{{ t["parts.any_model"] }}</option>
+          </select>
+        </div>
+        <div class="field field--year">
+          <label for="pf-year">{{ t["parts.year"] }}</label>
+          <select class="input input--select" id="pf-year" name="year" disabled>
+            <option value="">{{ t["parts.any_year"] }}</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" data-modes="car name">
+        <label for="pf-q">{{ t["parts.keyword"] }}</label>
+        <input class="input" id="pf-q" name="q" type="text" inputmode="search" maxlength="80" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-describedby="pf-q-hint">
+        <p class="field__hint" id="pf-q-hint">{{ t["parts.keyword_hint"] }}</p>
+      </div>
+      <div class="field" data-modes="name" hidden>
+        <label for="pf-brand">{{ t["parts.brand"] }}</label>
+        <input class="input" id="pf-brand" name="brand" type="text" list="pf-brands" maxlength="80" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="search" aria-describedby="pf-brand-hint">
+        <datalist id="pf-brands"></datalist>
+        <p class="field__hint" id="pf-brand-hint">{{ t["parts.brand_hint"] }}</p>
+      </div>
+
+      <button class="btn btn--primary pf__submit" type="submit" data-label-search="{{ t['parts.search'] }}" data-label-decode="{{ t['parts.decode'] }}">
+        {{ icon("magnifying-glass") }}<span>{{ t["parts.search"] }}</span>
+      </button>
+    </form>
+
+    <div class="results" id="parts-results" data-state="idle"{% if c.brand.phone %} data-phone="{{ c.brand.phone|tel }}" data-call="{{ t['nav.call'] }}"{% endif %}>
+      <h3 class="sr-only">{{ t["parts.results"] }}</h3>
+      <p class="results__status" role="status" aria-live="polite">{{ t["js.search.need"] }}</p>
+      <noscript><p class="results__hint">{{ tt("parts.noscript") }}</p></noscript>
+      <div class="results__body"></div>
+    </div>
+  </div>
+</section>

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import math
 import re
 from collections import deque
+from collections.abc import Mapping
+from email.utils import parsedate_to_datetime
 from threading import Lock
-from time import monotonic
+from time import monotonic, time
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -19,9 +22,42 @@ SUPPLIER_WARNING = (
 
 
 class PublicSourceError(RuntimeError):
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, *, retry_after: float | None = None) -> None:
         super().__init__('External source unavailable')
         self.code = code
+        self.retry_after = (min(86400.0, max(1.0, retry_after))
+                            if retry_after is not None and math.isfinite(retry_after) else None)
+
+
+def retry_delay(headers: Mapping, *, now: float | None = None) -> float:
+    """Read Retry-After and common quota reset headers without retaining headers.
+
+    RapidAPI's requests-reset is a duration; generic reset headers may be Unix
+    timestamps. Durations are bounded to a day to handle malformed provider data.
+    """
+    current = time() if now is None else now
+    clean = {str(key).casefold(): str(value) for key, value in headers.items()}
+    delays = []
+    for name in ('retry-after', 'x-ratelimit-requests-reset', 'x-ratelimit-reset',
+                 'ratelimit-reset'):
+        value = clean.get(name)
+        if not value:
+            continue
+        try:
+            number = float(value)
+            if not math.isfinite(number):
+                continue
+            if name in {'x-ratelimit-reset', 'ratelimit-reset'} and number > 1_000_000_000:
+                number -= current
+        except ValueError:
+            if name != 'retry-after':
+                continue
+            try:
+                number = parsedate_to_datetime(value).timestamp() - current
+            except (ValueError, TypeError, OverflowError):
+                continue
+        delays.append(number)
+    return min(86400.0, max(1.0, max(delays))) if delays else 60.0
 
 
 def redact(value: Any, maximum: int = 300) -> str | None:
@@ -72,14 +108,18 @@ class PublicHttp:
         self.per_minute = per_minute
         self._requests: deque[float] = deque()
         self._lock = Lock()
+        self._retry_until = 0.0
 
     def reserve(self) -> None:
         now = monotonic()
         with self._lock:
+            if self._retry_until > now:
+                raise PublicSourceError('RATE_LIMITED', retry_after=self._retry_until - now)
             while self._requests and self._requests[0] < now - 60:
                 self._requests.popleft()
             if len(self._requests) >= self.per_minute:
-                raise PublicSourceError('RATE_LIMITED')
+                raise PublicSourceError('RATE_LIMITED',
+                                        retry_after=60 - (now - self._requests[0]))
             self._requests.append(now)
 
     def read(self, method: str, url: str, *, params: dict | None = None,
@@ -90,6 +130,10 @@ class PublicHttp:
         parts = urlsplit(url)
         if parts.username or parts.password or parts.hostname is None:
             raise PublicSourceError('INVALID_RESPONSE')
+        with self._lock:
+            remaining_retry = self._retry_until - monotonic()
+        if remaining_retry > 0:
+            raise PublicSourceError('RATE_LIMITED', retry_after=remaining_retry)
         response = None
         try:
             remaining = deadline - monotonic() if deadline is not None else 20.0
@@ -108,7 +152,10 @@ class PublicHttp:
                     timeout=timeout, allow_redirects=False, stream=True,
                 )
                 if response.status_code == 429:
-                    raise PublicSourceError('RATE_LIMITED')
+                    delay = retry_delay(response.headers)
+                    with self._lock:
+                        self._retry_until = monotonic() + delay
+                    raise PublicSourceError('RATE_LIMITED', retry_after=delay)
                 if response.status_code in {301, 302, 303, 307, 308, 401, 403}:
                     raise PublicSourceError('ACCESS_REQUIRED')
                 body = bytearray()

@@ -1,0 +1,73 @@
+{
+  "generated_by": "scripts/build_site_assets.py icons",
+  "package": "@phosphor-icons/core",
+  "version": "2.1.1",
+  "licence": "MIT",
+  "source": "https://registry.npmjs.org/@phosphor-icons/core/-/core-2.1.1.tgz",
+  "integrity": "sha512-v4ARvrip4qBCImOE5rmPUylOEK4iiED9ZyKjcvzuezqMaiRASCHKcRIuvvxL/twvLpkfnEODCOJp5dM4eZilxQ==",
+  "sha256": "313332be6190b724da24107addd781799b48bf76b13963f24501112ffe1baadd",
+  "weight": "regular",
+  "icons": [
+    "wrench",
+    "gauge",
+    "drop",
+    "disc",
+    "steering-wheel",
+    "engine",
+    "flag-checkered",
+    "package",
+    "tire",
+    "car-battery",
+    "fan",
+    "snowflake",
+    "lightning",
+    "headlights",
+    "toolbox",
+    "car-profile",
+    "gas-pump",
+    "thermometer",
+    "shield-check",
+    "sparkle",
+    "check",
+    "phone",
+    "map-pin",
+    "clock",
+    "list",
+    "x",
+    "chat",
+    "chat-text",
+    "magnifying-glass",
+    "caret-down",
+    "caret-left",
+    "caret-right",
+    "arrow-right",
+    "arrow-up-right",
+    "arrow-clockwise",
+    "plus",
+    "warning",
+    "info",
+    "envelope-simple",
+    "paper-plane-right",
+    "whatsapp-logo",
+    "facebook-logo",
+    "instagram-logo",
+    "tiktok-logo"
+  ],
+  "files": [
+    {
+      "path": "LICENSE.txt",
+      "bytes": 1092,
+      "sha256": "ddbe6082ec3cf979db47e5af549d2849c5d6182b3e005ef91ce1dbb9eb122f11"
+    },
+    {
+      "path": "caret-down.svg",
+      "bytes": 210,
+      "sha256": "c17155b9839933463bb865a2f261996c2ee52af08ee373ea42c1ffc8ed22e055"
+    },
+    {
+      "path": "sprite.svg",
+      "bytes": 18852,
+      "sha256": "9fe1e41e0e71139a0acfe2b8537ef241852b86423b9e3234ff6960a7c7404394"
+    }
+  ]
+}

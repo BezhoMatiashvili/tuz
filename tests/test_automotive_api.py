@@ -171,7 +171,8 @@ class AutomotiveApiTests(unittest.IsolatedAsyncioTestCase):
                 "status": "PROVISIONAL", "warnings": [], "private_field": "hidden",
             }], "has_more": False, "observed_at": "2026-11-09T00:00:00+00:00", "warnings": [],
         }
-        client = self.make_client(motorium_service=service)
+        client = self.make_client(motorium_service=service,
+                                  settings=replace(self.settings, motorium_enabled=True))
         response = await client.post("/api/v1/vehicles/part-codes", json={
             "vin": "1HGCM82633A004352", "part_query": "filter", "limit": 2,
         })
@@ -194,7 +195,9 @@ class AutomotiveApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()["detail"]["code"], "MOTORIUM_DISABLED")
         service.lookup.assert_not_called()
-        client = self.make_client(motorium_service=service)
+        self.assertFalse(Settings().motorium_enabled)  # Off unless explicitly enabled.
+        client = self.make_client(motorium_service=service,
+                                  settings=replace(self.settings, motorium_enabled=True))
         service.lookup.side_effect = MotoriumError("RATE_LIMITED")
         response = await client.post("/api/v1/vehicles/part-codes", json=payload)
         self.assertEqual(response.status_code, 429)
@@ -294,6 +297,16 @@ class AutomotiveApiTests(unittest.IsolatedAsyncioTestCase):
             (await client.post("/api/v1/chat", json={"message": "hello"})).status_code, 429
         )
 
+    async def test_turn_polling_has_its_own_bounded_allowance(self):
+        client = self.make_client(settings=replace(self.settings, rate_limit_per_minute=3))
+        poll = f"/api/v1/chat/conversations/{'c' * 43}/turns/{'t' * 32}"
+        for _ in range(15):
+            self.assertNotEqual((await client.get(poll)).status_code, 429)
+        self.assertEqual((await client.get(poll)).status_code, 429)
+        for _ in range(3):
+            self.assertEqual((await client.get("/api/v1/health")).status_code, 200)
+        self.assertEqual((await client.get("/api/v1/health")).status_code, 429)
+
     async def test_operator_required_and_job_persisted_before_accepted(self):
         url = "/api/v1/operator/enrichment/jobs"
         response = await self.client.post(url, json={"kind": "index"})
@@ -324,7 +337,8 @@ class AutomotiveApiTests(unittest.IsolatedAsyncioTestCase):
     async def test_body_limit_and_security_headers(self):
         response = await self.client.post("/api/v1/chat", content="x" * 1_100_001)
         self.assertEqual(response.status_code, 413)
-        response = await self.client.get("/")
+        # The staff workspace moved from "/" to "/staff"; "/" is now the public landing page.
+        response = await self.client.get("/staff")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["Cache-Control"], "no-store")
         self.assertIn("script-src 'self'", response.headers["Content-Security-Policy"])

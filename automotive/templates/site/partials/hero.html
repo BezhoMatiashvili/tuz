@@ -1,0 +1,47 @@
+{# The H1 is the LCP element: it is plain text, never animated and never hidden. The art
+   is CSS masks plus the logo, so no image here is larger than the headline. #}
+{# Headline size step. `units` estimates how wide a line sets in the display face, in
+   tenths of an average capital: the wide Georgian capitals and W and M count for more,
+   I, spaces and stops for less. The best two-line break is the one whose longer line is
+   narrowest; its width in thousandths of an em (an average capital with its tracking
+   is 0.56em in the Georgian face and 0.47em in the Latin one) picks the step that
+   site.css sizes. #}
+{% macro units(line) -%}
+{%- set text = line|lower -%}
+{%- set count = namespace(units=text|length * 10) -%}
+{%- for letters, extra in (("ლ", 8), ("თ", 5), ("ოდფრღ", 4), ("ტ", 3), ("w", 5), ("m", 2),
+                            ("i", -5), (" ", -6), (",.!?:;'", -5)) -%}
+{%- for letter in letters -%}
+{%- set count.units = count.units + extra * (text|length - text|replace(letter, "")|length) -%}
+{%- endfor -%}
+{%- endfor -%}
+{{ count.units }}
+{%- endmacro %}
+{% set words = c.hero.title.split() %}
+{% set fit = namespace(widest=units(c.hero.title)|int, step=1) %}
+{% for cut in range(1, words|length) %}
+{% set wider = [units(words[:cut]|join(" "))|int, units(words[cut:]|join(" "))|int]|max %}
+{% if wider < fit.widest %}{% set fit.widest = wider %}{% endif %}
+{% endfor %}
+{% set width = fit.widest * (56 if lang == "ka" else 47) %}
+{% for limit in (4180, 5080, 6210, 7150, 8130, 9200, 10160, 11760) if width > limit %}
+{% set fit.step = loop.index + 1 %}
+{% endfor %}
+<section class="hero" aria-labelledby="hero-title">
+  <div class="hero__copy">
+    <h1 class="hero__title hero__title--{{ fit.step }}" id="hero-title">{{ c.hero.title }}</h1>
+    {% if c.hero.subline %}
+    <p class="hero__sub">{{ c.hero.subline }}</p>
+    {% endif %}
+    <div class="hero__cta">
+      <a class="btn btn--primary" href="#parts">{{ t["hero.cta_parts"] }}</a>
+      {% if chat_on %}
+      <button class="btn btn--ghost" type="button" data-chat-open>{{ t["hero.cta_chat"] }}</button>
+      {% endif %}
+    </div>
+  </div>
+  <div class="hero__art">
+    <div class="burst" aria-hidden="true"><i class="burst__k"></i><i class="burst__w"></i></div>
+    <img class="hero__logo" src="{{ asset('site/img/logo-full.svg') }}" width="620" height="250" alt="{{ t['hero.art_alt'] }}">
+  </div>
+</section>

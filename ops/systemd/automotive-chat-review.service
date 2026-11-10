@@ -1,0 +1,36 @@
+# Example unit for the daily chat review (docs/automotive.md, "Local chat log"). Not installed by CI.
+# It runs on the host that serves the chats, as the same user: it reads that host's chat logs
+# and the same catalogue. It starts no server and only its replays reach the model.
+[Unit]
+Description=Daily review of the parts chat: requests that got no parts although some were in stock
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=garage-site
+Group=garage-site
+WorkingDirectory=/opt/tuz/current
+UMask=0077
+Environment=PYTHONUNBUFFERED=1
+# The site's own environment: AUTOMOTIVE_DATABASE_URL (runtime), AUTOMOTIVE_VIN_HMAC_KEY,
+# ANTHROPIC_API_KEY and the chat log paths. Never the warehouse writer or migration URL.
+EnvironmentFile=/etc/tuz/garage-site.env
+ExecStart=/opt/tuz/current/.venv/bin/python -m automotive.chat_review --since-hours 24 --limit 40 --budget-usd 1.0
+# 40 turns of at most 90 seconds each, and the conversations around them. A run that is
+# stopped here still writes the report of what it replayed.
+TimeoutStartSec=2h
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+# The reports (data/chat_logs/reviews) and the provider cache are the only paths it writes.
+ReadWritePaths=/opt/tuz/current/data

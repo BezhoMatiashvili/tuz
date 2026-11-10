@@ -1,0 +1,49 @@
+{% from "partials/macros.html" import icon, tt with context %}
+{% set sections = [("#parts", t["nav.parts"]), ("#services", t["nav.services"]),
+                   ("#story", t["nav.story"]), ("#visit", t["nav.visit"])] %}
+<header class="nav" id="top">
+  <div class="nav__in wrap">
+    <a class="nav__brand" href="{{ home }}" aria-label="Garage 1886, {{ t['nav.home'] }}">
+      <img src="{{ asset('site/img/wordmark.svg') }}" width="208" height="18" alt="">
+    </a>
+    <nav class="nav__links" aria-label="{{ tt('nav.primary', t['nav.menu']) }}">
+      {% for href, label in sections %}
+      <a href="{{ href }}">{{ label }}</a>
+      {% endfor %}
+    </nav>
+    {# A plain link named by its own text: the code is what phones show, the full name is
+       always there for assistive technology and is what wide screens show. #}
+    <a class="nav__lang" href="{{ alternates[other] }}" hreflang="{{ other }}" lang="{{ other }}">
+      <span class="nav__lang-code">{{ t["nav.language_code"] }}</span>
+      <span class="nav__lang-name">{{ t["nav.language"] }}</span>
+    </a>
+    {% if c.brand.phone %}
+    <a class="btn btn--primary btn--sm nav__call" href="tel:{{ c.brand.phone|tel }}">
+      {{ icon("phone") }}<span>{{ t["nav.call"] }}</span>
+    </a>
+    {% endif %}
+    <button class="iconbtn nav__menu" type="button" aria-haspopup="dialog" aria-controls="menu" aria-label="{{ t['nav.menu'] }}" data-menu-open>
+      {{ icon("list") }}
+    </button>
+  </div>
+</header>
+
+<dialog class="menu" id="menu" aria-label="{{ t['nav.menu'] }}">
+  <div class="menu__head wrap">
+    <img src="{{ asset('site/img/wordmark.svg') }}" width="208" height="18" alt="Garage 1886">
+    <button class="iconbtn" type="button" aria-label="{{ t['nav.close'] }}" data-menu-close>
+      {{ icon("x") }}
+    </button>
+  </div>
+  <nav class="menu__links wrap" aria-label="{{ t['nav.menu'] }}">
+    {% for href, label in sections %}
+    <a href="{{ href }}" data-menu-close>{{ label }}</a>
+    {% endfor %}
+  </nav>
+  <div class="menu__foot wrap">
+    {% if c.brand.phone %}
+    <a class="btn btn--primary" href="tel:{{ c.brand.phone|tel }}">{{ icon("phone") }}<span>{{ t["nav.call"] }}</span></a>
+    {% endif %}
+    <a class="menu__lang" href="{{ alternates[other] }}" hreflang="{{ other }}" lang="{{ other }}">{{ t["nav.language"] }}</a>
+  </div>
+</dialog>

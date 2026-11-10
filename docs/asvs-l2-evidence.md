@@ -17,4 +17,6 @@
 | V12 files/resources | systemd hardening, read-only system paths, private temp, bounded HTTP | unit file review and `systemd-analyze` result |
 | V14 configuration | fail-closed production configuration and SHA-pinned CI actions | `test_config.py`, CI run URL, environment review |
 
+**Garage site (2026-11-10).** V1 და V3 სტრიქონები აღარ არის ზუსტი იმ შემთხვევაში, თუ `automotive` აპლიკაცია საჯაროდ განთავსდება: კოდში ახლა არსებობს საჯარო გვერდი, თანამშრომლის ავტორიზაცია და ბრაუზერის სესიები ([garage-site.md](garage-site.md)). ეს ცვლილება აპლიკაციას არ ათავსებს production-ში. განთავსებამდე security owner-მა ხელახლა უნდა შეაფასოს V1, V2, V3, V4 და V13 (session cookie, CSRF, role split, rate limits, upload), მტკიცებულებად: `tests/test_site_*.py`, reverse proxy-ის კონფიგურაცია და ამ ზედაპირის penetration test.
+
 Required final attachments: authenticated external penetration-test report with remediation status, current dependency scan/SBOM, Supabase IP-restriction evidence, source WireGuard/TLS evidence, successful isolated restore-drill report, and security-owner sign-off. No deployment is approved merely because automated tests pass.

@@ -120,7 +120,7 @@ class VINSearchCoordinator:
                  fuchs_enabled: bool = True, shell_enabled: bool = True,
                  pakelo_enabled: bool = True, jsfilter_enabled: bool = True,
                  budget_seconds: float = 75, ttl_seconds: float = 300, rules: Any = None,
-                 queries: tuple[str, ...] = DEFAULT_QUERIES) -> None:
+                 queries: tuple[str, ...] = DEFAULT_QUERIES, cache: Any = None) -> None:
         self.repository = repository
         self.vin_service = vin_service
         self.motorium_service = motorium_service
@@ -133,6 +133,7 @@ class VINSearchCoordinator:
             'jsfilter': (jsfilter_service, bool(jsfilter_enabled and jsfilter_service is not None)),
         }
         self._catalog = catalog_service
+        self.cache = cache
         self.rules = rules or Rules()
         self.budget_seconds, self.ttl_seconds = budget_seconds, ttl_seconds
         self.queries = queries
@@ -163,7 +164,7 @@ class VINSearchCoordinator:
             return
 
     def start(self, vin: str | None, part_query: str = '', model_year: int | None = None,
-              configuration: dict | None = None) -> dict:
+              configuration: dict | None = None, *, deadline: float | None = None) -> dict:
         """Start a read job. Without a VIN, a full make/model/year configuration is required."""
         if vin is None:
             if not configuration or not all(
@@ -172,7 +173,8 @@ class VINSearchCoordinator:
                 raise ValueError('VEHICLE_REQUIRED')
         else:
             vin = validate_vin(vin)
-        material = json.dumps([vin, part_query, model_year, configuration], sort_keys=True)
+        material = json.dumps([vin, part_query, model_year, configuration,
+                               deadline is not None], sort_keys=True)
         fingerprint = hmac.new(self.hmac_key, material.encode(), hashlib.sha256).hexdigest()
         now = time.monotonic()
         with self._lock:
@@ -210,7 +212,8 @@ class VINSearchCoordinator:
                 'code_local': [], 'cross_references': [],
                 'part_query': part_query,
             }
-            self._workers.submit(self._run, identifier, vin, part_query, model_year, configuration)
+            self._workers.submit(self._run, identifier, vin, part_query, model_year, configuration,
+                                 deadline)
             return self.get(identifier)
 
     def get(self, identifier: str, offset: int = 0, limit: int = 50) -> dict | None:
@@ -591,12 +594,15 @@ class VINSearchCoordinator:
         self._source(identifier, source, status='RUNNING', total_queries=1)
         # Chooser answers depend only on the vehicle, so they are shared for a day.
         cache_key = (source, *(_key(vehicle.get(k)) for k in (
-            'make', 'model', 'model_year', 'trim', 'fuel', 'body', 'engine_code',
-            'displacement_l')))
+            'make', 'model', 'model_year', 'trim', 'fuel', 'fuel_type', 'body', 'engine_code',
+            'displacement_l', 'drive', 'market')))
         with self._lock:
             hit = self._reports.get(cache_key)
         try:
-            if hit and hit[0] > time.monotonic():
+            persistent = self.cache.get('chooser', cache_key) if self.cache is not None else None
+            if isinstance(persistent, dict):
+                report = persistent
+            elif hit and hit[0] > time.monotonic():
                 report = copy.deepcopy(hit[1])
             else:
                 report = service.lookup(vin, vehicle, deadline=deadline)
@@ -605,8 +611,12 @@ class VINSearchCoordinator:
                     with self._lock:
                         if len(self._reports) > 500:
                             self._reports.clear()
-                        self._reports[cache_key] = (time.monotonic() + 24 * 3600,
+                        ttl = 60 if report.get('status') == 'EMPTY' else 24 * 3600
+                        self._reports[cache_key] = (time.monotonic() + ttl,
                                                     copy.deepcopy(report))
+                    if self.cache is not None:
+                        self.cache.put('chooser', cache_key, report,
+                                       empty=report.get('status') == 'EMPTY')
         except PublicSourceError as exc:
             self._source(identifier, source, status='ERROR', error_code=exc.code,
                          completed_queries=1)
@@ -644,9 +654,10 @@ class VINSearchCoordinator:
         return set()
 
     def _run(self, identifier: str, vin: str | None, query: str, year: int | None,
-             configuration: dict | None) -> None:
+             configuration: dict | None, turn_deadline: float | None = None) -> None:
         """Fast tier first (vPIC, catalog API, Shell); slower public sources only as fallbacks."""
-        deadline = time.monotonic() + self.budget_seconds
+        deadline = min(time.monotonic() + self.budget_seconds,
+                       turn_deadline or float('inf'))
         scope = self._scope(query)
         for name, (_service, enabled) in self._external.items():
             if not enabled:
@@ -658,8 +669,6 @@ class VINSearchCoordinator:
         use_catalog = False
         if self._catalog is None:
             self._source(identifier, 'catalog_api', status='DISABLED')
-        elif vin is None:
-            self._source(identifier, 'catalog_api', status='SKIPPED', error_code='VIN_REQUIRED')
         elif not categories_for(query):
             self._source(identifier, 'catalog_api', status='SKIPPED', error_code='NOT_REQUESTED')
         else:
@@ -693,6 +702,9 @@ class VINSearchCoordinator:
                 # Make, model and year select the vehicle; VIN-only providers do not run.
                 self._source(identifier, 'vpic', status='SKIPPED', error_code='VIN_REQUIRED')
                 self._source(identifier, 'motorium', status='SKIPPED', error_code='VIN_REQUIRED')
+                if use_catalog:
+                    start('catalog_api', self._catalog_api, identifier, None,
+                          configuration or {}, query, soft(25))
             else:
                 self._source(identifier, 'vpic', status='RUNNING')
                 start('vpic', self.vin_service.decode, vin, year, deadline=deadline)

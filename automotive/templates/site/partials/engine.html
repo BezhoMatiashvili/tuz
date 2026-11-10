@@ -1,0 +1,54 @@
+{# The engine section belongs to the engine agent: this markup is copied from the reference
+   in automotive/static/site/dev/engine.html, with the text filled from the content
+   snapshot and the interface strings. The <source> media condition is part of that
+   contract and must stay as written there. Its stylesheet is linked here, in the body,
+   so it never blocks the first paint of the hero. #}
+{% set legend = [("air_filter", false), ("spark_plugs", false), ("oil_filter", false),
+                 ("timing_kit", false), ("engine_oil", false), ("gasket", true),
+                 ("coolant", true), ("belt", true)] %}
+<link rel="stylesheet" href="{{ asset('site/css/engine.css') }}">
+<section id="engine" class="engine" data-engine data-engine-pins-src="{{ asset('site/img/engine/pins.json') }}" aria-labelledby="engine-title">
+  <div class="engine__stage">
+    <div class="engine__frame">
+      <div class="engine__art" data-engine-art>
+        <picture>
+          <source media="(max-width: 1023.98px), (orientation: portrait)" srcset="{{ asset('site/img/engine/poster-portrait-0.webp') }}" width="800" height="1200">
+          <img class="engine__poster" data-engine-poster="0" src="{{ asset('site/img/engine/poster-landscape-0.webp') }}" width="1600" height="1000" alt="" loading="lazy" decoding="async">
+        </picture>
+        <picture>
+          <source media="(max-width: 1023.98px), (orientation: portrait)" srcset="{{ asset('site/img/engine/poster-portrait-1.webp') }}" width="800" height="1200">
+          <img class="engine__poster" data-engine-poster="1" src="{{ asset('site/img/engine/poster-landscape-1.webp') }}" width="1600" height="1000" alt="{{ t['engine.poster_alt'] }}" loading="lazy" decoding="async">
+        </picture>
+        <canvas class="engine__canvas" data-engine-canvas aria-hidden="true"></canvas>
+        <ol class="engine__pins" data-engine-pins aria-hidden="true"></ol>
+      </div>
+    </div>
+
+    <div class="engine__copy">
+      <h2 class="t-h2 engine__title" id="engine-title">{{ c.engine.title }}</h2>
+      <div class="engine__beat" data-engine-beat="0">
+        <p class="t-h3">{{ c.engine.beat1_title }}</p>
+        <p class="t-lead">{{ c.engine.beat1_text }}</p>
+      </div>
+      <div class="engine__beat" data-engine-beat="1">
+        <p class="t-h3">{{ c.engine.beat2_title }}</p>
+        <p class="t-lead">{{ c.engine.beat2_text }}</p>
+      </div>
+      <div class="engine__beat" data-engine-beat="2">
+        <p class="t-h3">{{ c.engine.beat3_title }}</p>
+        {% if c.engine.beat3_text %}
+        <p class="t-lead">{{ c.engine.beat3_text }}</p>
+        {% endif %}
+        <ol class="engine__legend" data-engine-legend aria-label="{{ t['engine.legend'] }}">
+          {% for part, desktop_only in legend %}
+          <li data-part="{{ part }}"{% if desktop_only %} data-tier="desktop"{% endif %}><a href="#parts" data-part-query="{{ t['engine.query.' ~ part] }}">{{ t["engine.part." ~ part] }}</a></li>
+          {% endfor %}
+        </ol>
+        <a class="btn btn--primary" href="#parts">{{ t["engine.cta"] }}</a>
+        {% if in_stock is not none and in_stock > 0 %}
+        <p class="engine__stock">{{ t["engine.stock"]|replace("{count}", in_stock|num) }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,67 @@
+{% from "partials/macros.html" import icon, tt with context %}
+{% set brand = c.brand %}
+{% set hours = brand.hours|selectattr("time")|list %}
+{% set socials = [("facebook-logo", "Facebook", brand.facebook), ("instagram-logo", "Instagram", brand.instagram),
+                  ("tiktok-logo", "TikTok", brand.tiktok)]|selectattr(2)|list %}
+{% set writes = brand.whatsapp or brand.email or socials %}
+{% set place = brand.address or brand.map_url %}
+{% set known = brand.phone or hours or place or writes %}
+<section id="visit" class="visit wall" aria-labelledby="visit-title">
+  <div class="burst burst--edge" aria-hidden="true"><i class="burst__k"></i><i class="burst__w"></i></div>
+  <div class="wrap visit__in">
+    <h2 class="t-h2{% if not brand.phone %} visit__title--xl{% endif %}" id="visit-title">{{ c.visit.title }}</h2>
+    {% if known %}
+    {% if c.visit.note %}
+    <p class="t-lead">{{ c.visit.note }}</p>
+    {% endif %}
+    {% if brand.phone %}
+    <a class="visit__phone" href="tel:{{ brand.phone|tel }}">{{ brand.phone }}</a>
+    {% endif %}
+    <div class="visit__grid">
+      {% if hours %}
+      <div class="visit__block">
+        <h3 class="visit__label">{{ icon("clock") }}{{ t["visit.hours"] }}</h3>
+        <dl class="visit__hours">
+          {% for row in hours %}
+          <div><dt>{{ row.days }}</dt><dd>{{ row.time }}</dd></div>
+          {% endfor %}
+        </dl>
+      </div>
+      {% endif %}
+      {% if place %}
+      <div class="visit__block">
+        <h3 class="visit__label">{{ icon("map-pin") }}{{ t["visit.address"] }}</h3>
+        {% if brand.address %}
+        <address>{{ brand.address }}</address>
+        {% endif %}
+        {% if brand.map_url %}
+        <a class="btn btn--primary btn--keyline" href="{{ brand.map_url }}" rel="noopener noreferrer">{{ t["visit.map"] }}{{ icon("arrow-up-right") }}</a>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if writes %}
+      <div class="visit__block">
+        <h3 class="visit__label">{{ icon("chat") }}{{ tt("visit.message", c.visit.title) }}</h3>
+        <ul class="visit__links">
+          {% if brand.whatsapp %}
+          <li><a href="https://wa.me/{{ brand.whatsapp|tel|replace('+', '') }}" rel="noopener noreferrer">{{ icon("whatsapp-logo") }}<span>{{ t["visit.whatsapp"] }}</span></a></li>
+          {% endif %}
+          {% if brand.email %}
+          <li><a href="mailto:{{ brand.email }}">{{ icon("envelope-simple") }}<span>{{ brand.email }}</span></a></li>
+          {% endif %}
+          {% for glyph, label, href in socials %}
+          <li><a href="{{ href }}" rel="noopener noreferrer">{{ icon(glyph) }}<span>{{ label }}</span></a></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+    {% else %}
+    {# Nothing to show yet: say so plainly and offer the chat. Never an invented number. #}
+    <p class="t-lead">{{ t["visit.soon"] if chat_on else tt("visit.soon_plain", t["visit.soon"]) }}</p>
+    {% if chat_on %}
+    <button class="btn btn--primary btn--keyline" type="button" data-chat-open>{{ icon("chat-text") }}<span>{{ t["hero.cta_chat"] }}</span></button>
+    {% endif %}
+    {% endif %}
+  </div>
+</section>

@@ -1,0 +1,14 @@
+{# Shared helpers for the landing page partials. Import with context:
+   {% from "partials/macros.html" import icon, tt with context %} #}
+{% set sprite = asset("site/vendor/phosphor/sprite.svg") %}
+
+{# A Phosphor icon from the self-hosted sprite. Decorative: the label sits beside it. #}
+{% macro icon(name, cls="") -%}
+<svg class="icon{{ " " ~ cls if cls }}" width="24" height="24" aria-hidden="true" focusable="false"><use href="{{ sprite }}#{{ name }}"></use></svg>
+{%- endmacro %}
+
+{# An interface string that was added after the server last started. The running process
+   keeps its old string table until it restarts, so fall back to a label it already has. #}
+{% macro tt(key, fallback="") -%}
+{{ t[key] if key in t else fallback }}
+{%- endmacro %}

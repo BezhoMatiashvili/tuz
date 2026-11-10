@@ -68,8 +68,8 @@ class StaffConfirmed:
 class Rules:
     min_store: float = 0.0
     min_tuz11: float = 0.0
-    stale_hours: float = 3.0
-    hide_after_hours: float = 24.0
+    stale_hours: float = 13.0
+    hide_after_hours: float = 25.0
     brand_groups: tuple[frozenset[str], ...] = ()
     not_the_part: dict[str, tuple[str, ...]] = field(default_factory=dict)
     oil_approvals: tuple[OilApproval, ...] = ()
@@ -266,8 +266,8 @@ def parse_rules(data: dict) -> Rules:
     stock = _check('stock', -1, data.get('stock', {}), set())
     min_store = _number('[stock]', stock, 'min_store', 0.0)
     min_tuz11 = _number('[stock]', stock, 'min_tuz11', 0.0)
-    stale = _number('[stock]', stock, 'stale_hours', 3.0)
-    hide = _number('[stock]', stock, 'hide_after_hours', 24.0)
+    stale = _number('[stock]', stock, 'stale_hours', 13.0)
+    hide = _number('[stock]', stock, 'hide_after_hours', 25.0)
     if hide < stale:
         raise RulesError('[stock] hide_after_hours must not be below stale_hours')
     groups = []

@@ -1,0 +1,34 @@
+{% from "partials/macros.html" import icon, tt with context %}
+{# The parts assistant. One dialog: a full-height sheet on phones (modal), a panel beside
+   the page on wider screens (not modal). Rendered only when the chat is switched on.
+   The car line and the "new reply" button start hidden; the script shows them when there
+   is a car to name and a reply the reader has scrolled away from. #}
+{% if chat_on %}
+<button class="launcher" type="button" aria-haspopup="dialog" aria-controls="chat" aria-label="{{ c.chat.launcher or t['chat.open'] }}" data-chat-open data-chat-launcher>
+  {{ icon("chat-text") }}
+</button>
+<dialog class="chat" id="chat" aria-labelledby="chat-title"{% if c.brand.phone %} data-phone="{{ c.brand.phone|tel }}" data-call="{{ t['nav.call'] }}"{% endif %}>
+  <header class="chat__head">
+    <h2 class="chat__title" id="chat-title">{{ t["chat.title"] }}</h2>
+    <button class="chat__new" type="button" data-chat-new>{{ t["chat.new"] }}</button>
+    <button class="iconbtn" type="button" aria-label="{{ t['chat.close'] }}" data-chat-close>{{ icon("x") }}</button>
+  </header>
+  <div class="chat__car" role="group" aria-label="{{ tt('chat.car', t['chat.title']) }}" hidden>
+    {{ icon("car-profile") }}<span class="chat__car-name"></span>
+    <button class="chat__car-change" type="button" data-chat-car>{{ tt("chat.car_change", t["chat.new"]) }}</button>
+  </div>
+  <div class="chat__log" id="chat-log" role="log" aria-live="polite" aria-relevant="additions" aria-labelledby="chat-title" tabindex="0"></div>
+  <button class="chat__jump" type="button" data-chat-jump hidden>{{ icon("caret-down") }}<span>{{ tt("chat.jump", t["chat.message"]) }}</span></button>
+  <p class="chat__progress" role="status" aria-live="polite"></p>
+  <form class="chat__form" novalidate>
+    <div class="chat__meta">
+      <label class="sr-only" for="chat-input">{{ t["chat.message"] }}</label>
+      <span class="chat__count" aria-hidden="true" hidden>0/500</span>
+    </div>
+    <div class="chat__row">
+      <textarea class="input chat__input" id="chat-input" name="message" rows="1" maxlength="500" placeholder="{{ t['chat.placeholder'] }}" enterkeyhint="send" autocomplete="off"></textarea>
+      <button class="chat__send" type="submit" aria-label="{{ t['chat.send'] }}">{{ icon("paper-plane-right") }}</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}

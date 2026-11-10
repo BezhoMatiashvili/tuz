@@ -13,6 +13,7 @@
 7. GitHub private repository-ში ჩართულია MFA, branch protection, required CI checks, required `production` environment approval, Dependabot, secret scanning და CodeQL.
 8. `$28` billing alert, sync/credential/90-minute miss/backup/dependency-scan alertები გადამოწმებულია test notification-ით.
 9. დასრულებულია authenticated external penetration test და [ASVS evidence matrix](asvs-l2-evidence.md).
+10. თუ საჯარო საიტი ([garage-site.md](garage-site.md)) განთავსდება: penetration test მოიცავს `/login`, `/admin`, `/api/site`, `/api/auth` და `/api/admin` ზედაპირს; აპლიკაცია მუშაობს HTTPS reverse proxy-ის უკან, sync worker-ისგან განცალკევებულ host-ზე, ცალკე `garage_site` და `automotive_runtime` login-ებით.
 
 თუ რომელიმე პუნქტი დაუდასტურებელია, production deployment უნდა შეჩერდეს.
 
@@ -43,6 +44,8 @@ python -m warehouse_sync --migrate
 ეს სამი ნაბიჯი უნდა შესრულდეს maintenance window-ში, verified backup-ის შემდეგ, მხოლოდ migration-owner credential-ით. `0002` მიზანმიმართულად შლის raw HTML column-ს. Drop-ის შემდეგ საჭიროა storage team-ის მიერ დაგეგმილი `VACUUM (FULL, ANALYZE)` მხოლოდ იზოლირებულ maintenance window-ში, თუ physical page sanitation აუცილებელია.
 
 არ შეცვალო უკვე გაშვებული migration file; rollback კეთდება ახალი forward migration-ით ან tested backup restore-ით.
+
+Automotive ცოდნის ბაზა (`0008_automotive_knowledge`): migration-ის შემდეგ cluster administrator-მა ხელახლა გაუშვას [`ops/sql/provision_automotive_roles.sql`](../ops/sql/provision_automotive_roles.sql). Validator-ისთვის შექმენი ცალკე LOGIN, რომელსაც მხოლოდ `automotive_validator` აქვს, და მისი URL შეინახე მხოლოდ encrypted credential storage-ში. `AUTOMOTIVE_KNOWLEDGE_ENABLED` ჩართე მხოლოდ მას შემდეგ, რაც `automotive_knowledge.source_policies`-ში ჩაიწერება ის წყაროები, რომელთა პირობებიც ხელახალ გამოყენებას იძლევა. დეტალები: [Learned knowledge base](automotive.md#learned-knowledge-base).
 
 ## 2. systemd credentials და sandbox
 

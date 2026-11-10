@@ -1,0 +1,13 @@
+[Unit]
+Description=Review the day's parts chats every evening, after the catalogue sync
+
+[Timer]
+# The evening sync starts at 21:00 (warehouse-sync.timer) and the part-code index follows at
+# ten past each hour (automotive-index.timer); at 22:30 the review reads what both have left.
+OnCalendar=*-*-* 22:30:00 Asia/Tbilisi
+Persistent=true
+AccuracySec=1m
+Unit=automotive-chat-review.service
+
+[Install]
+WantedBy=timers.target

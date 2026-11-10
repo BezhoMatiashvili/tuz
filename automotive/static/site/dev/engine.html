@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- The production policy, so this page proves the section is CSP-safe. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'"
+    >
+    <meta name="robots" content="noindex">
+    <title>Engine section harness</title>
+    <link rel="stylesheet" href="../css/engine.css">
+    <link rel="stylesheet" href="./engine-harness.css">
+  </head>
+  <body>
+    <header class="dev-nav">
+      <strong>GARAGE 1886</strong>
+      <span>engine harness</span>
+    </header>
+
+    <main>
+      <section class="dev-fill dev-fill--paper">
+        <p class="t-h2">Scroll down</p>
+        <p class="t-lead">
+          Stand-in for the sections above the engine. Query options:
+          <code>engine=3d|lite|static</code>, <code>p=0..1</code> (fixed progress),
+          <code>layout=portrait|landscape</code> with <code>poster=1</code>, <code>hud=1</code>,
+          <code>site=1</code> (the real global stylesheet), <code>lang=ka</code>.
+        </p>
+      </section>
+
+      <!--
+        ================= reference markup: copy from here =================
+        Contract with js/engine/index.js and css/engine.css:
+        - [data-engine] is the tall wrapper; data-engine-pins-src is the URL of pins.json.
+        - .engine__frame wraps the art box so CSS can size it (a size container).
+        - Posters: [data-engine-poster="0"] assembled, "1" exploded. The <source> media
+          must stay exactly as written: it is the same condition that makes the art box
+          portrait (2:3). Everything else gets the landscape (16:10) poster.
+        - Beats: [data-engine-beat="0|1|2"] inside .engine__copy. The legend, the button
+          and the optional .engine__stock line live in the last beat; its .t-lead is
+          optional too.
+        - Legend: li[data-part] with one of air_filter, spark_plugs, oil_filter,
+          timing_kit, engine_oil, gasket, coolant, belt. data-tier="desktop" items are
+          hidden on the phone layout and must come last. Numbers come from a CSS counter;
+          pins are created by the script, one per displayed item.
+        - Optional: data-engine-progress="0.8" pins the section to a fixed progress.
+      -->
+      <section
+        id="engine"
+        class="engine"
+        data-engine
+        data-engine-pins-src="../img/engine/pins.json"
+        aria-labelledby="engine-title"
+      >
+        <div class="engine__stage">
+          <div class="engine__frame">
+            <div class="engine__art" data-engine-art>
+              <picture>
+                <source
+                  media="(max-width: 1023.98px), (orientation: portrait)"
+                  srcset="../img/engine/poster-portrait-0.webp"
+                  width="800"
+                  height="1200"
+                >
+                <img
+                  class="engine__poster"
+                  data-engine-poster="0"
+                  src="../img/engine/poster-landscape-0.webp"
+                  width="1600"
+                  height="1000"
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                >
+              </picture>
+              <picture>
+                <source
+                  media="(max-width: 1023.98px), (orientation: portrait)"
+                  srcset="../img/engine/poster-portrait-1.webp"
+                  width="800"
+                  height="1200"
+                >
+                <img
+                  class="engine__poster"
+                  data-engine-poster="1"
+                  src="../img/engine/poster-landscape-1.webp"
+                  width="1600"
+                  height="1000"
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                >
+              </picture>
+              <canvas class="engine__canvas" data-engine-canvas aria-hidden="true"></canvas>
+              <ol class="engine__pins" data-engine-pins aria-hidden="true"></ol>
+            </div>
+          </div>
+
+          <div class="engine__copy">
+            <h2 class="t-h2 engine__title" id="engine-title" data-ka="კაპოტის ქვეშ">Under the hood</h2>
+            <div class="engine__beat" data-engine-beat="0">
+              <p class="t-h3" data-ka="ვიცით, რა არის შიგნით.">We know what is inside.</p>
+              <p class="t-lead" data-ka="ყველა სამუშაო ძრავის დეტალურად ცოდნით იწყება.">Every job starts with knowing the engine part by part.</p>
+            </div>
+            <div class="engine__beat" data-engine-beat="1">
+              <p class="t-h3" data-ka="ბოლო ჭანჭიკამდე.">Down to the last bolt.</p>
+              <p class="t-lead" data-ka="დიაგნოსტიკა, შეკეთება და აწყობა მათგან, ვინც ძრავებს ყოველდღე შლის.">Diagnostics, repair and builds by people who take engines apart every day.</p>
+            </div>
+            <div class="engine__beat" data-engine-beat="2">
+              <p class="t-h3" data-ka="ნაწილებიც ჩვენთანაა.">And we stock the parts.</p>
+              <p class="t-lead" data-ka="მოძებნეთ VIN კოდით ან მანქანით და ნახეთ ფასი.">Search by VIN or by car and see the price.</p>
+              <ol class="engine__legend" data-engine-legend aria-label="What we replace most">
+                <li data-part="air_filter"><a href="#parts" data-part-query="air filter" data-ka="ჰაერის ფილტრი">Air filter</a></li>
+                <li data-part="spark_plugs"><a href="#parts" data-part-query="spark plug" data-ka="სანთლები">Spark plugs</a></li>
+                <li data-part="oil_filter"><a href="#parts" data-part-query="oil filter" data-ka="ზეთის ფილტრი">Oil filter</a></li>
+                <li data-part="timing_kit"><a href="#parts" data-part-query="timing belt" data-ka="გრმ-ის კომპლექტი">Timing kit</a></li>
+                <li data-part="engine_oil"><a href="#parts" data-part-query="engine oil" data-ka="ძრავის ზეთი">Engine oil</a></li>
+                <li data-part="gasket" data-tier="desktop"><a href="#parts" data-part-query="gasket" data-ka="საფენები">Gaskets</a></li>
+                <li data-part="coolant" data-tier="desktop"><a href="#parts" data-part-query="coolant" data-ka="ანტიფრიზი">Coolant</a></li>
+                <li data-part="belt" data-tier="desktop"><a href="#parts" data-part-query="belt" data-ka="ღვედი">Drive belt</a></li>
+              </ol>
+              <a class="btn btn--primary" href="#parts" data-ka="იპოვეთ ნაწილი">Find a part</a>
+              <p class="engine__stock" data-ka="დღეს მარაგშია 1 284 დასახელება">1,284 items in stock today</p>
+            </div>
+          </div>
+        </div>
+      </section>
+      <!-- ================= reference markup: copy to here =================== -->
+
+      <section id="parts" class="dev-fill dev-fill--ink">
+        <p class="t-h2">Part search</p>
+        <p class="t-lead">Stand-in for the section the engine hands off to.</p>
+      </section>
+    </main>
+
+    <aside class="dev-hud" data-dev-hud hidden></aside>
+
+    <script type="module" src="./engine-harness.js"></script>
+    <script type="module" src="../js/engine/index.js"></script>
+  </body>
+</html>

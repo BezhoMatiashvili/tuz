@@ -1,0 +1,220 @@
+/*
+ * Dev harness only. Stand-ins for what the global stylesheet provides in
+ * production: design tokens, type and button classes, a sticky nav.
+ *
+ * With ?site=1 the harness loads the real css/site.css and sets html.is-site;
+ * the stand-ins for type, buttons and the page then step aside.
+ */
+
+:root {
+  --ink-950: #0e0e0f;
+  --ink-900: #161617;
+  --ink-800: #232325;
+  --line-500: #6e6e73;
+  --paper-50: #faf9f6;
+  --paper-100: #f2f0ec;
+  --paper-300: #c9c7c2;
+  --wall-600: #d2161c;
+  --wall-700: #b01218;
+  --stripe-500: #ffbc00;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --nav-h: 56px;
+  --gutter: 16px;
+  --maxw: 1280px;
+}
+
+@media (min-width: 640px) {
+  :root {
+    --gutter: 24px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --nav-h: 64px;
+    --gutter: 40px;
+  }
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+html:not(.is-site) body {
+  background-color: var(--paper-50);
+  color: var(--ink-950);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+  line-height: 1.5;
+}
+
+html:not(.is-site) .t-h2 {
+  margin: 0;
+  font-size: clamp(1.625rem, 1.1rem + 2.2vw, 2.75rem);
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+html:not(.is-site) .t-h3 {
+  margin: 0;
+  font-size: clamp(1.125rem, 1rem + 0.6vw, 1.5rem);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+html:not(.is-site) .t-lead {
+  margin: 0;
+  font-size: clamp(0.9375rem, 0.9rem + 0.3vw, 1.125rem);
+  line-height: 1.45;
+}
+
+html:not(.is-site) .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 48px;
+  padding: 0 22px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+html:not(.is-site) .btn--primary {
+  background-color: var(--stripe-500);
+  color: var(--ink-950);
+}
+
+.dev-nav {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  block-size: var(--nav-h);
+  padding-inline: 16px;
+  background-color: var(--ink-950);
+  color: var(--paper-50);
+}
+
+.dev-nav strong {
+  color: var(--stripe-500);
+  letter-spacing: 0.04em;
+}
+
+.dev-nav span {
+  color: var(--paper-300);
+  font-size: 0.8125rem;
+}
+
+.dev-fill {
+  display: grid;
+  align-content: center;
+  gap: 12px;
+  box-sizing: border-box;
+  min-block-size: 90vh;
+  padding: 48px 24px;
+}
+
+html.is-tall .dev-fill--paper {
+  min-block-size: 400vh;
+}
+
+.dev-fill--ink {
+  background-color: var(--ink-950);
+  color: var(--paper-50);
+}
+
+.dev-fill code {
+  padding: 1px 5px;
+  background-color: var(--paper-100);
+  font-size: 0.85em;
+}
+
+html:not(.is-site) .engine__stock {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+/* The real page is dark; keep the harness filler readable on its own paper. */
+html.is-site .dev-fill--paper {
+  background-color: var(--paper-50);
+  color: var(--ink-950);
+}
+
+html.is-site .dev-fill--paper .t-lead {
+  color: inherit;
+}
+
+.dev-hud {
+  position: fixed;
+  inset-block-end: 8px;
+  inset-inline-end: 8px;
+  z-index: 20;
+  padding: 6px 10px;
+  background-color: rgb(14 14 15 / 0.85);
+  color: var(--paper-50);
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre;
+  pointer-events: none;
+}
+
+/*
+ * Poster mode (?poster=1): nothing but the art box, edge to edge on a
+ * transparent page, so a screenshot of the viewport is the poster.
+ */
+html.is-poster,
+html.is-poster body {
+  background: transparent;
+}
+
+html.is-poster {
+  --nav-h: 0px;
+}
+
+html.is-poster .dev-nav,
+html.is-poster .dev-fill,
+html.is-poster .dev-hud,
+html.is-poster .engine .engine__copy,
+html.is-poster .engine .engine__poster,
+html.is-poster .engine .engine__pins {
+  display: none;
+}
+
+html.is-poster .engine,
+html.is-poster .engine[data-engine-mode] {
+  block-size: 100vh;
+  background: transparent;
+}
+
+html.is-poster .engine[data-engine-mode] .engine__stage {
+  position: static;
+  display: block;
+  block-size: 100vh;
+  padding: 0;
+}
+
+html.is-poster .engine[data-engine-mode] .engine__frame {
+  block-size: 100vh;
+}
+
+html.is-poster .engine[data-engine-mode] .engine__art {
+  inline-size: 100vw;
+  block-size: 100vh;
+  aspect-ratio: auto;
+}
+
+html.is-poster .engine[data-engine-mode] .engine__art::before,
+html.is-poster .engine[data-engine-mode] .engine__art::after {
+  display: none;
+}
+
+html.is-poster .engine[data-engine-mode] .engine__canvas {
+  transition: none;
+}

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from threading import Lock
 from typing import Any, Literal
 
 import anthropic
@@ -26,6 +27,16 @@ VIN_PATTERN = re.compile(r"(?<![A-Za-z0-9])[A-HJ-NPR-Z0-9]{17}(?![A-Za-z0-9])", 
 MAX_MODEL_REQUESTS = 4
 MAX_TOOL_EXECUTIONS = 8
 MAX_OUTPUT_TOKENS = 1024
+ENGINES = ("assistant", "orchestrated", "scripted")
+
+
+def engine_name(settings: Any) -> str:
+    """Which conversation engine answers. An unset ``chat_engine`` keeps the older
+    ``chat_orchestration`` flag, so settings built directly select what they always did."""
+    chosen = getattr(settings, "chat_engine", "")
+    if isinstance(chosen, str) and chosen.strip().lower() in ENGINES:
+        return chosen.strip().lower()
+    return "orchestrated" if getattr(settings, "chat_orchestration", False) else "scripted"
 
 
 class CodeInput(BaseModel):
@@ -103,6 +114,13 @@ class ChatService:
         self.vin_service = vin_service
         self.settings = settings
         self.client = client
+        self._research_state: dict = {}
+        # The assistant engine: the snapshot it searches (set once the site is installed),
+        # one kept connection to the model, and what each model id refused.
+        self.catalog_store: Any = None
+        self.assistant_state: dict = {}
+        self._assistant_client: Any = None
+        self._assistant_lock = Lock()
 
     def respond_conversation(self, message: str, vehicle: dict | None = None,
                              language: Literal["ka", "en"] = "ka", *,
@@ -113,7 +131,17 @@ class ChatService:
         """Run a bounded conversational turn; identifiers and storage stay with the caller."""
         from automotive.conversational import ConversationTurn
 
-        return ConversationTurn(
+        turn_type = ConversationTurn
+        engine = engine_name(self.settings)
+        if engine == 'assistant':
+            from automotive.assistant import AssistantTurn
+
+            turn_type = AssistantTurn
+        elif engine == 'orchestrated':
+            from automotive.orchestration import OrchestratedTurn
+
+            turn_type = OrchestratedTurn
+        return turn_type(
             self, message, vehicle, language, vin=vin, history=history, category=category,
             search_service=search_service, progress=progress, deadline=deadline,
             cancelled=cancelled, dialogue=dialogue,
@@ -131,6 +159,34 @@ class ChatService:
             timeout=25.0,
             max_retries=0,
         )
+
+    def assistant_client(self) -> Any:
+        """One client for every assistant turn, so a turn does not pay a new TLS handshake.
+        The turn sets its own timeout per request and repeats a failed one itself."""
+        if self.client is not None:
+            return self.client
+        with self._assistant_lock:
+            if self._assistant_client is None:
+                headers = {}
+                if self.settings.anthropic_workspace_id:
+                    headers["anthropic-workspace-id"] = self.settings.anthropic_workspace_id
+                self._assistant_client = anthropic.Anthropic(
+                    api_key=self.settings.anthropic_api_key, default_headers=headers,
+                    timeout=25.0, max_retries=0)
+            return self._assistant_client
+
+    def prepare(self) -> None:
+        """Called when a conversation opens: build what its first turn would wait for."""
+        if engine_name(self.settings) == "assistant":
+            from automotive.assistant import prepare
+
+            prepare(self)
+
+    def close(self) -> None:
+        with self._assistant_lock:
+            client, self._assistant_client = self._assistant_client, None
+        if client is not None:
+            client.close()
 
     def respond(self, message: str, vehicle: dict | None = None,
                 language: Literal["ka", "en"] = "ka") -> dict:

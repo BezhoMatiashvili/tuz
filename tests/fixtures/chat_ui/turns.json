@@ -1,0 +1,1382 @@
+[
+  {
+    "id": "question",
+    "about": "An engine that states its question: three answers to tap, no parts yet.",
+    "engine": {
+      "conversation_id": "ccccccccccccccccccccccccccccccccccccccccccc",
+      "turn_id": "tttttttttttttttttttttttttttttttt",
+      "status": "COMPLETE",
+      "engine_status": "CLARIFICATION",
+      "act": "clarify",
+      "answer": "Toyota Camry 2015. წინა თუ უკანა ხუნდები გჭირდებათ?",
+      "note": "",
+      "language": "ka",
+      "vehicle": {},
+      "vehicle_revision": 0,
+      "progress": [],
+      "cards": [],
+      "supplier_only": [],
+      "results": [],
+      "warnings": [],
+      "usage": {
+        "input_tokens": 1200,
+        "output_tokens": 80
+      },
+      "total": 0,
+      "offset": 0,
+      "next_offset": null,
+      "outcome": "asked",
+      "car_label": "Toyota Camry 2015",
+      "pending": {
+        "act": "clarify",
+        "question": "წინა თუ უკანა ხუნდები გჭირდებათ?",
+        "options": [
+          {
+            "label": "წინა",
+            "meaning": "private meaning of წინა"
+          },
+          {
+            "label": "უკანა",
+            "meaning": "private meaning of უკანა"
+          },
+          {
+            "label": "ორივე",
+            "meaning": "private meaning of ორივე"
+          }
+        ],
+        "choices": [
+          "წინა",
+          "უკანა",
+          "ორივე"
+        ]
+      },
+      "clarification_choices": [
+        {
+          "label": "წინა",
+          "value": "წინა"
+        },
+        {
+          "label": "უკანა",
+          "value": "უკანა"
+        },
+        {
+          "label": "ორივე",
+          "value": "ორივე"
+        }
+      ],
+      "quick_replies": [
+        "წინა",
+        "უკანა",
+        "ორივე"
+      ],
+      "memory": {
+        "notes": "private notes",
+        "question": {
+          "act": "clarify",
+          "question": "წინა თუ უკანა ხუნდები გჭირდებათ?",
+          "options": [
+            {
+              "label": "წინა",
+              "meaning": "private meaning of წინა"
+            },
+            {
+              "label": "უკანა",
+              "meaning": "private meaning of უკანა"
+            },
+            {
+              "label": "ორივე",
+              "meaning": "private meaning of ორივე"
+            }
+          ],
+          "choices": [
+            "წინა",
+            "უკანა",
+            "ორივე"
+          ]
+        },
+        "handles": {
+          "r1": "sid-0001"
+        }
+      },
+      "diagnostics": {
+        "outcome": "private",
+        "buttons": [
+          "წინა",
+          "უკანა",
+          "ორივე"
+        ]
+      },
+      "question": {
+        "text": "წინა თუ უკანა ხუნდები გჭირდებათ?",
+        "options": [
+          {
+            "label": "წინა",
+            "value": "წინა"
+          },
+          {
+            "label": "უკანა",
+            "value": "უკანა"
+          },
+          {
+            "label": "ორივე",
+            "value": "ორივე"
+          }
+        ]
+      },
+      "suggestions": [],
+      "groups": []
+    },
+    "staff": {
+      "question": {
+        "options": [
+          {
+            "label": "წინა",
+            "value": "წინა"
+          },
+          {
+            "label": "უკანა",
+            "value": "უკანა"
+          },
+          {
+            "label": "ორივე",
+            "value": "ორივე"
+          }
+        ]
+      },
+      "suggestions": [],
+      "groups": [],
+      "cards": []
+    },
+    "public": {
+      "status": "COMPLETE",
+      "answer": "Toyota Camry 2015. წინა თუ უკანა ხუნდები გჭირდებათ?",
+      "note": "",
+      "language": "ka",
+      "car": "Toyota Camry 2015",
+      "question": {
+        "options": [
+          {
+            "label": "წინა",
+            "value": "წინა"
+          },
+          {
+            "label": "უკანა",
+            "value": "უკანა"
+          },
+          {
+            "label": "ორივე",
+            "value": "ორივე"
+          }
+        ]
+      },
+      "suggestions": [],
+      "quick_replies": [
+        {
+          "label": "წინა",
+          "value": "წინა"
+        },
+        {
+          "label": "უკანა",
+          "value": "უკანა"
+        },
+        {
+          "label": "ორივე",
+          "value": "ორივე"
+        }
+      ],
+      "groups": [],
+      "cards": [],
+      "total": 0,
+      "offset": 0,
+      "next_offset": null,
+      "checked": 0,
+      "checking": 0
+    }
+  },
+  {
+    "id": "offer",
+    "about": "An offer in two groups with next steps; a reason names a stock number.",
+    "engine": {
+      "conversation_id": "ccccccccccccccccccccccccccccccccccccccccccc",
+      "turn_id": "tttttttttttttttttttttttttttttttt",
+      "status": "COMPLETE",
+      "engine_status": "OK",
+      "act": "results",
+      "answer": "Toyota Camry 2015-ზე წინა ხუნდები მარაგშია. ზეთის ფილტრი გადასამოწმებელია.",
+      "note": "ფასები ლარშია.",
+      "language": "ka",
+      "vehicle": {
+        "make": "TOYOTA",
+        "model": "Camry",
+        "model_year": 2015,
+        "engine_code": "2AR-FE",
+        "trim": "XLE"
+      },
+      "vehicle_revision": 0,
+      "progress": [],
+      "cards": [
+        {
+          "product": {
+            "source_product_id": "sid-0001",
+            "source_fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "product_code": "ZQ-1234",
+            "product_name": "სამუხრუჭე ხუნდი წინა",
+            "product_model": "TOYOTA CAMRY 2012-2017",
+            "original_code": "04465-33450",
+            "duplicate_code": "",
+            "brand": "SATO",
+            "price": 999.0,
+            "currency": "GEL",
+            "stock": {
+              "store": 3.0,
+              "tuz11": 0.0
+            },
+            "status": "IN_STORE",
+            "matched_codes": []
+          },
+          "match_source": "assistant",
+          "fitment_status": "UNKNOWN",
+          "compatible": null,
+          "availability": "private availability sentence",
+          "availability_status": "IN_STORE",
+          "basis": "",
+          "matched_via": [],
+          "pack_litres": null,
+          "role": null,
+          "warnings": [],
+          "group": "front",
+          "confidence": "confirmed",
+          "reason": "ნომერი ZQ-1234 ემთხვევა ამ მანქანის კატალოგის ჩანაწერს.",
+          "evidence": "04465-33450"
+        },
+        {
+          "product": {
+            "source_product_id": "sid-0004",
+            "source_fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "product_code": "ZQ-1234B",
+            "product_name": "სამუხრუჭე ხუნდი წინა",
+            "product_model": "TOYOTA CAMRY 2012-2017",
+            "original_code": "",
+            "duplicate_code": "",
+            "brand": "SATO",
+            "price": 999.0,
+            "currency": "GEL",
+            "stock": {
+              "store": 0.0,
+              "tuz11": 7.0
+            },
+            "status": "IN_STORE",
+            "matched_codes": []
+          },
+          "match_source": "assistant",
+          "fitment_status": "UNKNOWN",
+          "compatible": null,
+          "availability": "private availability sentence",
+          "availability_status": "WITHIN_1_2_HOURS",
+          "basis": "",
+          "matched_via": [],
+          "pack_litres": null,
+          "role": null,
+          "warnings": [],
+          "group": "front",
+          "confidence": "listed",
+          "reason": "CAMRY 2012-2017 მოიცავს 2015 წელს.",
+          "evidence": "CAMRY 2012-2017"
+        },
+        {
+          "product": {
+            "source_product_id": "sid-0002",
+            "source_fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "product_code": "W712/95",
+            "product_name": "ზეთის ფილტრი",
+            "product_model": "TOYOTA/LEXUS LC200 2008&gt;",
+            "original_code": "",
+            "duplicate_code": "",
+            "brand": "MANN",
+            "price": 999.0,
+            "currency": "GEL",
+            "stock": {
+              "store": 0.0,
+              "tuz11": 5.0
+            },
+            "status": "IN_STORE",
+            "matched_codes": []
+          },
+          "match_source": "assistant",
+          "fitment_status": "UNKNOWN",
+          "compatible": null,
+          "availability": "private availability sentence",
+          "availability_status": "WITHIN_1_2_HOURS",
+          "basis": "",
+          "matched_via": [],
+          "pack_litres": null,
+          "role": null,
+          "warnings": [],
+          "group": "oil_filter",
+          "confidence": "check",
+          "reason": "ძრავი ჩანაწერში არ წერია. გადაამოწმეთ ძველი ფილტრით.",
+          "evidence": "TOYOTA/LEXUS"
+        }
+      ],
+      "supplier_only": [],
+      "results": [],
+      "warnings": [],
+      "usage": {
+        "input_tokens": 1200,
+        "output_tokens": 80
+      },
+      "total": 3,
+      "offset": 0,
+      "next_offset": null,
+      "outcome": "offered",
+      "car_label": "Toyota Camry 2015",
+      "pending": null,
+      "clarification_choices": [
+        {
+          "label": "უკანა ხუნდებიც",
+          "value": "უკანა ხუნდებიც"
+        },
+        {
+          "label": "ჰაერის ფილტრი",
+          "value": "ჰაერის ფილტრი"
+        }
+      ],
+      "quick_replies": [
+        "უკანა ხუნდებიც",
+        "ჰაერის ფილტრი"
+      ],
+      "memory": {
+        "notes": "private notes",
+        "question": null,
+        "handles": {
+          "r1": "sid-0001"
+        }
+      },
+      "diagnostics": {
+        "outcome": "private",
+        "buttons": [
+          "უკანა ხუნდებიც",
+          "ჰაერის ფილტრი"
+        ]
+      },
+      "question": {
+        "text": "",
+        "options": []
+      },
+      "suggestions": [
+        {
+          "label": "უკანა ხუნდებიც",
+          "value": "უკანა ხუნდებიც"
+        },
+        {
+          "label": "ჰაერის ფილტრი",
+          "value": "ჰაერის ფილტრი"
+        }
+      ],
+      "groups": [
+        {
+          "id": "front",
+          "label": "წინა ხუნდები",
+          "count": 2
+        },
+        {
+          "id": "oil_filter",
+          "label": "ზეთის ფილტრი",
+          "count": 1
+        }
+      ]
+    },
+    "staff": {
+      "question": null,
+      "suggestions": [
+        {
+          "label": "უკანა ხუნდებიც",
+          "value": "უკანა ხუნდებიც"
+        },
+        {
+          "label": "ჰაერის ფილტრი",
+          "value": "ჰაერის ფილტრი"
+        }
+      ],
+      "groups": [
+        {
+          "id": "front",
+          "label": "წინა ხუნდები",
+          "count": 2
+        },
+        {
+          "id": "oil_filter",
+          "label": "ზეთის ფილტრი",
+          "count": 1
+        }
+      ],
+      "cards": [
+        {
+          "group": "front",
+          "reason": "ნომერი ZQ-1234 ემთხვევა ამ მანქანის კატალოგის ჩანაწერს.",
+          "confidence": "confirmed"
+        },
+        {
+          "group": "front",
+          "reason": "CAMRY 2012-2017 მოიცავს 2015 წელს.",
+          "confidence": "listed"
+        },
+        {
+          "group": "oil_filter",
+          "reason": "ძრავი ჩანაწერში არ წერია. გადაამოწმეთ ძველი ფილტრით.",
+          "confidence": "check"
+        }
+      ]
+    },
+    "public": {
+      "status": "COMPLETE",
+      "answer": "Toyota Camry 2015-ზე წინა ხუნდები მარაგშია. ზეთის ფილტრი გადასამოწმებელია.",
+      "note": "ფასები ლარშია.",
+      "language": "ka",
+      "car": "Toyota Camry 2015",
+      "question": null,
+      "suggestions": [
+        {
+          "label": "უკანა ხუნდებიც",
+          "value": "უკანა ხუნდებიც"
+        },
+        {
+          "label": "ჰაერის ფილტრი",
+          "value": "ჰაერის ფილტრი"
+        }
+      ],
+      "quick_replies": [
+        {
+          "label": "უკანა ხუნდებიც",
+          "value": "უკანა ხუნდებიც"
+        },
+        {
+          "label": "ჰაერის ფილტრი",
+          "value": "ჰაერის ფილტრი"
+        }
+      ],
+      "groups": [
+        {
+          "id": "g1",
+          "label": "წინა ხუნდები",
+          "count": 2
+        },
+        {
+          "id": "g2",
+          "label": "ზეთის ფილტრი",
+          "count": 1
+        }
+      ],
+      "cards": [
+        {
+          "name": "სამუხრუჭე ხუნდი წინა",
+          "fits": "TOYOTA CAMRY 2012-2017",
+          "brand": "SATO",
+          "price": 45.5,
+          "availability": "in_stock",
+          "group": "g1",
+          "reason": "ნომერი ემთხვევა ამ მანქანის კატალოგის ჩანაწერს.",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "სამუხრუჭე ხუნდი წინა",
+          "fits": "TOYOTA CAMRY 2012-2017",
+          "brand": "SATO",
+          "price": 45.5,
+          "availability": "soon",
+          "group": "g1",
+          "reason": "CAMRY 2012-2017 მოიცავს 2015 წელს.",
+          "confidence": "listed"
+        },
+        {
+          "name": "ზეთის ფილტრი",
+          "fits": "TOYOTA/LEXUS LC200 2008>",
+          "brand": "MANN",
+          "price": null,
+          "availability": "soon",
+          "group": "g2",
+          "reason": "ძრავი ჩანაწერში არ წერია. გადაამოწმეთ ძველი ფილტრით.",
+          "confidence": "check"
+        }
+      ],
+      "total": 3,
+      "offset": 0,
+      "next_offset": null,
+      "checked": 0,
+      "checking": 0
+    }
+  },
+  {
+    "id": "oil_change",
+    "about": "An oil change in two groups, each resting on one ground: filters listed for the car, and oils chosen by their specification (the fourth confidence level).",
+    "engine": {
+      "conversation_id": "ccccccccccccccccccccccccccccccccccccccccccc",
+      "turn_id": "tttttttttttttttttttttttttttttttt",
+      "status": "COMPLETE",
+      "engine_status": "OK",
+      "act": "results",
+      "answer": "Toyota Camry 2015-ის ზეთის შესაცვლელად ზეთის ფილტრი და 0W-20 ზეთი ნაპოვნია.",
+      "note": "",
+      "language": "ka",
+      "vehicle": {
+        "make": "TOYOTA",
+        "model": "Camry",
+        "model_year": 2015,
+        "engine_code": "2AR-FE",
+        "trim": "XLE"
+      },
+      "vehicle_revision": 0,
+      "progress": [],
+      "cards": [
+        {
+          "product": {
+            "source_product_id": "sid-0002",
+            "source_fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "product_code": "W712/95",
+            "product_name": "ზეთის ფილტრი",
+            "product_model": "TOYOTA/LEXUS LC200 2008&gt;",
+            "original_code": "",
+            "duplicate_code": "",
+            "brand": "MANN",
+            "price": 999.0,
+            "currency": "GEL",
+            "stock": {
+              "store": 0.0,
+              "tuz11": 5.0
+            },
+            "status": "IN_STORE",
+            "matched_codes": []
+          },
+          "match_source": "assistant",
+          "fitment_status": "UNKNOWN",
+          "compatible": null,
+          "availability": "private availability sentence",
+          "availability_status": "WITHIN_1_2_HOURS",
+          "basis": "",
+          "matched_via": [],
+          "pack_litres": null,
+          "role": null,
+          "warnings": [],
+          "group": "oil_filter",
+          "confidence": "listed",
+          "reason": "",
+          "evidence": "TOYOTA/LEXUS"
+        },
+        {
+          "product": {
+            "source_product_id": "sid-0102",
+            "source_fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "product_code": "ZQ-7702",
+            "product_name": "ზეთის ფილტრი",
+            "product_model": "TOYOTA/LEXUS LC200 2008&gt;",
+            "original_code": "",
+            "duplicate_code": "",
+            "brand": "SAKURA",
+            "price": 999.0,
+            "currency": "GEL",
+            "stock": {
+              "store": 0.0,
+              "tuz11": 5.0
+            },
+            "status": "IN_STORE",
+            "matched_codes": []
+          },
+          "match_source": "assistant",
+          "fitment_status": "UNKNOWN",
+          "compatible": null,
+          "availability": "private availability sentence",
+          "availability_status": "IN_STORE",
+          "basis": "",
+          "matched_via": [],
+          "pack_litres": null,
+          "role": null,
+          "warnings": [],
+          "group": "oil_filter",
+          "confidence": "listed",
+          "reason": "",
+          "evidence": "TOYOTA/LEXUS"
+        },
+        {
+          "product": {
+            "source_product_id": "sid-0103",
+            "source_fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "product_code": "2060006281",
+            "product_name": "ძრავის ზეთი 0W-20 4L",
+            "product_model": "UNIVERSAL",
+            "original_code": "",
+            "duplicate_code": "",
+            "brand": "SHELL",
+            "price": 999.0,
+            "currency": "GEL",
+            "stock": {
+              "store": 16.0,
+              "tuz11": 0.0
+            },
+            "status": "IN_STORE",
+            "matched_codes": []
+          },
+          "match_source": "assistant",
+          "fitment_status": "UNKNOWN",
+          "compatible": null,
+          "availability": "private availability sentence",
+          "availability_status": "IN_STORE",
+          "basis": "",
+          "matched_via": [],
+          "pack_litres": null,
+          "role": null,
+          "warnings": [],
+          "group": "engine_oil",
+          "confidence": "spec",
+          "reason": "0W-20: სიბლანტე, რომელსაც ზეთის შემრჩევი ამ ძრავისთვის ასახელებს.",
+          "evidence": "0W-20"
+        },
+        {
+          "product": {
+            "source_product_id": "sid-0104",
+            "source_fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "product_code": "2060006280",
+            "product_name": "ძრავის ზეთი 0W-20 1L",
+            "product_model": "UNIVERSAL",
+            "original_code": "",
+            "duplicate_code": "",
+            "brand": "MOBIL-1",
+            "price": 999.0,
+            "currency": "GEL",
+            "stock": {
+              "store": 0.0,
+              "tuz11": 4.0
+            },
+            "status": "IN_STORE",
+            "matched_codes": []
+          },
+          "match_source": "assistant",
+          "fitment_status": "UNKNOWN",
+          "compatible": null,
+          "availability": "private availability sentence",
+          "availability_status": "WITHIN_1_2_HOURS",
+          "basis": "",
+          "matched_via": [],
+          "pack_litres": null,
+          "role": null,
+          "warnings": [],
+          "group": "engine_oil",
+          "confidence": "spec",
+          "reason": "0W-20: სიბლანტე, რომელსაც ზეთის შემრჩევი ამ ძრავისთვის ასახელებს.",
+          "evidence": "0W-20"
+        }
+      ],
+      "supplier_only": [],
+      "results": [],
+      "warnings": [],
+      "usage": {
+        "input_tokens": 1200,
+        "output_tokens": 80
+      },
+      "total": 4,
+      "offset": 0,
+      "next_offset": null,
+      "outcome": "offered",
+      "car_label": "Toyota Camry 2015",
+      "pending": null,
+      "clarification_choices": [
+        {
+          "label": "ჰაერის ფილტრი",
+          "value": "ჰაერის ფილტრი"
+        }
+      ],
+      "quick_replies": [
+        "ჰაერის ფილტრი"
+      ],
+      "memory": {
+        "notes": "private notes",
+        "question": null,
+        "handles": {
+          "r1": "sid-0001"
+        }
+      },
+      "diagnostics": {
+        "outcome": "private",
+        "buttons": [
+          "ჰაერის ფილტრი"
+        ]
+      },
+      "question": {
+        "text": "",
+        "options": []
+      },
+      "suggestions": [
+        {
+          "label": "ჰაერის ფილტრი",
+          "value": "ჰაერის ფილტრი"
+        }
+      ],
+      "groups": [
+        {
+          "id": "oil_filter",
+          "label": "ზეთის ფილტრი",
+          "count": 2
+        },
+        {
+          "id": "engine_oil",
+          "label": "ძრავის ზეთი",
+          "count": 2
+        }
+      ]
+    },
+    "staff": {
+      "question": null,
+      "suggestions": [
+        {
+          "label": "ჰაერის ფილტრი",
+          "value": "ჰაერის ფილტრი"
+        }
+      ],
+      "groups": [
+        {
+          "id": "oil_filter",
+          "label": "ზეთის ფილტრი",
+          "count": 2
+        },
+        {
+          "id": "engine_oil",
+          "label": "ძრავის ზეთი",
+          "count": 2
+        }
+      ],
+      "cards": [
+        {
+          "group": "oil_filter",
+          "reason": "",
+          "confidence": "listed"
+        },
+        {
+          "group": "oil_filter",
+          "reason": "",
+          "confidence": "listed"
+        },
+        {
+          "group": "engine_oil",
+          "reason": "0W-20: სიბლანტე, რომელსაც ზეთის შემრჩევი ამ ძრავისთვის ასახელებს.",
+          "confidence": "spec"
+        },
+        {
+          "group": "engine_oil",
+          "reason": "0W-20: სიბლანტე, რომელსაც ზეთის შემრჩევი ამ ძრავისთვის ასახელებს.",
+          "confidence": "spec"
+        }
+      ]
+    },
+    "public": {
+      "status": "COMPLETE",
+      "answer": "Toyota Camry 2015-ის ზეთის შესაცვლელად ზეთის ფილტრი და 0W-20 ზეთი ნაპოვნია.",
+      "note": "",
+      "language": "ka",
+      "car": "Toyota Camry 2015",
+      "question": null,
+      "suggestions": [
+        {
+          "label": "ჰაერის ფილტრი",
+          "value": "ჰაერის ფილტრი"
+        }
+      ],
+      "quick_replies": [
+        {
+          "label": "ჰაერის ფილტრი",
+          "value": "ჰაერის ფილტრი"
+        }
+      ],
+      "groups": [
+        {
+          "id": "g1",
+          "label": "ზეთის ფილტრი",
+          "count": 2
+        },
+        {
+          "id": "g2",
+          "label": "ძრავის ზეთი",
+          "count": 2
+        }
+      ],
+      "cards": [
+        {
+          "name": "ზეთის ფილტრი",
+          "fits": "TOYOTA/LEXUS LC200 2008>",
+          "brand": "MANN",
+          "price": null,
+          "availability": "soon",
+          "group": "g1",
+          "reason": "",
+          "confidence": "listed"
+        },
+        {
+          "name": "ზეთის ფილტრი",
+          "fits": "TOYOTA/LEXUS LC200 2008>",
+          "brand": "SAKURA",
+          "price": null,
+          "availability": "in_stock",
+          "group": "g1",
+          "reason": "",
+          "confidence": "listed"
+        },
+        {
+          "name": "ძრავის ზეთი 0W-20 4L",
+          "fits": "UNIVERSAL",
+          "brand": "SHELL",
+          "price": null,
+          "availability": "in_stock",
+          "group": "g2",
+          "reason": "0W-20: სიბლანტე, რომელსაც ზეთის შემრჩევი ამ ძრავისთვის ასახელებს.",
+          "confidence": "spec"
+        },
+        {
+          "name": "ძრავის ზეთი 0W-20 1L",
+          "fits": "UNIVERSAL",
+          "brand": "MOBIL-1",
+          "price": null,
+          "availability": "soon",
+          "group": "g2",
+          "reason": "0W-20: სიბლანტე, რომელსაც ზეთის შემრჩევი ამ ძრავისთვის ასახელებს.",
+          "confidence": "spec"
+        }
+      ],
+      "total": 4,
+      "offset": 0,
+      "next_offset": null,
+      "checked": 0,
+      "checking": 0
+    }
+  },
+  {
+    "id": "nothing_found",
+    "about": "Nothing was found: no parts, no question, two next steps.",
+    "engine": {
+      "conversation_id": "ccccccccccccccccccccccccccccccccccccccccccc",
+      "turn_id": "tttttttttttttttttttttttttttttttt",
+      "status": "COMPLETE",
+      "engine_status": "OK",
+      "act": "no_results",
+      "answer": "ამ მანქანაზე უკანა ამორტიზატორი მარაგში ვერ ვიპოვე.",
+      "note": "",
+      "language": "ka",
+      "vehicle": {},
+      "vehicle_revision": 0,
+      "progress": [],
+      "cards": [],
+      "supplier_only": [],
+      "results": [],
+      "warnings": [],
+      "usage": {
+        "input_tokens": 1200,
+        "output_tokens": 80
+      },
+      "total": 0,
+      "offset": 0,
+      "next_offset": null,
+      "outcome": "nothing_found",
+      "car_label": "Toyota Camry 2015",
+      "pending": null,
+      "clarification_choices": [
+        {
+          "label": "VIN კოდით შემოწმება",
+          "value": "VIN კოდით შემოწმება"
+        },
+        {
+          "label": "წინა ამორტიზატორი",
+          "value": "წინა ამორტიზატორი"
+        }
+      ],
+      "quick_replies": [
+        "VIN კოდით შემოწმება",
+        "წინა ამორტიზატორი"
+      ],
+      "memory": {
+        "notes": "private notes",
+        "question": null,
+        "handles": {
+          "r1": "sid-0001"
+        }
+      },
+      "diagnostics": {
+        "outcome": "private",
+        "buttons": [
+          "VIN კოდით შემოწმება",
+          "წინა ამორტიზატორი"
+        ]
+      },
+      "question": {
+        "text": "",
+        "options": []
+      },
+      "suggestions": [
+        {
+          "label": "VIN კოდით შემოწმება",
+          "value": "VIN კოდით შევამოწმოთ"
+        },
+        {
+          "label": "წინა ამორტიზატორი",
+          "value": "წინა ამორტიზატორი"
+        }
+      ],
+      "groups": []
+    },
+    "staff": {
+      "question": null,
+      "suggestions": [
+        {
+          "label": "VIN კოდით შემოწმება",
+          "value": "VIN კოდით შევამოწმოთ"
+        },
+        {
+          "label": "წინა ამორტიზატორი",
+          "value": "წინა ამორტიზატორი"
+        }
+      ],
+      "groups": [],
+      "cards": []
+    },
+    "public": {
+      "status": "COMPLETE",
+      "answer": "ამ მანქანაზე უკანა ამორტიზატორი მარაგში ვერ ვიპოვე.",
+      "note": "",
+      "language": "ka",
+      "car": "Toyota Camry 2015",
+      "question": null,
+      "suggestions": [
+        {
+          "label": "VIN კოდით შემოწმება",
+          "value": "VIN კოდით შევამოწმოთ"
+        },
+        {
+          "label": "წინა ამორტიზატორი",
+          "value": "წინა ამორტიზატორი"
+        }
+      ],
+      "quick_replies": [
+        {
+          "label": "VIN კოდით შემოწმება",
+          "value": "VIN კოდით შევამოწმოთ"
+        },
+        {
+          "label": "წინა ამორტიზატორი",
+          "value": "წინა ამორტიზატორი"
+        }
+      ],
+      "groups": [],
+      "cards": [],
+      "total": 0,
+      "offset": 0,
+      "next_offset": null,
+      "checked": 0,
+      "checking": 0
+    }
+  },
+  {
+    "id": "legacy_clarify",
+    "about": "An older engine asks which axle: its quick replies are the answers.",
+    "engine": {
+      "conversation_id": "ccccccccccccccccccccccccccccccccccccccccccc",
+      "turn_id": "tttttttttttttttttttttttttttttttt",
+      "status": "COMPLETE",
+      "engine_status": "CLARIFICATION",
+      "act": "clarify_axle",
+      "answer": "წინა ხუნდები გჭირდებათ თუ უკანა?",
+      "note": "",
+      "language": "ka",
+      "vehicle": {
+        "make": "TOYOTA",
+        "model": "Camry",
+        "model_year": 2015,
+        "trim": "XLE",
+        "engine_code": "2AR-FE"
+      },
+      "vehicle_revision": 1,
+      "progress": [],
+      "cards": [],
+      "supplier_only": [],
+      "results": [],
+      "warnings": [],
+      "usage": {
+        "input_tokens": 1200,
+        "output_tokens": 80
+      },
+      "total": 0,
+      "offset": 0,
+      "next_offset": null,
+      "quick_replies": [
+        "წინა",
+        "უკანა"
+      ],
+      "clarification_choices": [],
+      "pending": {
+        "act": "clarify_axle",
+        "offer": null
+      }
+    },
+    "staff": {
+      "question": {
+        "options": [
+          {
+            "label": "წინა",
+            "value": "წინა"
+          },
+          {
+            "label": "უკანა",
+            "value": "უკანა"
+          }
+        ]
+      },
+      "suggestions": [],
+      "groups": [],
+      "cards": []
+    },
+    "public": {
+      "status": "COMPLETE",
+      "answer": "წინა ხუნდები გჭირდებათ თუ უკანა?",
+      "note": "",
+      "language": "ka",
+      "car": "Toyota Camry 2015",
+      "question": {
+        "options": [
+          {
+            "label": "წინა",
+            "value": "წინა"
+          },
+          {
+            "label": "უკანა",
+            "value": "უკანა"
+          }
+        ]
+      },
+      "suggestions": [],
+      "quick_replies": [
+        {
+          "label": "წინა",
+          "value": "წინა"
+        },
+        {
+          "label": "უკანა",
+          "value": "უკანა"
+        }
+      ],
+      "groups": [],
+      "cards": [],
+      "total": 0,
+      "offset": 0,
+      "next_offset": null,
+      "checked": 0,
+      "checking": 0
+    }
+  },
+  {
+    "id": "legacy_offer",
+    "about": "An older engine lists parts and waits on its own offer: yes or no.",
+    "engine": {
+      "conversation_id": "ccccccccccccccccccccccccccccccccccccccccccc",
+      "turn_id": "tttttttttttttttttttttttttttttttt",
+      "status": "COMPLETE",
+      "engine_status": "OK",
+      "act": "results",
+      "answer": "2015 Toyota Camry-ზე 2 წინა ხუნდი ვიპოვე. უკანაც გჭირდებათ?",
+      "note": "",
+      "language": "ka",
+      "vehicle": {
+        "make": "TOYOTA",
+        "model": "Camry",
+        "model_year": 2015,
+        "trim": "XLE",
+        "engine_code": "2AR-FE"
+      },
+      "vehicle_revision": 1,
+      "progress": [],
+      "cards": [
+        {
+          "product": {
+            "source_product_id": "sid-0001",
+            "source_fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "product_code": "ZQ-1234",
+            "product_name": "სამუხრუჭე ხუნდი წინა",
+            "product_model": "TOYOTA CAMRY 2012-2017",
+            "original_code": "04465-33450",
+            "duplicate_code": "",
+            "brand": "SATO",
+            "price": 999.0,
+            "currency": "GEL",
+            "stock": {
+              "store": 3.0,
+              "tuz11": 0.0
+            },
+            "status": "IN_STORE",
+            "matched_codes": []
+          },
+          "match_source": "assistant",
+          "fitment_status": "UNKNOWN",
+          "compatible": null,
+          "availability": "private availability sentence",
+          "availability_status": "IN_STORE",
+          "basis": "code",
+          "matched_via": [
+            "04465-33450"
+          ],
+          "pack_litres": null,
+          "role": null,
+          "warnings": []
+        },
+        {
+          "product": {
+            "source_product_id": "sid-0004",
+            "source_fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "product_code": "ZQ-1234B",
+            "product_name": "სამუხრუჭე ხუნდი წინა",
+            "product_model": "TOYOTA CAMRY 2012-2017",
+            "original_code": "",
+            "duplicate_code": "",
+            "brand": "SATO",
+            "price": 999.0,
+            "currency": "GEL",
+            "stock": {
+              "store": 0.0,
+              "tuz11": 7.0
+            },
+            "status": "IN_STORE",
+            "matched_codes": []
+          },
+          "match_source": "assistant",
+          "fitment_status": "UNKNOWN",
+          "compatible": null,
+          "availability": "private availability sentence",
+          "availability_status": "WITHIN_1_2_HOURS",
+          "basis": "name",
+          "matched_via": [],
+          "pack_litres": null,
+          "role": null,
+          "warnings": [
+            "private card warning"
+          ]
+        }
+      ],
+      "supplier_only": [],
+      "results": [],
+      "warnings": [],
+      "usage": {
+        "input_tokens": 1200,
+        "output_tokens": 80
+      },
+      "total": 2,
+      "offset": 0,
+      "next_offset": null,
+      "quick_replies": [],
+      "clarification_choices": [],
+      "pending": {
+        "act": "results",
+        "offer": {
+          "category": "rear brake pads"
+        }
+      }
+    },
+    "staff": {
+      "question": {
+        "options": [
+          {
+            "label": "დიახ",
+            "value": "დიახ"
+          },
+          {
+            "label": "არა",
+            "value": "არა"
+          }
+        ]
+      },
+      "suggestions": [],
+      "groups": [],
+      "cards": [
+        {
+          "group": "",
+          "reason": "",
+          "confidence": "confirmed"
+        },
+        {
+          "group": "",
+          "reason": "",
+          "confidence": "check"
+        }
+      ]
+    },
+    "public": {
+      "status": "COMPLETE",
+      "answer": "2015 Toyota Camry-ზე 2 წინა ხუნდი ვიპოვე. უკანაც გჭირდებათ?",
+      "note": "",
+      "language": "ka",
+      "car": "Toyota Camry 2015",
+      "question": {
+        "options": [
+          {
+            "label": "დიახ",
+            "value": "დიახ"
+          },
+          {
+            "label": "არა",
+            "value": "არა"
+          }
+        ]
+      },
+      "suggestions": [],
+      "quick_replies": [
+        {
+          "label": "დიახ",
+          "value": "დიახ"
+        },
+        {
+          "label": "არა",
+          "value": "არა"
+        }
+      ],
+      "groups": [],
+      "cards": [
+        {
+          "name": "სამუხრუჭე ხუნდი წინა",
+          "fits": "TOYOTA CAMRY 2012-2017",
+          "brand": "SATO",
+          "price": 45.5,
+          "availability": "in_stock",
+          "group": "",
+          "reason": "",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "სამუხრუჭე ხუნდი წინა",
+          "fits": "TOYOTA CAMRY 2012-2017",
+          "brand": "SATO",
+          "price": 45.5,
+          "availability": "soon",
+          "group": "",
+          "reason": "კატალოგში მითითებულია ამ მოდელზე",
+          "confidence": "check"
+        }
+      ],
+      "total": 2,
+      "offset": 0,
+      "next_offset": null,
+      "checked": 0,
+      "checking": 0
+    }
+  },
+  {
+    "id": "running",
+    "about": "A turn that is still running: parts so far, and nothing asked yet.",
+    "engine": {
+      "conversation_id": "ccccccccccccccccccccccccccccccccccccccccccc",
+      "turn_id": "tttttttttttttttttttttttttttttttt",
+      "status": "RUNNING",
+      "engine_status": null,
+      "act": "",
+      "answer": "",
+      "note": "",
+      "language": "ka",
+      "vehicle": {
+        "make": "TOYOTA",
+        "model": "Camry",
+        "model_year": 2015,
+        "trim": "XLE",
+        "engine_code": "2AR-FE"
+      },
+      "vehicle_revision": 1,
+      "progress": [
+        {
+          "source_id": "warehouse",
+          "label": "private source",
+          "status": "COMPLETE"
+        },
+        {
+          "source_id": "shell",
+          "status": "RUNNING"
+        }
+      ],
+      "cards": [
+        {
+          "product": {
+            "source_product_id": "sid-0001",
+            "source_fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "product_code": "ZQ-1234",
+            "product_name": "სამუხრუჭე ხუნდი წინა",
+            "product_model": "TOYOTA CAMRY 2012-2017",
+            "original_code": "04465-33450",
+            "duplicate_code": "",
+            "brand": "SATO",
+            "price": 999.0,
+            "currency": "GEL",
+            "stock": {
+              "store": 3.0,
+              "tuz11": 0.0
+            },
+            "status": "IN_STORE",
+            "matched_codes": []
+          },
+          "match_source": "assistant",
+          "fitment_status": "UNKNOWN",
+          "compatible": null,
+          "availability": "private availability sentence",
+          "availability_status": "IN_STORE",
+          "basis": "code",
+          "matched_via": [],
+          "pack_litres": null,
+          "role": null,
+          "warnings": []
+        }
+      ],
+      "supplier_only": [],
+      "results": [],
+      "warnings": [],
+      "usage": {
+        "input_tokens": 1200,
+        "output_tokens": 80
+      },
+      "total": 1,
+      "offset": 0,
+      "next_offset": null,
+      "clarification_choices": [
+        "2.5",
+        "3.5"
+      ]
+    },
+    "staff": {
+      "question": null,
+      "suggestions": [],
+      "groups": [],
+      "cards": [
+        {
+          "group": "",
+          "reason": "",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    "public": {
+      "status": "RUNNING",
+      "answer": "",
+      "note": "",
+      "language": "ka",
+      "car": "Toyota Camry 2015",
+      "question": null,
+      "suggestions": [],
+      "quick_replies": [],
+      "groups": [],
+      "cards": [
+        {
+          "name": "სამუხრუჭე ხუნდი წინა",
+          "fits": "TOYOTA CAMRY 2012-2017",
+          "brand": "SATO",
+          "price": 45.5,
+          "availability": "in_stock",
+          "group": "",
+          "reason": "",
+          "confidence": "confirmed"
+        }
+      ],
+      "total": 1,
+      "offset": 0,
+      "next_offset": null,
+      "checked": 1,
+      "checking": 2
+    }
+  }
+]

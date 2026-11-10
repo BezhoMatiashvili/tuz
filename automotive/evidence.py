@@ -8,7 +8,7 @@ TRUSTED_AUTHORITIES = frozenset({'manufacturer', 'official', 'authorized_supplie
 ALLOWED_REUSE = frozenset({'owned', 'authorized'})
 VEHICLE_KEYS = frozenset({
     'make', 'model', 'model_year', 'engine_code', 'fuel', 'transmission', 'market',
-    'body', 'drive', 'displacement_l', 'engine_cylinders',
+    'body', 'drive', 'displacement_l', 'engine_cylinders', 'trim', 'fuel_type',
 })
 
 

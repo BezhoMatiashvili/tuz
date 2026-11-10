@@ -1,0 +1,98 @@
+[
+  {
+    "file": "logo-wall.webp",
+    "width": 960,
+    "height": 1280,
+    "alt_ka": "Garage 1886-ის ოქროსფერი ლოგო შავ ფონზე, წითელ კედელზე, წარწერით „ფარეხი“",
+    "alt_en": "The gold Garage 1886 logo painted on a black burst on our red wall",
+    "published": true
+  },
+  {
+    "file": "service-wall.webp",
+    "width": 960,
+    "height": 1280,
+    "alt_ka": "კედლის მხატვრობა წარწერით Service და ავტონაწილებით",
+    "alt_en": "The Service mural with hand-painted car parts",
+    "published": true
+  },
+  {
+    "file": "benz-1886-wall.webp",
+    "width": 960,
+    "height": 1280,
+    "alt_ka": "კედლის მხატვრობა: 1886 გვირგვინით, კარლ ბენცის პორტრეტი და პირველი ავტომობილის ისტორია",
+    "alt_en": "Mural of the year 1886 under a crown, a portrait of Karl Benz and the story of the first automobile",
+    "published": true
+  },
+  {
+    "file": "brakes-wall.webp",
+    "width": 960,
+    "height": 1280,
+    "alt_ka": "კედლის მხატვრობა: სამუხრუჭე დისკი, სუპორტი და წარწერა More than a Garage",
+    "alt_en": "Mural of a brake disc and caliper under the words More than a Garage",
+    "published": false
+  },
+  {
+    "file": "engine-wall.webp",
+    "width": 960,
+    "height": 1280,
+    "alt_ka": "კედლის მხატვრობა: V12 ძრავა და წარწერები Build, Service, Diagnostics, Performance",
+    "alt_en": "Mural of a V12 engine with the words Build, Service, Diagnostics, Performance",
+    "published": false
+  },
+  {
+    "file": "turbo-wall.webp",
+    "width": 1280,
+    "height": 960,
+    "alt_ka": "კედლის მხატვრობა: ტურბინა, დგუში და ამორტიზატორი",
+    "alt_en": "Mural of a turbocharger, pistons and a coilover",
+    "published": false
+  },
+  {
+    "file": "route-66-wall.webp",
+    "width": 960,
+    "height": 1280,
+    "alt_ka": "კედლის მხატვრობა: შავი კლასიკური ავტომობილი გზაზე",
+    "alt_en": "Mural of a black classic car on the open road",
+    "published": false
+  },
+  {
+    "file": "lubricants-wall.webp",
+    "width": 960,
+    "height": 1280,
+    "alt_ka": "კედლის მხატვრობა: ძრავის ზეთები",
+    "alt_en": "Mural about engine oils",
+    "published": false
+  },
+  {
+    "file": "horse-wall.webp",
+    "width": 1280,
+    "height": 960,
+    "alt_ka": "კედლის მხატვრობა: ტურბინა, შაშკებიანი დროშები, ყალყზე შემდგარი ცხენი და ავტონაწილები",
+    "alt_en": "Mural of a turbocharger, checkered flags, a prancing horse and car parts",
+    "published": false
+  },
+  {
+    "file": "horse-close-wall.webp",
+    "width": 960,
+    "height": 1280,
+    "alt_ka": "კედლის მხატვრობა ახლოდან: ყალყზე შემდგარი ცხენი, დისკი, ზამბარა და დგუში",
+    "alt_en": "Close-up of the mural: a prancing horse, a wheel, a coil spring and a piston",
+    "published": false
+  },
+  {
+    "file": "engine-close-wall.webp",
+    "width": 960,
+    "height": 1280,
+    "alt_ka": "კედლის მხატვრობა ახლოდან: V12 ძრავა და წარწერები Better People, Build, Service, Diagnostics, Performance",
+    "alt_en": "Closer view of the V12 engine mural with the words Better People, Build, Service, Diagnostics, Performance",
+    "published": false
+  },
+  {
+    "file": "lubricants-clear-wall.webp",
+    "width": 960,
+    "height": 1280,
+    "alt_ka": "კედლის მხატვრობა: ძრავის ზეთები, კასრი და დგუში",
+    "alt_en": "Mural about engine oils, with an oil drum and a piston",
+    "published": false
+  }
+]

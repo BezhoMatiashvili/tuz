@@ -95,8 +95,9 @@ class LocalSetupTests(unittest.TestCase):
         values = dotenv_values(self.env_path)
         runtime = conninfo_to_dict(values['AUTOMOTIVE_DATABASE_URL'])
         enrichment = conninfo_to_dict(values['AUTOMOTIVE_ENRICHMENT_DATABASE_URL'])
+        validator = conninfo_to_dict(values['AUTOMOTIVE_VALIDATOR_DATABASE_URL'])
         self.assertNotEqual(runtime['user'], 'admin')
-        self.assertNotEqual(runtime['user'], enrichment['user'])
+        self.assertEqual(len({runtime['user'], enrichment['user'], validator['user']}), 3)
         self.assertNotEqual(runtime['password'], enrichment['password'])
         self.assertEqual(runtime['dbname'], 'test_catalog')
         self.assertEqual(values['WAREHOUSE_COOKIE'], 'preserved-fixture')
@@ -110,7 +111,37 @@ class LocalSetupTests(unittest.TestCase):
         self.assertNotIn(runtime['password'], statements)
         self.assertNotIn(enrichment['password'], statements)
         require_catalog.assert_called_once_with(connection)
-        self.assertEqual(migrate.call_args.kwargs['through'], '0007_content_hash_index')
+        self.assertEqual(migrate.call_args.kwargs['through'], '0008_automotive_knowledge')
+
+    @patch('automotive.local_setup.apply_migrations_on_connection')
+    @patch('automotive.local_setup._require_catalog')
+    @patch('automotive.local_setup.psycopg.connect')
+    def test_upgrade_adds_only_the_validator_login_and_preserves_existing_urls(
+        self, connect, require_catalog, migrate,
+    ):
+        with self.env_path.open('a') as target:
+            target.write('AUTOMOTIVE_DATABASE_URL=existing-private-reader\n'
+                         'AUTOMOTIVE_ENRICHMENT_DATABASE_URL=existing-private-enrichment\n')
+        connection = MagicMock()
+        connect.return_value.__enter__.return_value = connection
+        connection.pgconn.encrypt_password.return_value = b'SCRAM-SHA-256$fixture-verifier'
+        configure_local(self.env_path)
+        values = dotenv_values(self.env_path)
+        self.assertEqual(values['AUTOMOTIVE_DATABASE_URL'], 'existing-private-reader')
+        self.assertEqual(values['AUTOMOTIVE_ENRICHMENT_DATABASE_URL'],
+                         'existing-private-enrichment')
+        validator = conninfo_to_dict(values['AUTOMOTIVE_VALIDATOR_DATABASE_URL'])
+        self.assertTrue(validator['user'].startswith('auto_local_validator_'))
+        grants = [call.args[0].as_string() for call in connection.execute.call_args_list
+                  if hasattr(call.args[0], 'as_string') and 'GRANT' in call.args[0].as_string()]
+        self.assertEqual(len(grants), 1)
+        self.assertIn('"automotive_validator"', grants[0])
+        before = self.env_path.read_bytes()
+        connect.reset_mock()
+        with self.assertRaisesRegex(LocalSetupError, 'already configured'):
+            configure_local(self.env_path)
+        self.assertEqual(self.env_path.read_bytes(), before)
+        connect.assert_not_called()
 
 
 if __name__ == '__main__':

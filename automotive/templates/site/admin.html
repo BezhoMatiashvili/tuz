@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a1a19" media="(prefers-color-scheme: dark)">
+<title>Garage 1886</title>
+<link rel="icon" type="image/svg+xml" href="{{ asset('admin/img/mark.svg') }}">
+<link rel="stylesheet" href="{{ asset('admin/css/admin.css') }}">
+{# One request round for the whole module graph instead of a waterfall of imports. #}
+{% for module in ("strings", "dom", "format", "api", "ui", "forms", "charts", "views/overview",
+                  "views/inventory", "views/content", "views/texts", "views/services",
+                  "views/gallery", "views/users", "views/audit", "views/account", "views/more") %}
+<link rel="modulepreload" href="{{ asset('admin/js/' ~ module ~ '.js') }}">
+{% endfor %}
+<script type="module" src="{{ asset('admin/js/app.js') }}"></script>
+</head>
+<body>
+{# The dashboard is drawn by app.js after it has asked the server who is signed in.
+   Until then: a quiet placeholder shaped like the first screen. #}
+<div class="app" id="app" data-state="loading">
+  <div class="boot" aria-busy="true">
+    <span class="skel skel--title"></span>
+    <span class="skel skel--input"></span>
+    <span class="skel skel--input"></span>
+    <span class="skel skel--line"></span>
+    <span class="skel skel--line-short"></span>
+  </div>
+</div>
+<noscript><div class="boot"><p class="boot__text">პანელს სჭირდება JavaScript. ჩართეთ ის ბრაუზერში. The dashboard needs JavaScript. Turn it on in the browser.</p></div></noscript>
+<script type="application/json" id="admin-data">{{ data|tojson }}</script>
+</body>
+</html>

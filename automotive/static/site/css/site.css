@@ -1,0 +1,2804 @@
+/*
+ * Garage 1886: public landing page.
+ *
+ * One locked dark theme. The owner asked for the site to match the shop, which is
+ * fire-engine red and black with a solid yellow floor stripe, so there is no light mode.
+ *
+ * Colour rules
+ *   Yellow is the only interactive colour (buttons, active states, focus on ink).
+ *   Red is a surface only: never on a control, never as text.
+ *   On red, text is --paper-50 only, and a yellow fill carries a black keyline.
+ *   Never white text on yellow.
+ * Shape: sharp corners everywhere.
+ * Layers: nav 50, launcher 60, chat panel 70, grain 80, skip link 100. Modal dialogs
+ * live in the top layer above all of them.
+ */
+
+/* ---------------------------------------------------------------- tokens */
+
+:root {
+  color-scheme: dark;
+
+  --ink-950: #0E0E0F;
+  --ink-900: #161617;
+  --ink-800: #232325;
+  --line-700: #333336;
+  --line-500: #6E6E73;
+  --paper-50: #FAF9F6;
+  --paper-100: #F2F0EC;
+  --paper-300: #C9C7C2;
+  --paper-500: #9E9C97;
+  --wall-600: #D2161C;
+  --wall-700: #B01218;
+  --stripe-500: #FFBC00;
+  --signal-error: #FF8A80;
+  --signal-ok: #6FD08C;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --nav-h: 56px;
+  --gutter: 16px;
+  --maxw: 1280px;
+  --section: clamp(4rem, 9vw, 7.5rem);
+
+  /* Surface context: red and yellow surfaces override these for whatever sits on them. */
+  --focus: var(--paper-50);
+  --muted: var(--paper-300);
+  --btn-shadow: var(--paper-50);
+  --btn-line: 0 solid transparent;
+
+  --font-text: "G1886 Text", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Georgian",
+    "Helvetica Neue", Arial, sans-serif;
+  /* Display type is chosen by language, never by per-glyph fallback, so digits and Latin
+     fragments inside a Georgian headline stay in the Georgian face. */
+  --font-display: "G1886 Display KA", "G1886 Text", "Noto Sans Georgian", system-ui, sans-serif;
+  --display-style: normal;
+  --display-lh: 1.1;
+  --display-scale: 0.9;
+  --display-track: 0.01em;
+}
+
+:lang(en) {
+  --font-display: "G1886 Display EN", "G1886 Display EN Fallback", "Arial Narrow", Arial, sans-serif;
+  --display-style: italic;
+  --display-lh: 0.95;
+  --display-scale: 1;
+  --display-track: 0.005em;
+}
+
+:lang(ka) {
+  --font-display: "G1886 Display KA", "G1886 Text", "Noto Sans Georgian", system-ui, sans-serif;
+  --display-style: normal;
+  --display-lh: 1.1;
+  --display-scale: 0.9;
+  --display-track: 0.01em;
+}
+
+@media (min-width: 640px) {
+  :root { --gutter: 24px; }
+}
+
+@media (min-width: 1024px) {
+  :root { --nav-h: 64px; --gutter: 40px; }
+}
+
+/* ------------------------------------------------------------------ fonts */
+
+@font-face {
+  font-family: "G1886 Text";
+  src: url("../fonts/noto-sans-georgian-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0020-007E, U+00A0, U+00A9, U+00AB, U+00B7, U+00BB, U+00D7, U+10D0-10FF,
+    U+1C90-1CBA, U+1CBD-1CBF, U+2010, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026,
+    U+20BE, U+2116;
+}
+
+@font-face {
+  font-family: "G1886 Text";
+  src: url("../fonts/noto-sans-georgian-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0020-007E, U+00A0, U+00A9, U+00AB, U+00B7, U+00BB, U+00D7, U+10D0-10FF,
+    U+1C90-1CBA, U+1CBD-1CBF, U+2010, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026,
+    U+20BE, U+2116;
+}
+
+/* Georgian display: Noto Sans Georgian at width 62.5, weight 800, cut so that every
+   Mkhedruli letter is drawn with its Mtavruli capital. Headlines are capitals while the
+   page text stays lowercase, and it does not depend on text-transform, which Chrome does
+   not apply to Georgian (scripts/build_site_assets.py has the details). Block, not swap:
+   the text face that stands in would show the same words in lowercase at another width,
+   and the headline would jump when this file arrived. */
+@font-face {
+  font-family: "G1886 Display KA";
+  src: url("../fonts/noto-sans-georgian-xcond-800.woff2") format("woff2");
+  font-weight: 800;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0020-007E, U+00A0, U+00A9, U+00AB, U+00B7, U+00BB, U+00D7, U+10D0-10FF,
+    U+1C90-1CBA, U+1CBD-1CBF, U+2010, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026,
+    U+20BE, U+2116;
+}
+
+@font-face {
+  font-family: "G1886 Display EN";
+  src: url("../fonts/barlow-condensed-800i.woff2") format("woff2");
+  font-weight: 800;
+  font-style: italic;
+  font-display: swap;
+  unicode-range: U+0020-007E, U+00A0, U+00A9, U+00AB, U+00B7, U+00BB, U+00D7, U+2010,
+    U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026;
+}
+
+/* A system bold italic squeezed to Barlow Condensed's width, so the headline wraps the
+   same way before and after the real font arrives. */
+@font-face {
+  font-family: "G1886 Display EN Fallback";
+  src: local("Arial Bold Italic"), local("Arial-BoldItalicMT"), local("Roboto Bold Italic"),
+    local("Roboto-BoldItalic"), local("Liberation Sans Bold Italic");
+  font-weight: 800;
+  font-style: italic;
+  size-adjust: 63%;
+}
+
+/* ------------------------------------------------------------------- base */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--ink-950);
+  color: var(--paper-100);
+  font-family: var(--font-text);
+  font-size: 100%;
+  line-height: 1.6;
+  font-synthesis: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scroll-padding-top: var(--nav-h);
+}
+
+body {
+  margin: 0;
+  min-height: 100svh;
+  background: var(--ink-950);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+ol,
+dl,
+dd,
+figure,
+address,
+fieldset {
+  margin: 0;
+}
+
+ul,
+ol {
+  padding: 0;
+  list-style: none;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+img {
+  height: auto;
+}
+
+a {
+  color: inherit;
+}
+
+address {
+  font-style: normal;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  border-radius: 0;
+}
+
+button {
+  cursor: pointer;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: var(--stripe-500);
+  color: var(--ink-950);
+}
+
+main:focus {
+  outline: 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 12px 16px;
+  background: var(--stripe-500);
+  color: var(--ink-950);
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
+  --focus: var(--paper-50);
+}
+
+.skip:focus {
+  transform: none;
+}
+
+.wrap {
+  width: min(100% - 2 * var(--gutter), var(--maxw));
+  margin-inline: auto;
+}
+
+.section {
+  padding-block: var(--section);
+}
+
+.section__head {
+  display: grid;
+  gap: 12px;
+  max-width: 44rem;
+  margin-bottom: clamp(24px, 4vw, 48px);
+}
+
+.icon {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  fill: currentColor;
+}
+
+/* One grain layer over the whole page: a small tile at plain low alpha, no blending. */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+  background: url("../img/grain.png") 0 0 / 128px 128px;
+  opacity: 0.09;
+}
+
+/* The shop's solid yellow floor stripe: the divider between a wall and what is under it. */
+.stripe {
+  height: 12px;
+  background: var(--stripe-500);
+}
+
+/* A red wall surface with the real fall of light on it. Text on it is paper-50 only. */
+.wall {
+  --focus: var(--paper-50);
+  --muted: var(--paper-50);
+  --btn-shadow: var(--ink-950);
+  --btn-line: 2px solid var(--ink-950);
+  background: var(--wall-600) url("../img/sheen.webp") center / 100% 100% no-repeat;
+  color: var(--paper-50);
+}
+
+/* The engine section styles itself (engine.css). It is a red surface, so the shared
+   type and button classes take the red-surface context inside it. */
+.engine {
+  --muted: var(--paper-50);
+  --btn-shadow: var(--ink-950);
+  --btn-line: 2px solid var(--ink-950);
+}
+
+/* ------------------------------------------------------------------- type */
+
+.hero__title,
+.t-h2,
+.t-h3,
+.btn,
+.nav__links a,
+.nav__lang,
+.band a,
+.menu__links a,
+.visit__phone,
+.timeline__year,
+.chat__title {
+  font-family: var(--font-display);
+  font-style: var(--display-style);
+  font-weight: 800;
+  letter-spacing: var(--display-track);
+  text-transform: uppercase;
+}
+
+.t-h2 {
+  font-size: calc(clamp(2rem, 8.6vw, 4.5rem) * var(--display-scale));
+  line-height: var(--display-lh);
+  text-wrap: balance;
+}
+
+.t-h3 {
+  font-size: calc(clamp(1.3125rem, 1.15rem + 0.8vw, 1.625rem) * var(--display-scale));
+  line-height: calc(var(--display-lh) + 0.08);
+  text-wrap: balance;
+}
+
+.t-lead {
+  max-width: 38rem;
+  color: var(--muted);
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+@media (min-width: 768px) {
+  .t-lead { font-size: 1.125rem; }
+}
+
+/* ---------------------------------------------------------------- buttons */
+
+/* The face is ::before and the hard shadow is ::after, both behind the label. Pressing
+   slides the face into the shadow with a transform; box-shadow is never animated. */
+.btn {
+  --press: 0px;
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  align-self: center; /* never stretched by a grid or flex row it sits in */
+  justify-content: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 26px;
+  border: 0;
+  background: none;
+  font-size: calc(1.1875rem * var(--display-scale));
+  line-height: 1.1;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transform: translate(var(--press), var(--press));
+  transition: transform 140ms var(--ease-out);
+}
+
+.btn::before,
+.btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.btn::before {
+  z-index: -1;
+  border: var(--btn-line);
+  transition: background-color 140ms ease;
+}
+
+.btn::after {
+  z-index: -2;
+  background: var(--btn-shadow);
+  transform: translate(calc(5px - var(--press)), calc(5px - var(--press)));
+  transition: transform 140ms var(--ease-out);
+}
+
+.btn:active {
+  --press: 5px;
+}
+
+.btn .icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.btn--primary {
+  color: var(--ink-950);
+}
+
+.btn--primary::before {
+  background: var(--stripe-500);
+}
+
+/* Secondary: the same interactive yellow, as an outline. */
+.btn--ghost {
+  color: var(--stripe-500);
+}
+
+.btn--ghost::before {
+  background: var(--ink-950);
+  border: 2px solid var(--stripe-500);
+}
+
+.btn--ghost::after {
+  content: none;
+}
+
+.btn--ghost:active {
+  --press: 2px;
+}
+
+/* On the yellow cell: an ink block with a yellow label. */
+.btn--ink {
+  --focus: var(--ink-950);
+  color: var(--stripe-500);
+}
+
+.btn--ink::before {
+  background: var(--ink-950);
+}
+
+.btn--ink::after {
+  content: none;
+}
+
+.btn--ink:active {
+  --press: 2px;
+}
+
+.btn--sm {
+  min-height: 44px;
+  padding: 0 16px;
+  font-size: calc(1.0625rem * var(--display-scale));
+}
+
+.btn--sm::after {
+  transform: translate(calc(3px - var(--press)), calc(3px - var(--press)));
+}
+
+.btn--sm:active {
+  --press: 3px;
+}
+
+.btn[disabled],
+.btn[aria-disabled="true"] {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* Hover is the start of the press: the face leans two pixels into its shadow. */
+@media (hover: hover) and (pointer: fine) {
+  .btn--primary:hover:not(:active) { --press: 2px; }
+  .btn--sm:hover:not(:active) { --press: 1px; }
+  .btn--ghost:hover::before,
+  .btn--ink:hover::before { background: var(--ink-800); }
+}
+
+.iconbtn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--paper-100);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 140ms var(--ease-out);
+}
+
+.iconbtn--line {
+  border: 1px solid var(--line-500);
+}
+
+.iconbtn:active {
+  transform: scale(0.94);
+}
+
+.iconbtn[disabled] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .iconbtn:hover { background: var(--ink-800); color: var(--stripe-500); }
+}
+
+/* ------------------------------------------------------------------ forms */
+
+.field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.field label,
+.seg legend,
+.chat__meta label {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--paper-100);
+}
+
+.field__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.field__count {
+  color: var(--paper-500);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.field__hint {
+  color: var(--paper-500);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.input {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 14px;
+  border: 1px solid var(--line-500);
+  background: var(--ink-900);
+  color: var(--paper-100);
+  font-size: 1rem;
+  line-height: 1.3;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.input::placeholder {
+  color: var(--paper-500);
+  opacity: 1;
+}
+
+.input:focus-visible {
+  border-color: var(--stripe-500);
+}
+
+.input:disabled {
+  opacity: 0.5;
+}
+
+.input--select {
+  padding-right: 44px;
+  background-image: url("../vendor/phosphor/caret-down.svg");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 20px 20px;
+  text-overflow: ellipsis;
+}
+
+/* A text field with suggestions gets the same chevron; Chrome's own triangle is hidden
+   but still takes the click. */
+.input[list] {
+  padding-right: 44px;
+  background-image: url("../vendor/phosphor/caret-down.svg");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 20px 20px;
+}
+
+.input[list]::-webkit-calendar-picker-indicator {
+  width: 32px;
+  opacity: 0;
+}
+
+.input--vin {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .input:hover:not(:disabled) { background: var(--ink-800); }
+}
+
+/* Segmented control: three real radio buttons, the checked one filled yellow. */
+.seg {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.seg legend {
+  padding: 0;
+  margin-bottom: 8px;
+}
+
+/* Columns follow their labels and share what is left, so the longest label fits. */
+.seg__track {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  border: 1px solid var(--line-500);
+}
+
+.seg__opt {
+  position: relative;
+  display: grid;
+  min-height: 48px;
+  cursor: pointer;
+}
+
+.seg__opt + .seg__opt {
+  border-left: 1px solid var(--line-500);
+}
+
+.seg__opt input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.seg__opt span {
+  display: grid;
+  place-items: center;
+  padding: 4px 6px;
+  color: var(--paper-300);
+  font-size: clamp(0.875rem, 3.9vw, 0.9375rem);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.seg__opt input:checked + span {
+  background: var(--stripe-500);
+  color: var(--ink-950);
+}
+
+.seg__opt input:focus-visible + span {
+  position: relative;
+  z-index: 1;
+  outline: 3px solid var(--paper-50);
+  outline-offset: 3px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .seg__opt input:not(:checked):hover + span { background: var(--ink-800); color: var(--paper-100); }
+}
+
+/* -------------------------------------------------------------------- nav */
+
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  height: var(--nav-h);
+  border-bottom: 1px solid var(--line-700);
+  background: var(--ink-950);
+}
+
+.nav__in {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+}
+
+.nav__brand {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-right: auto;
+}
+
+.nav__brand img {
+  width: clamp(132px, 42vw, 208px);
+}
+
+.nav__links {
+  display: none;
+}
+
+.nav__links a,
+.nav__lang {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 14px;
+  color: var(--paper-100);
+  font-size: calc(1.125rem * var(--display-scale));
+  line-height: 1;
+  text-decoration: none;
+}
+
+.nav__lang {
+  padding: 0 10px;
+}
+
+/* On phones only the code shows; the name stays in the accessibility tree. */
+.nav__lang-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.nav__call {
+  padding: 0;
+  width: 44px;
+  margin-right: 6px;
+}
+
+.nav__call span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .nav__links a:hover,
+  .nav__lang:hover { color: var(--stripe-500); }
+}
+
+@media (min-width: 480px) {
+  .nav__call { width: auto; padding: 0 16px; }
+  .nav__call span { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+}
+
+@media (min-width: 1024px) {
+  .nav__in { gap: 8px; }
+  .nav__links { display: flex; }
+  .nav__menu { display: none; }
+  .nav__lang-code { display: none; }
+  .nav__lang-name { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+  .nav__lang { margin-right: 8px; }
+}
+
+/* The phone menu: a full sheet in the top layer. Opacity and 8px, in and out. */
+.menu {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--ink-950);
+  color: var(--paper-100);
+  opacity: 0;
+  transform: translateY(-8px);
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out),
+    display 200ms allow-discrete,
+    overlay 200ms allow-discrete;
+}
+
+.menu[open] {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  opacity: 1;
+  transform: none;
+}
+
+@starting-style {
+  .menu[open] {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+.menu::backdrop {
+  background: var(--ink-950);
+}
+
+.menu__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--nav-h);
+  border-bottom: 1px solid var(--line-700);
+}
+
+.menu__head img {
+  width: clamp(132px, 42vw, 208px);
+}
+
+.menu__links {
+  align-self: start;
+  padding-top: 8px;
+}
+
+.menu__links a {
+  display: flex;
+  align-items: center;
+  min-height: 72px;
+  border-bottom: 1px solid var(--line-700);
+  font-size: calc(clamp(2.25rem, 11vw, 3.25rem) * var(--display-scale));
+  line-height: 1;
+  text-decoration: none;
+}
+
+.menu__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px 24px;
+  padding-block: 24px max(24px, env(safe-area-inset-bottom));
+}
+
+.menu__lang {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-weight: 600;
+  text-underline-offset: 4px;
+}
+
+/* ------------------------------------------------------------------- hero */
+
+.hero {
+  display: grid;
+}
+
+.hero__copy {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  padding: 28px var(--gutter) 32px;
+}
+
+/* Sized so the headline sets in two lines in either language, whatever the owner writes
+   (up to 40 characters). The template estimates the width of the longer line of the best
+   two-line break, in ems of the display face, and names a step for it. Each step is the
+   largest size at which a line that wide still fits: --f on phones (the column is about
+   88vw), --w beside the art (about 40vw), --cap in pixels once the column stops growing. */
+.hero__title {
+  --f: 14.4;
+  --w: 6.5;
+  --cap: 96;
+  font-size: clamp(1.5rem, calc(var(--f) * 1vw), calc(var(--cap) * 1px));
+  line-height: var(--display-lh);
+  text-wrap: balance;
+}
+
+.hero__title--1 { --f: 21.4; --w: 7.2; --cap: 112; } /* a line up to 4.18em wide */
+.hero__title--2 { --f: 17.6; --w: 7.2; --cap: 112; } /* 5.08em */
+.hero__title--3 { --f: 14.4; --w: 6.5; --cap: 96; } /* 6.21em */
+.hero__title--4 { --f: 12.5; --w: 5.8; --cap: 83; } /* 7.15em */
+.hero__title--5 { --f: 11; --w: 5.05; --cap: 73; } /* 8.13em */
+.hero__title--6 { --f: 9.7; --w: 4.5; --cap: 64; } /* 9.2em */
+.hero__title--7 { --f: 8.8; --w: 4.05; --cap: 58; } /* 10.16em */
+.hero__title--8 { --f: 7.6; --w: 3.5; --cap: 50; } /* 11.76em */
+.hero__title--9 { --f: 6.7; --w: 3.1; --cap: 44; } /* wider still */
+
+.hero__sub {
+  max-width: 34rem;
+  color: var(--paper-300);
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.hero__cta {
+  display: grid;
+  gap: 14px;
+  margin-top: 8px;
+  padding-right: 5px;
+}
+
+.hero__art {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: clamp(232px, 66vw, 400px);
+  overflow: hidden;
+  background: var(--wall-600) url("../img/sheen.webp") center / 100% 100% no-repeat;
+}
+
+.hero__logo {
+  position: relative;
+  width: min(76%, 470px);
+}
+
+/* The spray burst, built from the rays around the logo mural on the shop wall. Two CSS
+   masks (all of the paint in black, the rays in white), so it is never the LCP image. */
+.burst {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(124%, 720px);
+  aspect-ratio: 4 / 3;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.burst__k,
+.burst__w {
+  position: absolute;
+  inset: 0;
+  -webkit-mask: url("../img/burst-k-640.webp") center / 100% 100% no-repeat;
+  mask: url("../img/burst-k-640.webp") center / 100% 100% no-repeat;
+  background: #0D0D0E;
+}
+
+.burst__w {
+  -webkit-mask-image: url("../img/burst-w-640.webp");
+  mask-image: url("../img/burst-w-640.webp");
+  background: var(--paper-100);
+}
+
+@media (min-width: 640px) {
+  .hero__copy { padding-block: 40px 48px; }
+  .hero__cta { display: flex; flex-wrap: wrap; gap: 16px 20px; }
+}
+
+@media (min-width: 1024px) {
+  .hero {
+    grid-template-columns:
+      minmax(var(--gutter), 1fr)
+      minmax(0, calc(var(--maxw) / 2))
+      minmax(0, calc(var(--maxw) / 2))
+      minmax(var(--gutter), 1fr);
+  }
+
+  .hero__copy {
+    grid-column: 2;
+    gap: 20px;
+    padding: 56px 40px 72px 0;
+  }
+
+  .hero__title {
+    font-size: min(calc(var(--w) * 1vw), calc(var(--cap) * 1px));
+  }
+
+  .hero__sub { font-size: 1.1875rem; }
+  .hero__cta { margin-top: 12px; }
+
+  .hero__art {
+    grid-column: 3 / 5;
+    min-height: 480px;
+  }
+
+  .burst__k {
+    -webkit-mask-image: url("../img/burst-k.webp");
+    mask-image: url("../img/burst-k.webp");
+  }
+
+  .burst__w {
+    -webkit-mask-image: url("../img/burst-w.webp");
+    mask-image: url("../img/burst-w.webp");
+  }
+}
+
+/* A phone held sideways has little height and plenty of width. The copy and the logo sit
+   side by side, as on a desktop, and the headline is sized by the height it has, so the
+   headline, the buttons and the logo are all on the first screen. */
+@media (orientation: landscape) and (max-height: 500px) and (max-width: 1023.98px) {
+  .hero {
+    grid-template-columns: minmax(0, 11fr) minmax(0, 9fr);
+    min-height: calc(100vh - var(--nav-h));
+    min-height: calc(100svh - var(--nav-h));
+  }
+
+  .hero__copy {
+    gap: 10px;
+    align-content: center;
+    padding: 12px 20px 14px var(--gutter);
+  }
+
+  .hero__title {
+    font-size: clamp(1.5rem, min(calc(var(--w) * 1.15vw), 13.5vh), calc(var(--cap) * 1px));
+  }
+
+  .hero__sub {
+    font-size: 0.9375rem;
+    line-height: 1.4;
+  }
+
+  .hero__cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 12px;
+    margin-top: 4px;
+  }
+
+  .hero__cta .btn {
+    min-height: 46px;
+    padding-inline: 18px;
+  }
+
+  .hero__art { min-height: 0; }
+  .hero__logo { width: min(80%, 340px); }
+  .burst { width: min(132%, 520px); }
+}
+
+/* The shortest of them (an older phone on its side): the supporting line gives its room
+   to the buttons. */
+@media (orientation: landscape) and (max-height: 359.98px) and (max-width: 1023.98px) {
+  .hero__sub { display: none; }
+}
+
+/* Once, on load, CSS only. The headline is not part of it. */
+@media (prefers-reduced-motion: no-preference) {
+  .hero__art { animation: shutter 600ms var(--ease-in-out) both; }
+  .hero__logo { animation: drive-in 700ms var(--ease-out) 120ms both; }
+  .hero__cta > * { animation: rise 320ms var(--ease-out) 180ms both; }
+  .hero__cta > :nth-child(2) { animation-delay: 240ms; }
+}
+
+@keyframes shutter {
+  from { clip-path: inset(100% 0 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+@keyframes drive-in {
+  from { transform: translateX(12%); }
+  to { transform: none; }
+}
+
+@keyframes rise {
+  from { opacity: 0.01; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ----------------------------------------------------------- checklist band */
+
+.band {
+  --focus: var(--ink-950);
+  border-bottom: 8px solid var(--ink-950);
+  background: var(--stripe-500);
+  color: var(--ink-950);
+}
+
+.band__list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 12px;
+  padding-block: 6px;
+}
+
+.band a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  font-size: calc(clamp(1.125rem, 4.9vw, 1.625rem) * var(--display-scale));
+  line-height: 1.05;
+  text-decoration: none;
+}
+
+.band__check {
+  width: 1.15em;
+  height: 1.15em;
+  stroke: currentColor;
+  stroke-width: 12px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .band a:hover { text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 5px; }
+}
+
+@media (min-width: 768px) {
+  .band__list { grid-template-columns: repeat(4, auto); justify-content: space-between; padding-block: 0; }
+  .band a { min-height: 68px; }
+}
+
+/* ------------------------------------------------------------- part search */
+
+.parts__head {
+  padding-block: clamp(40px, 7vw, 88px) clamp(28px, 5vw, 52px);
+}
+
+.parts__head .wrap {
+  display: grid;
+  gap: 12px;
+}
+
+.parts__body {
+  display: grid;
+  gap: 40px;
+  padding-block: 32px var(--section);
+}
+
+.pf {
+  display: grid;
+  gap: 20px;
+  align-content: start;
+  min-width: 0;
+}
+
+.pf__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.pf__status {
+  min-height: 1.5em;
+  color: var(--paper-100);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.pf__status:empty {
+  display: none;
+}
+
+.pf__status[data-tone="error"] {
+  color: var(--signal-error);
+}
+
+.pf__status[data-tone="ok"] {
+  color: var(--signal-ok);
+}
+
+.pf__submit {
+  width: calc(100% - 5px);
+  margin-top: 4px;
+}
+
+.results {
+  min-width: 0;
+  min-height: 320px;
+}
+
+.results__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  min-height: 28px;
+  color: var(--paper-300);
+  font-size: 1.0625rem;
+  line-height: 1.5;
+}
+
+.results[data-state="results"] .results__status {
+  color: var(--paper-100);
+  font-weight: 600;
+}
+
+.results[data-state="error"] .results__status,
+.results[data-state="busy"] .results__status {
+  color: var(--signal-error);
+}
+
+.results__body {
+  margin-top: 16px;
+  transition: opacity 150ms ease;
+}
+
+.results[data-busy] .results__body {
+  opacity: 0.4;
+}
+
+.results__note {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--stripe-500);
+  background: var(--ink-900);
+  color: var(--paper-100);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.results__note .icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 1px;
+  color: var(--stripe-500);
+}
+
+/* One hairline between rows, none around the list. */
+.result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 16px;
+  padding: 14px 0;
+}
+
+.result + .result {
+  border-top: 1px solid var(--line-700);
+}
+
+.result__name {
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.result__price {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.result__price--ask {
+  color: var(--paper-300);
+  font-weight: 400;
+}
+
+.result__meta {
+  grid-column: 1 / -1;
+  color: var(--paper-500);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* Skeleton rows take exactly the space of real ones. */
+.result--skeleton i {
+  display: block;
+  height: 14px;
+  margin-block: 4.2px;
+  background: var(--ink-800);
+}
+
+.result--skeleton i:nth-child(1) { width: 62%; }
+.result--skeleton i:nth-child(2) { width: 56px; }
+.result--skeleton i:nth-child(3) { grid-column: 1 / -1; width: 44%; height: 12px; margin-block: 4.3px; }
+.result--skeleton:nth-child(even) i:nth-child(1) { width: 78%; }
+.result--skeleton:nth-child(3n) i:nth-child(3) { width: 58%; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .result--skeleton i { animation: pulse 900ms ease-in-out infinite alternate; }
+}
+
+@keyframes pulse {
+  from { opacity: 1; }
+  to { opacity: 0.45; }
+}
+
+.results__more {
+  margin-top: 20px;
+}
+
+.results__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 20px;
+  margin-top: 20px;
+  padding-right: 5px;
+}
+
+.results__hint {
+  margin-top: 6px;
+  color: var(--paper-300);
+}
+
+.makes {
+  margin-top: 8px;
+}
+
+.makes__title {
+  margin-bottom: 12px;
+  color: var(--paper-500);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.makes__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line-500);
+  background: none;
+  color: var(--paper-100);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 140ms var(--ease-out);
+}
+
+.chip small {
+  color: var(--paper-500);
+  font-size: 0.875rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip:active {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .chip:hover { border-color: var(--stripe-500); background: var(--ink-800); }
+}
+
+/* The chat launcher sits bottom right. Keep prices and "Show more" out from under it. */
+@media (max-width: 1023.98px) {
+  body[data-chat="on"] .results { padding-right: 64px; }
+}
+
+@media (min-width: 1024px) {
+  .parts__body {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    column-gap: 24px;
+    padding-top: 48px;
+  }
+
+  .pf {
+    grid-column: 1 / span 5;
+    position: sticky;
+    top: calc(var(--nav-h) + 24px);
+    padding-right: 24px;
+  }
+
+  .results {
+    grid-column: 6 / -1;
+    min-height: 520px;
+  }
+
+  body[data-chat="on"] .results {
+    padding-right: max(0px, 88px - max(var(--gutter), (100vw - var(--maxw)) / 2));
+  }
+}
+
+/* --------------------------------------------------------------- services */
+
+.services .wrap {
+  --maxw: 1120px;
+}
+
+.bento {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.bento__photo {
+  grid-column: 1 / -1;
+  aspect-ratio: 6 / 5;
+  overflow: hidden;
+  background: var(--ink-900);
+}
+
+.bento__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 30%;
+}
+
+/* The icon stands at the top of a cell and the words at its foot. */
+.cell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px 14px 18px;
+  background: var(--ink-900);
+}
+
+.cell__icon {
+  width: 2rem;
+  height: 2rem;
+  margin-bottom: 20px;
+  color: var(--paper-300);
+}
+
+.cell__title {
+  margin-top: auto;
+  overflow-wrap: anywhere;
+}
+
+.cell__text {
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.cell__price {
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+.cell--wall {
+  background-color: var(--wall-700);
+}
+
+.cell--wall .cell__icon {
+  color: var(--paper-50);
+}
+
+.cell--ask {
+  --focus: var(--ink-950);
+  gap: 16px;
+  justify-content: space-between;
+  background: var(--stripe-500);
+  color: var(--ink-950);
+}
+
+.cell--ask .cell__title {
+  margin-top: 0;
+}
+
+/* The yellow cell can be one narrow column: its buttons then drop the icon and tighten,
+   and wrap only when even that is too wide. */
+.cell--ask {
+  container-type: inline-size;
+}
+
+@container (max-width: 320px) {
+  .cell__actions .btn {
+    width: 100%;
+    padding: 6px 10px;
+    font-size: calc(1.0625rem * var(--display-scale));
+    white-space: normal;
+  }
+
+  .cell__actions .btn .icon {
+    display: none;
+  }
+}
+
+.cell__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.cell--m2 {
+  grid-column: 1 / -1;
+}
+
+/* Tablets keep two columns; the photo takes one of them, two rows tall, so it is never
+   stretched past what the wall photo can carry. With fewer than two services there is
+   nothing to stand beside it, and it stays a full row. */
+@media (min-width: 640px) and (max-width: 899.98px) {
+  .bento {
+    grid-auto-rows: minmax(168px, auto);
+    gap: 12px;
+  }
+
+  .bento:not(.bento--few) .bento__photo {
+    grid-column: 1;
+    grid-row: span 2;
+    aspect-ratio: auto;
+    min-height: 348px;
+  }
+
+  .bento--few .bento__photo { aspect-ratio: 16 / 9; }
+  .cell { padding: 20px 18px 22px; }
+  .cell__text { font-size: 0.9375rem; }
+}
+
+@media (min-width: 900px) {
+  .bento {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-auto-rows: minmax(204px, auto);
+    gap: 12px;
+  }
+
+  .cell__text { font-size: 0.9375rem; }
+
+  .bento__photo {
+    grid-column: span 2;
+    grid-row: span 2;
+    aspect-ratio: auto;
+    min-height: 420px;
+  }
+
+  .cell { padding: 22px 20px 24px; }
+  .cell--m2 { grid-column: auto; }
+  .cell--w2 { grid-column: span 2; }
+  .cell--w4 { grid-column: 1 / -1; }
+  .cell--h2 { grid-row: span 2; }
+}
+
+/* ------------------------------------------------------------------ story */
+
+.story {
+  padding-bottom: 0;
+}
+
+/* The words and, beside them, the wall in the shop that says the same thing in paint.
+   As wide as the services grid above, so the two headings share a left edge. */
+.story__intro {
+  display: grid;
+  gap: clamp(28px, 6vw, 44px);
+  width: min(100% - 2 * var(--gutter), 1120px);
+  margin-inline: auto;
+}
+
+.story__lead {
+  display: grid;
+  gap: 20px;
+  align-content: start;
+}
+
+/* A piece of the wall: the photo ends on the yellow floor stripe, as the wall does. */
+.story__wall {
+  width: 100%;
+  max-width: 520px;
+  background: var(--ink-900);
+}
+
+.story__wall img {
+  width: 100%;
+}
+
+/* From a tablet up the two stand side by side, the words centred on the wall. */
+@media (min-width: 720px) {
+  .story__intro {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: center;
+    column-gap: clamp(48px, 7vw, 96px);
+  }
+
+  .story__wall {
+    justify-self: end;
+  }
+}
+
+/* A phone held sideways: the wall stands beside the words there too, and is sized by the
+   height it has, so the whole of it and its stripe fit under the navigation. */
+@media (orientation: landscape) and (max-height: 500px) and (max-width: 1023.98px) {
+  .story__intro {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: clamp(24px, 5vw, 56px);
+  }
+
+  .story__wall {
+    justify-self: end;
+    width: min(42vw, (100vh - var(--nav-h) - 44px) * 5 / 6);
+    width: min(42vw, (100svh - var(--nav-h) - 44px) * 5 / 6);
+  }
+}
+
+/* The timeline keeps a reading column of its own under the two. */
+.story__col {
+  width: min(100% - 2 * var(--gutter), 720px);
+  margin: clamp(48px, 8vw, 88px) auto 0;
+}
+
+.story__statement {
+  color: var(--paper-100);
+  font-size: clamp(1.25rem, 1.05rem + 1.1vw, 1.75rem);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.timeline {
+  position: relative;
+  display: grid;
+  gap: 36px;
+  padding-left: 28px;
+}
+
+/* The line: a hairline track with a yellow fill that follows the scroll where the
+   browser can do that in CSS, and simply stands full where it cannot. */
+.timeline::before,
+.timeline::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 0;
+  width: 2px;
+  background: var(--line-700);
+}
+
+.timeline::after {
+  background: var(--stripe-500);
+  transform-origin: top;
+}
+
+.timeline__item {
+  display: grid;
+  gap: 6px;
+}
+
+.timeline__year {
+  color: var(--paper-50);
+  font-size: calc(clamp(2.5rem, 9vw, 4rem) * var(--display-scale));
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.timeline__body {
+  display: grid;
+  gap: 6px;
+  color: var(--paper-300);
+}
+
+.timeline__body .t-h3 {
+  color: var(--paper-100);
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .timeline::after {
+      animation: line-fill linear both;
+      animation-timeline: view();
+      animation-range: entry 25% cover 75%;
+    }
+  }
+}
+
+@keyframes line-fill {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+
+/* Years stand in the gutter beside the column once there is room for them. */
+@media (min-width: 1180px) {
+  .timeline { padding-left: 40px; }
+  .timeline__item { position: relative; }
+
+  .timeline__year {
+    position: absolute;
+    top: -6px;
+    right: calc(100% + 72px);
+    text-align: right;
+    white-space: nowrap;
+  }
+}
+
+/* The lettering stands on the stripe, in line with the story heading above it. */
+.letterband {
+  display: grid;
+  grid-template-columns: minmax(0, 1120px);
+  justify-content: center;
+  margin-top: clamp(48px, 8vw, 96px);
+  padding-top: clamp(36px, 7vw, 64px);
+  overflow: hidden;
+}
+
+.letterband img {
+  width: min(100%, 560px);
+}
+
+@media (min-width: 768px) {
+  .letterband { padding-inline: var(--gutter); }
+}
+
+/* With no gallery between them the two red walls would touch: keep a dado's gap. */
+.story + .visit {
+  margin-top: clamp(56px, 8vw, 104px);
+}
+
+/* ---------------------------------------------------------------- gallery */
+
+.gallery__head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: clamp(24px, 4vw, 40px);
+}
+
+.gallery__nav {
+  display: flex;
+  gap: 8px;
+}
+
+.gallery__row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding-inline: max(var(--gutter), (100% - var(--maxw)) / 2);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: max(var(--gutter), (100% - var(--maxw)) / 2);
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-500) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+
+.gallery__row:focus-visible {
+  outline-offset: -3px;
+}
+
+.gallery__item {
+  flex: none;
+  width: min(78vw, 360px);
+  scroll-snap-align: start;
+  background: var(--ink-900);
+}
+
+.gallery__item img {
+  width: 100%;
+}
+
+/* One or two photos: show them larger rather than leave most of the row empty. */
+.gallery--few .gallery__item {
+  width: min(78vw, 440px);
+}
+
+/* ------------------------------------------------------------------ visit */
+
+.visit {
+  position: relative;
+  padding-block: var(--section);
+  overflow: hidden;
+  background-color: var(--wall-700);
+}
+
+.visit__in {
+  position: relative;
+  display: grid;
+  gap: 20px;
+  justify-items: start;
+}
+
+.visit__title--xl {
+  font-size: calc(clamp(3.5rem, 13vw, 10rem) * var(--display-scale));
+  line-height: var(--display-lh);
+}
+
+/* Digits are no wider in the Georgian face, so the number takes the full size. */
+.visit__phone {
+  font-size: clamp(3.5rem, 13vw, 10rem);
+  line-height: 1;
+  margin-block: 8px 16px;
+  color: var(--paper-50);
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  text-wrap: balance;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .visit__phone:hover { text-decoration: underline; text-decoration-thickness: 0.06em; text-underline-offset: 0.12em; }
+}
+
+.visit__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 248px), 1fr));
+  gap: 32px 40px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.visit__block {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  justify-items: start;
+}
+
+.visit__label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.visit__label .icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.visit__hours {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  max-width: 22rem;
+}
+
+.visit__hours div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.visit__hours dd {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.visit__links {
+  display: grid;
+  gap: 2px;
+}
+
+.visit__links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-weight: 600;
+  text-underline-offset: 4px;
+  overflow-wrap: anywhere;
+}
+
+.visit .burst {
+  top: auto;
+  right: -34%;
+  bottom: -26%;
+  left: auto;
+  width: min(120%, 520px);
+  transform: none;
+}
+
+.visit .btn {
+  margin-right: 5px;
+}
+
+@media (max-width: 767.98px) {
+  .visit { padding-bottom: calc(var(--section) + 96px); }
+}
+
+/* From tablets up the burst sits in the top right corner, clear of the contact columns. */
+@media (min-width: 768px) {
+  .visit .burst {
+    top: -72px;
+    right: -9%;
+    bottom: auto;
+    width: min(56%, 760px);
+  }
+
+  .visit .burst__k {
+    -webkit-mask-image: url("../img/burst-k.webp");
+    mask-image: url("../img/burst-k.webp");
+  }
+
+  .visit .burst__w {
+    -webkit-mask-image: url("../img/burst-w.webp");
+    mask-image: url("../img/burst-w.webp");
+  }
+
+  .visit__in > * { max-width: 62%; }
+  .visit__in > .visit__grid { max-width: 100%; }
+}
+
+/* ----------------------------------------------------------------- footer */
+
+.footer__in {
+  display: grid;
+  gap: 28px;
+  justify-items: start;
+  padding-block: 40px 104px;
+}
+
+.footer__logo {
+  display: block;
+  width: 216px;
+}
+
+.footer__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 20px;
+}
+
+.footer__nav a {
+  display: inline-flex;
+  align-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  color: var(--paper-100);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.footer__rights {
+  color: var(--paper-500);
+  font-size: 0.875rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .footer__nav a:hover { color: var(--stripe-500); }
+}
+
+@media (min-width: 900px) {
+  .footer__in {
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 16px 56px;
+    padding-block: 48px 56px;
+  }
+
+  .footer__logo { grid-row: span 2; width: 248px; }
+}
+
+/* ------------------------------------------------------------------- chat */
+
+.launcher {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 2px solid var(--ink-950);
+  background: var(--stripe-500);
+  color: var(--ink-950);
+  box-shadow: 4px 4px 0 var(--paper-50);
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    opacity 160ms ease,
+    transform 140ms var(--ease-out);
+}
+
+.launcher .icon {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.launcher:active {
+  transform: scale(0.95);
+}
+
+/* Out of the way while it would cover a button or a field, and while the chat is open.
+   It turns invisible only after the fade, and is back (and focusable) at once. */
+.launcher[data-away] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 160ms ease,
+    visibility 0s linear 160ms;
+}
+
+.chat {
+  position: fixed;
+  inset: auto max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) auto;
+  z-index: 70;
+  width: min(400px, 100vw - 32px);
+  height: min(640px, 100svh - 32px);
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line-500);
+  background: var(--ink-950);
+  color: var(--paper-100);
+  opacity: 0;
+  transform: scale(0.96);
+  transform-origin: bottom right;
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out),
+    display 200ms allow-discrete,
+    overlay 200ms allow-discrete;
+}
+
+/* Rows by name: a hidden row (the car line) cannot shift the others. */
+.chat[open] {
+  display: grid;
+  grid-template:
+    "head" auto
+    "car" auto
+    "log" minmax(0, 1fr)
+    "progress" auto
+    "form" auto / minmax(0, 1fr);
+  opacity: 1;
+  transform: none;
+}
+
+@starting-style {
+  .chat[open] {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.chat::backdrop {
+  background: rgb(0 0 0 / 0.6);
+}
+
+.chat__head {
+  grid-area: head;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 56px;
+  padding: 0 6px 0 16px;
+  border-bottom: 1px solid var(--line-700);
+}
+
+.chat__title {
+  margin-right: auto;
+  font-size: calc(1.25rem * var(--display-scale));
+  line-height: 1.1;
+}
+
+.chat__new {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  color: var(--paper-300);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* Positioned, so the script can measure where a message starts inside it. */
+.chat__log {
+  grid-area: log;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-500) transparent;
+}
+
+.chat__log:focus-visible {
+  outline-offset: -3px;
+}
+
+/* The car the conversation is about, with a way to name another one. */
+.chat__car {
+  grid-area: car;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 6px 0 16px;
+  border-bottom: 1px solid var(--line-700);
+  background: var(--ink-900);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.chat__car .icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--paper-300);
+}
+
+.chat__car-name {
+  min-width: 0;
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat__car-change {
+  flex: none;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  color: var(--stripe-500);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.chat__car[data-editing] {
+  border-bottom-color: var(--stripe-500);
+}
+
+/* "New reply": lies over the end of the log for a reader who has scrolled away from it. */
+.chat__jump {
+  grid-area: log;
+  z-index: 1;
+  align-self: end;
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin-bottom: 10px;
+  padding: 0 14px;
+  border: 2px solid var(--ink-950);
+  background: var(--stripe-500);
+  color: var(--ink-950);
+  font-size: 0.875rem;
+  font-weight: 600;
+  box-shadow: 3px 3px 0 var(--paper-50);
+}
+
+.chat__jump .icon {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+/* A line from the page itself, not from either speaker. */
+.chat__sys {
+  align-self: center;
+  max-width: 92%;
+  color: var(--paper-500);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* The empty chat: the requests people make most, one tap each. */
+.starters {
+  display: grid;
+  gap: 8px;
+}
+
+.starters__title {
+  color: var(--paper-500);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.starter {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 14px;
+  border: 1px solid var(--line-500);
+  background: var(--ink-900);
+  color: var(--paper-100);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 140ms var(--ease-out);
+}
+
+.starter .icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--stripe-500);
+}
+
+.starter .icon:last-child {
+  color: var(--paper-500);
+}
+
+.starter:active {
+  transform: scale(0.98);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .starter:hover { border-color: var(--stripe-500); background: var(--ink-800); }
+}
+
+.msg {
+  display: grid;
+  gap: 10px;
+  max-width: 88%;
+  padding: 10px 14px;
+  background: var(--ink-900);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.msg--user {
+  align-self: flex-end;
+  background: var(--ink-800);
+}
+
+.msg--assistant {
+  align-self: flex-start;
+  border-left: 3px solid var(--line-500);
+}
+
+.msg--error {
+  border-left-color: var(--signal-error);
+}
+
+.msg--wide {
+  width: 100%;
+  max-width: 100%;
+}
+
+.msg p {
+  white-space: pre-line;
+}
+
+.msg__note {
+  color: var(--paper-300);
+  font-size: 0.875rem;
+}
+
+/* Answers to a question sit right under it and stay there: after a tap the chosen one is
+   filled and the rest are switched off, so nothing jumps. Next steps come last, quieter. */
+.ask,
+.next {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* A long answer gets a row of its own. */
+.ask--stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.ask .chip {
+  min-width: 56px;
+  max-width: 100%;
+  justify-content: center;
+  padding-block: 10px;
+  border-color: var(--stripe-500);
+  color: var(--stripe-500);
+  overflow-wrap: anywhere;
+  transition:
+    transform 140ms var(--ease-out),
+    background-color 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.ask--stack .chip {
+  justify-content: flex-start;
+}
+
+.ask .chip:disabled {
+  border-color: var(--line-700);
+  color: var(--paper-500);
+  pointer-events: none;
+}
+
+/* After :disabled on purpose: the chosen answer is switched off too and must stay filled. */
+.ask .chip[aria-pressed="true"] {
+  border-color: var(--stripe-500);
+  background: var(--stripe-500);
+  color: var(--ink-950);
+}
+
+.ask__hint {
+  color: var(--paper-500);
+  font-size: 0.875rem;
+}
+
+.next .chip {
+  color: var(--stripe-500);
+  text-decoration: none;
+}
+
+.next .chip .icon {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.cards {
+  display: grid;
+}
+
+.cards__group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--line-500);
+  color: var(--paper-50);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.cards__group:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.cards__count {
+  color: var(--paper-500);
+  font-size: 0.875rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.cards__group + .msg__cards > .card:first-child,
+.cards__fit + .msg__cards > .card:first-child {
+  border-top: 0;
+}
+
+/* Why the parts of one group are offered, said once under its heading when it is the same
+   for every part in it. The cards below then do not repeat it. */
+.cards__fit {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 4px;
+}
+
+.card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line-700);
+}
+
+.card__name {
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.card__price {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.card__price--ask {
+  color: var(--paper-300);
+  font-weight: 400;
+}
+
+.card__meta,
+.card__why {
+  grid-column: 1 / -1;
+  color: var(--paper-500);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+/* Availability has a row of its own on every card, so the cards of a list line up. */
+.card__state {
+  grid-column: 1 / -1;
+  display: flex;
+  margin-top: 4px;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.card__stock,
+.card__fit {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--paper-300);
+}
+
+/* How sure the fit is: a row under the availability on a card, or under a group's heading. */
+.card__fit {
+  grid-column: 1 / -1;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+/* Availability is told by the shape of its marker as well as by colour: filled (in
+   stock), half (at the warehouse), hollow (ask the shop), struck through (out of stock). */
+.card__stock::before {
+  content: "";
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--line-500);
+}
+
+.card__stock[data-availability="in_stock"] {
+  color: var(--signal-ok);
+  font-weight: 600;
+}
+
+.card__stock[data-availability="in_stock"]::before {
+  border-color: var(--signal-ok);
+  background: var(--signal-ok);
+}
+
+.card__stock[data-availability="soon"] {
+  color: var(--paper-50);
+  font-weight: 600;
+}
+
+.card__stock[data-availability="soon"]::before {
+  border-color: var(--signal-ok);
+  background: linear-gradient(90deg, var(--signal-ok) 50%, transparent 50%);
+}
+
+.card__stock[data-availability="unavailable"] {
+  color: var(--paper-500);
+}
+
+.card__stock[data-availability="unavailable"]::before {
+  background: linear-gradient(to top right, transparent 44%, var(--line-500) 44% 56%, transparent 56%);
+}
+
+.card[data-availability="unavailable"] .card__name {
+  color: var(--paper-300);
+}
+
+.card__fit .icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.card__fit[data-confidence="confirmed"] {
+  color: var(--paper-50);
+}
+
+.card__fit[data-confidence="confirmed"] .icon {
+  color: var(--signal-ok);
+}
+
+/* "Show more" did not load: said where it happened, above the button that stays live. */
+.msg__fail {
+  color: var(--signal-error);
+  font-size: 0.875rem;
+}
+
+.msg__more {
+  justify-self: start;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--stripe-500);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.typing {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 16px;
+  background: var(--ink-900);
+}
+
+.typing i {
+  width: 7px;
+  height: 7px;
+  background: var(--paper-300);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .typing i { animation: pulse 520ms ease-in-out infinite alternate; }
+  .typing i:nth-child(2) { animation-delay: 160ms; }
+  .typing i:nth-child(3) { animation-delay: 320ms; }
+
+  /* What is new in the chat rises into place once. The fill is "backwards", not "both":
+     a finished animation that kept its end state would cancel the press scale of a chip. */
+  .msg,
+  .typing,
+  .starters,
+  .chat__sys {
+    animation: rise 220ms var(--ease-out) backwards;
+  }
+
+  .ask .chip,
+  .next .chip,
+  .starter,
+  .card--in {
+    animation: rise 200ms var(--ease-out) backwards;
+  }
+
+  .ask .chip:nth-child(2), .next .chip:nth-child(2), .starter:nth-of-type(2) { animation-delay: 35ms; }
+  .ask .chip:nth-child(3), .next .chip:nth-child(3), .starter:nth-of-type(3) { animation-delay: 70ms; }
+  .ask .chip:nth-child(4), .next .chip:nth-child(4), .starter:nth-of-type(4) { animation-delay: 105ms; }
+  .ask .chip:nth-child(n + 5) { animation-delay: 140ms; }
+
+  .chat__jump { animation: rise 180ms var(--ease-out) backwards; }
+}
+
+/* The reduced-motion entrance (used further down): opacity only, nothing moves. */
+@keyframes appear {
+  from { opacity: 0.01; }
+}
+
+.chat__progress {
+  grid-area: progress;
+  min-height: 0;
+  padding: 0 16px;
+  color: var(--paper-300);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.chat__progress:not(:empty) {
+  padding-bottom: 8px;
+}
+
+/* The label is for screen readers and the counter shows only near the limit, so the row
+   above the field is usually empty: the space belongs to the counter, not to a gap. */
+.chat__form {
+  grid-area: form;
+  display: grid;
+  padding: 10px 12px max(12px, env(safe-area-inset-bottom)) 16px;
+  border-top: 1px solid var(--line-700);
+}
+
+.chat__meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-right: 4px;
+}
+
+.chat__meta label {
+  font-size: 0.875rem;
+}
+
+.chat__count {
+  margin-bottom: 6px;
+  color: var(--paper-500);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat__count[data-near] {
+  color: var(--signal-error);
+}
+
+.chat__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 52px;
+  align-items: end;
+  gap: 8px;
+}
+
+.chat__input {
+  min-height: 52px;
+  max-height: 132px;
+  padding-block: 14px;
+  resize: none;
+  line-height: 1.45;
+}
+
+/* The composer shows its focus on the field itself, as a yellow frame two pixels wide.
+   The site's white ring around it pulled the eye away from the conversation whenever a
+   message was being written. Buttons keep the site's ring. */
+.chat__input:focus-visible {
+  outline: 2px solid var(--stripe-500);
+  outline-offset: -2px;
+}
+
+.chat__send {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border: 0;
+  background: var(--stripe-500);
+  color: var(--ink-950);
+  transition: transform 140ms var(--ease-out);
+}
+
+.chat__send:active {
+  transform: scale(0.95);
+}
+
+.chat__send[disabled] {
+  opacity: 0.5;
+}
+
+/* Phones: a full-height sheet that rises from the bottom and leaves the same way. Its
+   height follows the visual viewport (set by the script) so the composer stays above the
+   on-screen keyboard. */
+@media (max-width: 767.98px) {
+  .chat {
+    inset: 0 0 auto 0;
+    width: 100%;
+    height: 100svh;
+    border: 0;
+    opacity: 1;
+    transform: translateY(100%);
+    transition:
+      transform 500ms var(--ease-drawer),
+      display 500ms allow-discrete,
+      overlay 500ms allow-discrete;
+  }
+
+  .chat[open] {
+    transform: none;
+  }
+
+  @starting-style {
+    .chat[open] {
+      opacity: 1;
+      transform: translateY(100%);
+    }
+  }
+}
+
+/* ----------------------------------------------------------------- reveals */
+
+/* Scroll reveals exist only when scripts run. The waiting state is visibility or opacity,
+   never a clip: a fully clipped box has no area for an IntersectionObserver to see. The
+   script marks the root with data-js as soon as it starts; if it never does, everything
+   is shown after a moment rather than left hidden. */
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
+  .bento > [data-reveal],
+  .story__wall[data-reveal],
+  .band[data-reveal] .band__check {
+    visibility: hidden;
+  }
+
+  .bento > [data-reveal][data-visible],
+  .story__wall[data-reveal][data-visible] {
+    visibility: visible;
+    animation: wipe-down 600ms var(--ease-in-out) both;
+  }
+
+  .band[data-reveal][data-visible] .band__check {
+    visibility: visible;
+    animation: wipe-right 420ms var(--ease-in-out) both;
+  }
+
+  .band[data-visible] li:nth-child(2) .band__check { animation-delay: 70ms; }
+  .band[data-visible] li:nth-child(3) .band__check { animation-delay: 140ms; }
+  .band[data-visible] li:nth-child(4) .band__check { animation-delay: 210ms; }
+
+  .timeline__item[data-reveal] {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  .timeline__item[data-reveal][data-visible] {
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity 420ms ease,
+      transform 420ms var(--ease-out);
+  }
+
+  html:not([data-js]) [data-reveal],
+  html:not([data-js]) .band__check {
+    animation: reveal-failsafe 1ms 6s forwards;
+  }
+}
+
+@media (scripting: enabled) and (prefers-reduced-motion: reduce) {
+  .bento > [data-reveal],
+  .story__wall[data-reveal] {
+    opacity: 0;
+  }
+
+  .bento > [data-reveal][data-visible],
+  .story__wall[data-reveal][data-visible] {
+    opacity: 1;
+    transition: opacity 200ms ease;
+  }
+
+  html:not([data-js]) [data-reveal] {
+    animation: reveal-failsafe 1ms 6s forwards;
+  }
+}
+
+@keyframes wipe-down {
+  from { clip-path: inset(0 0 100% 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+@keyframes wipe-right {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+@keyframes reveal-failsafe {
+  to { visibility: visible; opacity: 1; transform: none; }
+}
+
+/* Without scripts the menu button, the chat and its buttons would do nothing: leave
+   them out rather than show dead controls. */
+@media (scripting: none) {
+  .nav__menu,
+  .launcher,
+  [data-chat-open],
+  .gallery__nav {
+    display: none;
+  }
+}
+
+/* Reduced motion: nothing moves. Opacity changes stay; transforms and wipes go. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+
+  .btn,
+  .btn::after,
+  .iconbtn,
+  .chip,
+  .starter,
+  .launcher,
+  .chat__send {
+    transition: none;
+  }
+
+  /* An answer still changes colour when it is chosen; it no longer scales under a press. */
+  .ask .chip {
+    transition:
+      background-color 120ms ease,
+      color 120ms ease,
+      border-color 120ms ease;
+  }
+
+  .msg,
+  .typing,
+  .starters,
+  .chat__sys,
+  .card--in,
+  .chat__jump {
+    animation: appear 160ms ease backwards;
+  }
+
+  .menu,
+  .menu[open],
+  .chat,
+  .chat[open] {
+    transform: none;
+    transition:
+      opacity 200ms ease,
+      display 200ms allow-discrete,
+      overlay 200ms allow-discrete;
+  }
+
+  .chat { opacity: 0; }
+  .chat[open] { opacity: 1; }
+
+  @starting-style {
+    .menu[open],
+    .chat[open] {
+      opacity: 0;
+      transform: none;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}

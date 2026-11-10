@@ -20,6 +20,9 @@ from warehouse_sync.migrations import MIGRATIONS_DIRECTORY, apply_migrations_on_
 
 ROOT = Path(__file__).resolve().parents[1]
 AUTOMOTIVE_MIGRATION = "0007_content_hash_index"
+KNOWLEDGE_MIGRATION = "0008_automotive_knowledge"
+LOGIN_PREFIXES = {"automotive_runtime": "reader_", "automotive_enrichment": "enrich_",
+                  "automotive_validator": "validator_"}
 
 
 class LocalSetupError(RuntimeError):
@@ -70,8 +73,7 @@ def _require_catalog(connection: Any) -> None:
 
 
 def _new_login(connection: Any, capability: str, admin_url: str) -> str:
-    name = "auto_local_" + ("reader_" if capability == "automotive_runtime" else "enrich_")
-    name += secrets.token_hex(6)
+    name = "auto_local_" + LOGIN_PREFIXES[capability] + secrets.token_hex(6)
     password = secrets.token_urlsafe(48)
     verifier = connection.pgconn.encrypt_password(
         password.encode("ascii"), name.encode("ascii"), b"scram-sha-256",
@@ -98,15 +100,21 @@ def configure_local(env_path: Path | None = None) -> dict[str, bool]:
     existing = [bool(values.get(key)) for key in (
         "AUTOMOTIVE_DATABASE_URL", "AUTOMOTIVE_ENRICHMENT_DATABASE_URL",
     )]
-    if any(existing):
-        if not all(existing):
-            raise LocalSetupError(
-                "Partial automotive database configuration exists; complete both URLs manually. "
-                "Existing credentials were preserved."
-            )
+    if any(existing) and not all(existing):
+        raise LocalSetupError(
+            "Partial automotive database configuration exists; complete both URLs manually. "
+            "Existing credentials were preserved."
+        )
+    if all(existing) and values.get("AUTOMOTIVE_VALIDATOR_DATABASE_URL"):
         raise LocalSetupError(
             "Automotive database URLs are already configured; existing credentials were preserved."
         )
+    # An existing installation only gains the separate knowledge validator login.
+    capabilities = {"AUTOMOTIVE_VALIDATOR_DATABASE_URL": "automotive_validator"}
+    if not all(existing):
+        capabilities = {"AUTOMOTIVE_DATABASE_URL": "automotive_runtime",
+                        "AUTOMOTIVE_ENRICHMENT_DATABASE_URL": "automotive_enrichment",
+                        **capabilities}
     try:
         with psycopg.connect(admin_url) as connection:
             # Keep setup transactional and serialize concurrent invocations in this DB.
@@ -114,9 +122,9 @@ def configure_local(env_path: Path | None = None) -> dict[str, bool]:
             _require_catalog(connection)
             provision = (ROOT / "ops/sql/provision_automotive_roles.sql").read_text()
             connection.execute(provision)
-            apply_migrations_on_connection(connection, through=AUTOMOTIVE_MIGRATION)
-            runtime_url = _new_login(connection, "automotive_runtime", admin_url)
-            enrichment_url = _new_login(connection, "automotive_enrichment", admin_url)
+            apply_migrations_on_connection(connection, through=KNOWLEDGE_MIGRATION)
+            updates = {key: _new_login(connection, capability, admin_url)
+                       for key, capability in capabilities.items()}
     except psycopg.Error:
         raise LocalSetupError(
             "Local PostgreSQL setup failed. Check DATABASE_URL, the running postgres service, "
@@ -124,10 +132,6 @@ def configure_local(env_path: Path | None = None) -> dict[str, bool]:
         ) from None
     # Values never go through stdout, shell arguments or application logs.
     os.chmod(env_path, 0o600)
-    updates = {
-        "AUTOMOTIVE_DATABASE_URL": runtime_url,
-        "AUTOMOTIVE_ENRICHMENT_DATABASE_URL": enrichment_url,
-    }
     for key in ("AUTOMOTIVE_VIN_HMAC_KEY", "AUTOMOTIVE_OPERATOR_TOKEN"):
         if not values.get(key):
             updates[key] = secrets.token_urlsafe(48)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hmac
 import time
 from collections import defaultdict, deque
@@ -15,7 +16,7 @@ from fastapi import Path as PathParameter
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 STATIC = Path(__file__).parent / "static"
@@ -33,6 +34,11 @@ class VehicleConfiguration(StrictModel):
     engine_code: str | None = Field(default=None, max_length=100)
     trim: str | None = Field(default=None, max_length=100)
     fuel: str | None = Field(default=None, max_length=100)
+    fuel_type: str | None = Field(default=None, max_length=100)
+    displacement_l: float | None = Field(default=None, gt=0, le=20)
+    engine_cylinders: int | None = Field(default=None, ge=1, le=24)
+    generation: str | None = Field(default=None, max_length=100)
+    aspiration: str | None = Field(default=None, max_length=100)
     transmission: str | None = Field(default=None, max_length=100)
     market: str | None = Field(default=None, max_length=100)
     body: str | None = Field(default=None, max_length=100)
@@ -73,6 +79,8 @@ class ConversationMessage(ChatRequest):
     vin: str | None = Field(default=None, min_length=17, max_length=17)
     # "auto" follows the customer's letters and keeps the language for codes and VINs.
     language: Literal["ka", "en", "auto"] = "auto"
+    # Which answer button was tapped, counted from 1; the message carries its text.
+    choice: int | None = Field(default=None, ge=1, le=8)
 
 
 class ImportRequest(StrictModel):
@@ -253,6 +261,7 @@ class FluidProduct(BaseModel):
     viscosity: str | None = None
     interval: str | None = None
     capacity: str | None = None
+    approvals: list[str] = Field(default_factory=list)
 
 
 class FluidReport(BaseModel):
@@ -263,6 +272,10 @@ class FluidReport(BaseModel):
     items: list[FluidProduct] = Field(default_factory=list)
     clarification: str | None = None
     warnings: list[str] = Field(default_factory=list)
+    provenance: str = "live"
+    validation_status: str | None = None
+    source_url: str = ""
+    provider_ids: dict[str, Any] = Field(default_factory=dict)
 
 
 class VINSearchResult(BaseModel):
@@ -282,6 +295,9 @@ class VINSearchResult(BaseModel):
     maintenance: OilResult | None = None
     fluids: list[FluidReport] = Field(default_factory=list)
     cross_references: list[dict[str, Any]] = Field(default_factory=list)
+    knowledge: list[dict[str, Any]] = Field(default_factory=list)
+    provenance: str = "live"
+    validation_timestamp: str | None = None
 
 
 class ConversationCard(BaseModel):
@@ -296,9 +312,51 @@ class ConversationCard(BaseModel):
     pack_litres: float | None = None
     role: str | None = None
     warnings: list[str] = Field(default_factory=list)
+    # The assistant engine: the heading a card is listed under, why it is offered, how
+    # sure the offer is and the words of the catalogue row it rests on.
+    group: str | None = None
+    reason: str | None = None
+    confidence: str | None = None
+    evidence: str | None = None
+
+    @field_validator("evidence", mode="before")
+    @classmethod
+    def _quoted_text_only(cls, value: Any) -> Any:
+        # The older engines attach evidence records under this key; those stay server-side.
+        return value if isinstance(value, str) else None
+
+
+class ChatOption(BaseModel):
+    label: str = ""
+    value: str = ""
+
+
+class ChatQuestion(BaseModel):
+    text: str = ""
+    options: list[ChatOption] = Field(default_factory=list, max_length=8)
+
+
+class ChatGroup(BaseModel):
+    id: str = ""
+    label: str = ""
+    count: int = 0
+
+
+def clamp_turn(payload: dict) -> dict:
+    """Cut the lists the response model bounds. One button too many must never fail a
+    whole turn in response validation."""
+    for key, limit in (("quick_replies", 8), ("clarification_choices", 8), ("suggestions", 4),
+                       ("groups", 40)):
+        if isinstance(payload.get(key), list):
+            payload[key] = payload[key][:limit]
+    question = payload.get("question")
+    if isinstance(question, dict) and isinstance(question.get("options"), list):
+        payload["question"] = {**question, "options": question["options"][:8]}
+    return payload
 
 
 class ConversationTurn(BaseModel):
+    knowledge: list[dict[str, Any]] = Field(default_factory=list)
     conversation_id: str
     turn_id: str
     status: Literal["RUNNING", "COMPLETE", "PARTIAL", "FAILED"]
@@ -309,6 +367,12 @@ class ConversationTurn(BaseModel):
     quick_replies: list[str] = Field(default_factory=list, max_length=8)
     language: Literal["ka", "en"] = "ka"
     vehicle: dict[str, Any] = Field(default_factory=dict)
+    vehicle_revision: int = Field(default=0, ge=0)
+    resolution_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    selected_configuration: dict[str, Any] = Field(default_factory=dict)
+    clarification_choices: list[Any] = Field(default_factory=list, max_length=8)
+    claims: list[dict[str, Any]] = Field(default_factory=list)
+    citations: list[dict[str, Any]] = Field(default_factory=list)
     progress: list[dict[str, Any]] = Field(default_factory=list)
     cards: list[ConversationCard] = Field(default_factory=list)
     supplier_only: list[dict[str, Any]] = Field(default_factory=list)
@@ -319,6 +383,13 @@ class ConversationTurn(BaseModel):
     total: int = 0
     offset: int = 0
     next_offset: int | None = None
+    # The assistant engine: the question with its answer buttons, next-step buttons, the
+    # headings the cards are listed under, the car as understood and how the turn ended.
+    question: ChatQuestion | None = None
+    suggestions: list[ChatOption] = Field(default_factory=list, max_length=4)
+    groups: list[ChatGroup] = Field(default_factory=list, max_length=40)
+    car_label: str = ""
+    outcome: str = ""
 
 
 class RateLimiter:
@@ -354,6 +425,7 @@ def create_app(
     enrichment_repository: Any = None,
     motorium_service: Any = None,
     search_service: Any = None,
+    site: Any = None,
 ) -> FastAPI:
     from automotive.config import Settings
     from automotive.fuchs import FuchsClient
@@ -387,6 +459,10 @@ def create_app(
 
         enrichment_repository = AutomotiveRepository(settings.enrichment_database_url)
 
+    from automotive.ttl_cache import SQLiteTTLCache
+
+    source_cache = (SQLiteTTLCache(settings.automotive_cache_path)
+                    if settings.automotive_cache_path else None)
     catalog_service = None
     if settings.catalog_api_key:
         from automotive.catalog_api import CatalogApiClient
@@ -395,9 +471,15 @@ def create_app(
             settings.catalog_api_key, base_url=settings.catalog_api_base_url,
             host=settings.catalog_api_host, key_header=settings.catalog_api_key_header,
             hmac_key=settings.vin_hmac_key,
+            cache=source_cache,
         )
     owns_search_service = search_service is None
-    search_service = search_service or VINSearchCoordinator(
+    from automotive.knowledge import KnowledgeService
+    from automotive.knowledge_search import LearningSearchCoordinator
+
+    knowledge = KnowledgeService.from_settings(settings)
+    search_type = LearningSearchCoordinator if knowledge else VINSearchCoordinator
+    search_service = search_service or search_type(
         repository, vin_service, motorium_service, settings.vin_hmac_key,
         motorium_enabled=settings.motorium_enabled,
         fuchs_service=FuchsClient() if settings.fuchs_enabled else None,
@@ -405,19 +487,24 @@ def create_app(
         pakelo_service=PakeloClient() if settings.pakelo_enabled else None,
         jsfilter_service=JsFilterClient() if settings.jsfilter_enabled else None,
         catalog_service=catalog_service, rules=rules,
+        cache=source_cache,
         fuchs_enabled=settings.fuchs_enabled, shell_enabled=settings.shell_enabled,
         pakelo_enabled=settings.pakelo_enabled, jsfilter_enabled=settings.jsfilter_enabled,
+        **({"knowledge": knowledge} if knowledge else {}),
     )
     from automotive.chat_log import ChatLogger
     from automotive.conversations import ConversationError, ConversationStore
 
     chat_log = ChatLogger.from_settings(settings)
-    conversations = ConversationStore(chat_service, search_service, chat_log=chat_log)
+    conversations = ConversationStore(chat_service, search_service, chat_log=chat_log,
+                                      turn_seconds=settings.chat_turn_seconds)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         yield
         conversations.close()
+        if callable(getattr(chat_service, "close", None)):
+            chat_service.close()  # The assistant engine's kept connection.
         if chat_log:
             chat_log.close()  # Drains queued records before exit.
         if owns_search_service:
@@ -434,9 +521,17 @@ def create_app(
         origin = request.headers.get("origin")
         if origin and origin not in settings.allowed_origins:
             return JSONResponse({"detail": "Origin is not allowed"}, status_code=403)
-        if request.url.path.startswith("/api/"):
+        # automotive.site_guard already limited and size-capped the garage site's own API.
+        guarded = getattr(request.state, "site_guarded", False)
+        if request.url.path.startswith("/api/") and not guarded:
             client = request.client.host if request.client else "unknown"
-            if not limiter.allow(client, "all", settings.rate_limit_per_minute):
+            # Turn polling only reads in-memory state; its own allowance keeps a few
+            # multi-second AI turns from exhausting the general request budget.
+            polling = (request.method == "GET" and "/turns/" in request.url.path
+                       and request.url.path.startswith("/api/v1/chat/conversations/"))
+            category, maximum = (("poll", settings.rate_limit_per_minute * 5) if polling
+                                 else ("all", settings.rate_limit_per_minute))
+            if not limiter.allow(client, category, maximum):
                 return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
             if request.url.path in {
                 "/api/v1/chat", "/api/v1/vehicles/identify", "/api/v1/vehicles/part-codes",
@@ -613,6 +708,26 @@ def create_app(
     def cross_references(code: Code) -> Any:
         return repository.cross_references(code)
 
+    @app.get("/api/v1/parts/catalog", response_model=StructuredResult)
+    def parts_catalog(
+        code: Code,
+        brand: Annotated[str | None, Query(max_length=120)] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    ) -> Any:
+        from automotive.parts_catalog import PartsCatalogService
+
+        return PartsCatalogService(repository).lookup(code, brand=brand, limit=limit)
+
+    @app.get("/api/v1/parts/alternatives", response_model=StructuredResult)
+    def parts_alternatives(
+        code: Code,
+        brand: Annotated[str | None, Query(max_length=120)] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    ) -> Any:
+        from automotive.parts_catalog import PartsCatalogService
+
+        return PartsCatalogService(repository).alternatives(code, brand=brand, limit=limit)
+
     @app.post("/api/v1/recommendations/oil", response_model=StructuredResult)
     def oil(payload: VehicleRequest) -> Any:
         from automotive.recommendations import RecommendationService
@@ -651,6 +766,7 @@ def create_app(
         return conversations.submit(
             conversation_id, payload.message, vin=payload.vin, language=payload.language,
             vehicle=payload.vehicle.model_dump(exclude_none=True) if payload.vehicle else None,
+            **({"choice": payload.choice} if payload.choice is not None else {}),
         )
 
     @app.get("/api/v1/chat/conversations/{conversation_id}/turns/{turn_id}",
@@ -661,7 +777,7 @@ def create_app(
         offset: Annotated[int, Query(ge=0)] = 0,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
     ) -> dict:
-        return conversations.get(conversation_id, turn_id, offset, limit)
+        return clamp_turn(conversations.get(conversation_id, turn_id, offset, limit))
 
     @app.delete("/api/v1/chat/conversations/{conversation_id}", status_code=204)
     def delete_conversation(
@@ -690,9 +806,18 @@ def create_app(
             raise HTTPException(404, "Job not found")
         return result
 
-    @app.get("/", include_in_schema=False)
+    # The staff workspace. "/" is the public landing page registered by install_site.
+    @app.get("/staff", include_in_schema=False)
     def index() -> FileResponse:
         return FileResponse(STATIC / "index.html")
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
+    from automotive.site import install_site
+
+    context = install_site(app, settings, repository=repository, vin_service=vin_service,
+                           chat_service=chat_service, search_service=search_service, site=site)
+    # The assistant engine searches the snapshot the site already holds in memory.
+    if getattr(chat_service, "catalog_store", None) is None:
+        with contextlib.suppress(AttributeError):
+            chat_service.catalog_store = context.catalog_store
     return app

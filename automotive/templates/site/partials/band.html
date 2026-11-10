@@ -1,0 +1,11 @@
+{% from "partials/macros.html" import icon, tt with context %}
+{# The wall's yellow floor stripe, carrying the checklist painted on the shop wall. #}
+{% if c.checklist["items"] %}
+<nav class="band" data-reveal aria-label="{{ c.services_intro.title }}">
+  <ul class="band__list wrap">
+    {% for item in c.checklist["items"] if item.label %}
+    <li><a href="#services">{{ icon("check", "band__check") }}<span>{{ item.label }}</span></a></li>
+    {% endfor %}
+  </ul>
+</nav>
+{% endif %}

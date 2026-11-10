@@ -19,9 +19,9 @@
 min_store = 0
 min_tuz11 = 0
 # Hours after the last catalogue sync when the customer is asked to confirm stock, and
-# when the quantity is no longer stated as a fact.
-stale_hours = 3
-hide_after_hours = 24
+# when the quantity is no longer stated as a fact. The catalogue syncs at 09:00 and 21:00.
+stale_hours = 13
+hide_after_hours = 25
 
 # Brands that are one brand (a supplier name vs. the name used in our catalogue).
 [[brand_alias]]

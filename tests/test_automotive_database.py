@@ -245,11 +245,18 @@ class AutomotivePostgresTests(unittest.TestCase):
                     ).fetchall()
                 configure_local(env_path)
                 values = dotenv_values(env_path)
-                for key in ("AUTOMOTIVE_DATABASE_URL", "AUTOMOTIVE_ENRICHMENT_DATABASE_URL"):
+                for key in ("AUTOMOTIVE_DATABASE_URL", "AUTOMOTIVE_ENRICHMENT_DATABASE_URL",
+                            "AUTOMOTIVE_VALIDATOR_DATABASE_URL"):
                     created_logins.append(conninfo_to_dict(values[key])["user"])
                 reader = self.repository_class(values["AUTOMOTIVE_DATABASE_URL"])
                 enricher = self.repository_class(values["AUTOMOTIVE_ENRICHMENT_DATABASE_URL"])
                 self.assertIsNotNone(reader.get_product("p2"))
+                from automotive.knowledge_repository import KnowledgeRepository
+
+                validator = KnowledgeRepository(values["AUTOMOTIVE_VALIDATOR_DATABASE_URL"])
+                self.assertEqual(validator.status()["attempts_today"], 0)
+                with self.assertRaises(self.psycopg.errors.InsufficientPrivilege):
+                    KnowledgeRepository(values["AUTOMOTIVE_DATABASE_URL"]).status()
                 with self.assertRaises(self.psycopg.errors.InsufficientPrivilege):
                     reader.create_job("index", {})
                 job = enricher.create_job("index", {})

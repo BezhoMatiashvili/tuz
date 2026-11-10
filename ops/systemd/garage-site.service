@@ -1,0 +1,38 @@
+# Example unit for the Garage 1886 site (docs/garage-site.md). Not installed by CI.
+# One process only: conversations, rate limits and the sign-in throttle live in memory.
+# Run it on a host other than the sync worker, which holds the warehouse writer credential.
+[Unit]
+Description=Garage 1886 site (automotive application)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=garage-site
+Group=garage-site
+WorkingDirectory=/opt/tuz/current
+# AUTOMOTIVE_DATABASE_URL (runtime), AUTOMOTIVE_SITE_DATABASE_URL (garage_site),
+# AUTOMOTIVE_VIN_HMAC_KEY, ANTHROPIC_API_KEY, AUTOMOTIVE_PUBLIC_ORIGINS,
+# AUTOMOTIVE_TRUSTED_PROXIES=127.0.0.2 (the proxy's own source address, see
+# ops/nginx/garage-site.conf.example). Never the warehouse writer or migration URL.
+EnvironmentFile=/etc/tuz/garage-site.env
+ExecStart=/opt/tuz/current/.venv/bin/python -m automotive --port 8767
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+# The chat logs and the provider cache are the only paths the process writes.
+ReadWritePaths=/opt/tuz/current/data
+
+[Install]
+WantedBy=multi-user.target

@@ -462,3 +462,227 @@ to 0; the remaining soft misses are long name-matched replies.
   check with screenshots in `docs/automotive-review/chat-texting-qa.md`. Repo-wide Ruff still
   reports the 39 pre-existing `db_ui` errors.
 
+### Follow-up — Garage 1886 public site, staff login and dashboard (2026-11-10)
+
+- The application now also serves the garage's website: a bilingual landing page at `/` and
+  `/en` (services, story, gallery, contact), a scroll-driven 3D engine that comes apart and
+  reassembles, a public part search by car, VIN, name, brand or code, the parts assistant as a
+  chat widget, an unlinked sign-in at `/login`, and a dashboard at `/admin` with `employee` and
+  `admin` roles. Every text, service and gallery photo is edited from the dashboard. Routes,
+  roles and the security model: [docs/garage-site.md](docs/garage-site.md).
+- Behaviour change: the staff workspace moved from `/` to `/staff`, and it and `/api/v1/*` now
+  need a staff session (`AUTOMOTIVE_STAFF_AUTH`, on by default, can be switched off only while
+  every allowed host is loopback). `/api/v1/operator/*` answers direct loopback callers only.
+- Public data is deliberately narrow: a search result is name, vehicle text, brand and price for
+  items available now; chat cards carry an availability label instead of counts. Search and the
+  dashboard's inventory figures read an in-memory snapshot of the catalogue, so visitors do not
+  query PostgreSQL. Prices come from source column `column_06`; the currency is assumed GEL and
+  is a dashboard setting.
+- Database: migration `0012_garage_site` (private schema `garage`, row-level security, new
+  capability role `garage_site`); `automotive_runtime` has no access to it. One new dependency,
+  `jinja2`. New files only under `automotive/site*.py`, `automotive/templates/`,
+  `automotive/static/site/` and `automotive/static/admin/`; `api.py`, `config.py`, `__main__.py`
+  and `static/app.js` changed by a few lines each.
+- Two independent security reviews, the second of the fixes made after the first. Confirmed
+  findings were fixed with regression tests: assets served only under their exact names (a second
+  spelling of a path used to reach the authoring harness), no database query a visitor can cause
+  without limit, sign-in and session look-ups that cannot take the worker threads, no account-wide
+  or address-wide sign-in lock, a public origin refused without a trusted proxy, unpublished
+  packaged photos no longer served as assets. What was left as it is, is listed under "Security
+  model" in [docs/garage-site.md](docs/garage-site.md).
+- Verification: 1047 Python tests (52 skipped: PostgreSQL/loopback), the database-gated site tests
+  against a disposable database, Ruff on `automotive`, the site tests and `scripts`, Bandit clean,
+  three Node suites, and a live review recorded with screenshots in
+  [docs/automotive-review/garage-site-qa.md](docs/automotive-review/garage-site-qa.md): headless
+  Chrome on the machine's graphics card (Lighthouse mobile 99 on both languages, twelve phone and
+  tablet profiles, real touch input, the chat sheet under a simulated keyboard), the system's
+  WebKit, which is the engine Safari is built on, and Firefox, both at phone sizes. `pip-audit`
+  flags four packages that were already in the lock (`lxml`, `pytest`, `python-dotenv`,
+  `requests`); the one dependency added here is clean.
+- The chat widget shows the staff assistant's answers unchanged. Checked live it answered
+  part-number questions with the part and its price, but answered make-and-model questions with
+  "could not confirm an offer"; the widget points to the part search when an answer lists nothing.
+- Not done: no deployment, no penetration test, no pass on a physical phone or in Apple's own
+  Safari, no native-speaker review of the Georgian interface strings. Contact details, opening
+  hours, history milestones and service prices are empty until the owner enters them in the
+  dashboard.
+
+### Follow-up — Parts assistant: model-driven engine, answer buttons, new chat screens (2026-11-10)
+
+- Asked for: a chatbot that finds the car from plain text and the exact parts it needs, asks
+  the right question when it has to and offers the answers as buttons, and is pleasant to use;
+  and, from the logs, the reasons it had not found cars and parts, fixed without deterministic
+  rules.
+- Log analysis. Both chat logs (498 turns) were read and every failed request was checked
+  against the live catalogue (65,812 rows, 8,745 in stock). On the engine that was live, 12 of
+  74 requests for a car or a part ended with parts (staff chat 10 of 50, public widget 2 of 24),
+  at a median of 10 to 11 s, although the parts were usually there: "Toyota Camry 2015, front
+  brake pads" got "could not confirm an offer" while 8 matching rows were in stock. The causes,
+  each traced to code: a rule dropped every row found through the catalogue's own text once a
+  car was known (18 turns); the search found only rows that spell out the make and model, while
+  the catalogue writes `MB W212`, `MMC L200`, `VAG GOLF 7` (27 Mitsubishi rows seen of 3,078);
+  parts were recognised by 20 fixed patterns that reach 30% of the catalogue; the model had to
+  quote the customer word for word, so "Camry" gave no make; rules in front of the model
+  swallowed answers such as "yes", "ორივე" and `W212`, and most questions had no buttons; the
+  design depended on part numbers the free sources rarely give for a typed car; matches that
+  were out of stock were hidden without a word (9 turns). The common cause is a hand-typed
+  catalogue and rules that cover only the spellings their author thought of; replacement rules
+  tried on the real rows picked wrong parts too.
+- What was built. A new engine in which the model searches the catalogue with words it chooses,
+  judges which rows fit and asks with buttons, while code only fetches data and keeps facts
+  honest (cards come from database rows, a quoted row text must exist, staff vetoes hold, the
+  VIN never reaches the model): `automotive/assistant_catalog.py` (an index over the snapshot
+  the site already holds, and a catalogue guide computed from it),
+  `automotive/assistant_tools.py` (read tools), `automotive/assistant.py` (the turn and its
+  checks), `automotive/assistant_prompt.py` (instructions), `automotive/chat_contract.py` (one
+  set of shapes for both chats),
+  `automotive/assistant_eval.py` (test conversations, catalogue-wide check, spending ledger) and
+  `automotive/chat_review.py` (a daily review of logged misses, with
+  `ops/systemd/automotive-chat-review.service` and `.timer`). Small edits wire it in:
+  `config.py`, `chat.py`, `conversations.py`, `api.py`, `site.py`, `site_chat.py`. Both chat
+  screens were rebuilt around the question and its answers: the public widget
+  (`templates/site/partials/chat.html`, `static/site/js/chat.js`, `static/site/css/site.css`,
+  `site_strings.py`) and the staff chat (`static/app.js`, `static/index.html`,
+  `static/style.css`). Tests: `tests/test_assistant_catalog.py`, `tests/test_assistant.py`,
+  `tests/test_assistant_eval.py`, `tests/test_chat_contract.py`, `tests/test_chat_review.py`,
+  `tests/site_chat_widget_test.mjs`, the fixtures `tests/fixtures/assistant/conversations.json`
+  and `tests/fixtures/chat_ui/turns.json`, and the browser walk
+  `tests/browser/assistant_chat_walk.mjs`. The engine, its settings and how to run the checks:
+  [docs/automotive.md](docs/automotive.md), "Assistant engine (model-driven)".
+- Behaviour change: `AUTOMOTIVE_CHAT_ENGINE=assistant` is the default for both chats. The older
+  engines stay selectable (`orchestrated`, `scripted`) for going back, and their tests still
+  run. A greeting or a part-number look-up now takes 3 to 5 s instead of answering at once,
+  because nothing answers before the model. Web research is no longer part of a live turn.
+- Measured before and after. The two samples are not the same: the first row counts requests in
+  the logs, the others the 72 test conversations (the logged failures and cases with rows that
+  must and must not be offered; 3 need a private VIN and were skipped), run on the real model
+  and catalogue.
+
+| | Ended right | Wrong rows offered | Questions without buttons | Median seconds | Cost per turn |
+|---|---|---|---|---|---|
+| Engine that was live (the logs) | 12 of 74 requests answered with parts | not measured | most | 10 to 11 | not measured |
+| New engine, Haiku 5.5 | 52 of 69 conversations | 12 | 0 of 26 | 7.6 | $0.0017 |
+| New engine, Sonnet 5.5, two runs | 63 of 69 and 63 of 69 | 0 and 2 | 0 of 26 | 6.7 and 7.6 (7.1 and 8.1 on turns that look for a part) | $0.025 |
+| New engine, Sonnet 5.5, thinking off | 61 of 69 | 7 | 0 of 29 | 9.0 | $0.027 |
+
+- Model decision: Sonnet 5.5 at low effort with thinking left at the model's default
+  (`AUTOMOTIVE_ASSISTANT_MODEL`, `AUTOMOTIVE_ASSISTANT_EFFORT`, `AUTOMOTIVE_ASSISTANT_THINKING`).
+  The rule set beforehand was that Haiku stays only if it finds the same parts with no more
+  wrong offers. After the prompt was tuned for both, Haiku passed 52 conversations against 63
+  and offered 12 wrong rows against 0 and 2, and it was not faster. Switching Sonnet's thinking
+  off cost 7 wrong rows and made turns slower. The price is about 2.5 cents a turn, about 15
+  times Haiku's.
+- Screens against the live engine (the last step). Both screens were walked in headless Chrome
+  against the real engine, model and catalogue: the public widget at 390x844 and 1440x900, the
+  English page, and the staff chat, 28 turns in the final walk, median 5.9 s, nothing failed,
+  and every check in the page passed (answer buttons under every question, the tapped answer
+  kept marked, the car line, name, price, availability and confidence on 45 cards, group
+  headings, no sideways overflow, no raw value, no console error). Eight things broke where the
+  engine and the screens meet and were fixed, seven of them with a test that fails without the
+  fix: both screens opened the conversation
+  only with the first message, so the first reply also paid for the engine's preparation (11.2 s
+  for the first message after a start, 7.4 s after the fix); the engine's warning about old
+  stock figures reached neither screen; the progress line stood still; a staff card said its
+  reason twice, showed the raw word `assistant` and did not show which cars the row names; the
+  oil selector's figures were not shown to staff. Record and screenshots:
+  [docs/automotive-review/assistant-chat-qa.md](docs/automotive-review/assistant-chat-qa.md).
+- Screens after that walk, and a final walk. Both screens gained a fourth confidence label
+  (`spec`: "შერჩეულია სპეციფიკაციით", "Chosen by specification") and say a group's confidence
+  and reason once under its heading when every part of the group shares them; the staff chat
+  gives the conversation more room and names the conversation's car in its side panel. The
+  final walk ran on the engine as it is now: 35 live turns, median 7.9 s, nothing failed, 68
+  cards in 30 groups checked in the page. Five added checks passed: oils arrive as `spec` with
+  their reason in one line; "Show more" pressed live keeps the groups and their line; "not
+  sure" brings the variants as groups marked "needs checking"; a made-up VIN is masked in the
+  bubble and answered with the car and a question; a car typed in a message outranks the staff
+  page's form. That walk added $1.29 to the ledger. The record is the same note.
+- Catalogue-wide check (`--evaluate-assistant catalogue`). 150 stocked rows were sampled by
+  counted strata of make spelling and part name; a second model (Haiku 5.5) wrote what a
+  customer who needs each row would type (59 Georgian, 36 Georgian in Latin letters, 30
+  Russian, 22 English, some with typos) and answered the engine's questions from the hidden
+  row. Found means the engine showed that row, or one sharing two or more numbers, within
+  three turns.
+
+| | Found after 1 turn | after 2 | after 3 |
+|---|---|---|---|
+| Before the fixes, 147 rows | 40% | 63% | 71% |
+| After the first fixes, the same rows and requests | 46% | 80% | 86% |
+| Fresh rows after the fixes (39, another seed) | 46% | 74% | 90% |
+| Fresh rows after the part-name readings (19, another seed) | 42% | 89% | 89% |
+| Requests that name a model: before, after, fresh | | | 78%, 92%, 97% |
+
+  What the misses led to, none of it a rule about cars or parts: after "I don't know" the
+  engine shows the variants as groups marked "needs checking" and stops asking (26 of the
+  42 first misses were still asking after three turns); a search also returns rows filed
+  under a word one letter away and rows in stock that carry the numbers of an out-of-stock
+  row; the guide lists the brands' number series beside each part name; a model (Opus 5.5)
+  read what each of the guide's 175 part names means from the rows that carry it
+  (`--read-part-names`, `automotive/assistant_names.py`, $1.15), which took the stabiliser
+  rows from 71% to 82% found and the rear-arm bushings from 40% to 80%; and a number of
+  three or more digits also finds the code that carries it behind letters (`150` finds
+  `J150`), which found the stocked Prado rear pad that "прадо 150" had missed.
+- Wrong offers. A stronger model (Opus 5.5, no tools) judged the offered rows against the
+  request and a wide set of rows. It called 15 of 121 rows wrong before the fixes and 12 of
+  73 after the first ones; of those twelve, five were the very row the request was written
+  from (the judge disagreeing with the catalogue's own text, as on a row filed
+  `TOYOTA/LEXUS CELICA CX5 2011-2016`), and about four were real mistakes, all shown as
+  "needs checking", three of them a stabiliser bushing offered for a link. In the last
+  sample, after the part-name readings, 4 of 24 judged rows were wrong, all four shown as
+  "needs checking", and none of the rows presented as listed or confirmed. The judged rows
+  are in `data/assistant_eval/*-judged.csv` for a parts person; the judge works from memory
+  and is not a parts catalogue. The four rows of the last sample: a tie-rod end the
+  catalogue files under `MMC PAJERO IO` whose numbers are a Hyundai's, an air filter whose
+  row states no year, and two bushings whose "rear" in the name is the rear bushing of a
+  front arm. A list made by counting alone,
+  `data/assistant_eval/catalogue-rows-to-check-2026-11-10.csv`, names 64 catalogue rows
+  (15 in stock) whose numbers are otherwise filed under another make or whose make word is
+  misspelt (`Subura Legacy`, `ZUSUKI VITARA`), for the owner to look through; it cannot
+  catch a row like the Pajero one, whose other make appears nowhere in the catalogue.
+- Engine after the first walk: row handles are refused in anything the customer reads;
+  the `spec` level with a required reason; the fixed part of the prompt is kept by the
+  provider for an hour (`AUTOMOTIVE_ASSISTANT_CACHE_TTL`); the staff page's form reaches
+  the model as `staff_form` and a car typed in a message outranks it; `car_label` is only
+  the customer's own car; the five VIN conversations run on stand-in VINs.
+- Test conversations at the end. The last complete run of the 72 passed 66, with 4 wrong
+  rows, all spark plugs offered as "needs checking" on a number the model recalled. Two of
+  its six failures (the Prado rear pads, and the C-Class arm bushing of earlier runs) are
+  fixed by the search change and pass when run alone (5 of 5 with three neighbours). The
+  run after that change was cut off: the Anthropic account ran out of credit at
+  conversation 39 of 72; 38 of the 39 that ran passed, with no wrong row, at a median of
+  6.5 s a turn (7.5 s for turns that look for a part, 90th percentile 10.5 s, 3.8 s for
+  quick turns). The 10.0 s median reported by the run before it was evaluations running
+  side by side: its model requests and tools took 6.9 s at the median.
+- Cost of testing: $57.17 in the ledger (`data/assistant_eval/cost_ledger-2026-11-10.jsonl`,
+  computed from token counts) of the $60 that was allowed. The provider's console has the
+  exact figure. The account's credit ran out during the last run: the API answers "Your
+  credit balance is too low", so no chat engine can answer until credit is added. The
+  engine now tells this state (`PROVIDER_BILLING`), a key that does not work and a model
+  without access apart from a passing fault: the customer is told the assistant is not
+  available and is pointed to the part search and the phone instead of "try again", the
+  staff chat names the cause under the reply, the log gets
+  `assistant_provider_account status=...` at error level, and an evaluation run stops at
+  the first such turn without charging for it. Checked against the account as it is: one
+  turn in each chat came back `PROVIDER_BILLING` with that reply.
+- Verification on 2026-11-10, after the last change: `python -m unittest discover -s tests`
+  1353 tests pass, 53 skipped (database and loopback gated);
+  `node tests/site_chat_widget_test.mjs` 41 pass; `node tests/automotive_chat_ui_test.cjs`
+  and `node tests/automotive_ui_test.cjs` pass; `python3 -I scripts/vendor_site_assets.py
+  check` passes; `bandit -q -r warehouse_sync automotive` reports nothing; `ruff check
+  automotive tests` reports five long lines in `tests/test_db_ui.py`, which this work did
+  not touch, and nothing else. `pip-audit` was not run; no dependency changed.
+- Not done, and known weak spots: no deployment, and the server on port 8767 was left
+  running the code it started with. No pass on a physical phone with its keyboard, in
+  Safari or Firefox, or with a screen reader; no native-speaker review of the Georgian
+  wording of the engine's replies and of the new interface lines; no review of the judged
+  rows by a parts person. No complete run of the 72 conversations on the final code (see
+  above). The engine still shows instead of asking in one kind of case: for the CR-V 2010
+  water pump it asked "2.0 or 2.4" in 1 of 6 runs and otherwise showed a pump as "needs
+  checking"; the instruction is in the prompt and the model does not follow it reliably at
+  low effort. When a row names only the chassis, the heading of a variant is the model's
+  reading of the part number and can be wrong: the BMW F10 V8 air-filter pair was once
+  headed "6 cylinder" (as "needs checking"). The part-name readings live in `data/`, which
+  is not in the repository: each machine that serves the chat has to run
+  `--read-part-names` once. Seen in the data and left for the owner: Mobil 1 0W-40 is
+  priced 55 GEL as 1 L and as 4 L, and Shell Helix Ultra 5W-40 37 GEL as 4 L and 38 GEL as
+  1 L.
+

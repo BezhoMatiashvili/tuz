@@ -95,6 +95,12 @@ For the inventory and price-observation star schema, incremental triggers,
 initial backfill, example queries, and important data assumptions, see
 [Warehouse analytics](docs/analytics.md).
 
+### Sales and purchasing
+
+The sync runs at 09:00 and 21:00 Tbilisi time. Between two syncs, a drop in a product's
+store + TUZ 11 stock is recorded in `trade.sales` and a rise in `trade.purchases`. See
+[Sales and purchasing](docs/sales-purchasing.md) for the rules, limits and example queries.
+
 ## Automotive intelligence
 
 A separate Georgian-first application now reads the existing catalog, identifies vehicles
@@ -117,6 +123,22 @@ it with `uv run python -m automotive --evaluate-chat mock` (offline; also run as
 See [automotive setup and evidence rules](docs/automotive.md) and
 [implementation acceptance evidence](IMPLEMENTATION_PROGRESS.md). Live database/provider
 verification is still required before operational use.
+
+### Garage 1886 site
+
+The same application serves the garage's public website at `/` (Georgian) and `/en`, a
+staff sign-in at `/login` (never linked from the site) and a dashboard at `/admin` with two
+roles, `employee` and `admin`. The staff workspace above moved to `/staff` and, like
+`/api/v1`, needs a staff session.
+
+```bash
+uv run python -m automotive.site_setup --setup-site
+uv run python -m automotive.site_setup --create-user NAME --role admin
+uv run python -m automotive
+```
+
+Routes, roles, the security model, settings and what is still required before the site is
+reachable from the internet are in [docs/garage-site.md](docs/garage-site.md).
 
 The **VIN-ით ნაწილის კოდები · Motorium** panel and
 `POST /api/v1/vehicles/part-codes` wrap the observed public Motorium assistant and product

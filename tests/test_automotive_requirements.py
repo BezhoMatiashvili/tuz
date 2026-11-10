@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 
 from automotive import engine_match, oil_match, stock
-from automotive.categories import category_for_query, matches_category, query_patterns
+from automotive.categories import category_for_query, matches_category
 from automotive.oats import OatsCatalog
 from automotive.repository import _product
 from tests.test_automotive_fluids import FakeHttp
@@ -48,10 +48,10 @@ class StockTests(unittest.TestCase):
         self.assertIn('Not available now', stock.availability_text({'store': 0, 'tuz11': 0}, 'en'))
         self.assertIn('unconfirmed', stock.availability_text(None, 'en'))
 
-    def test_observations_older_than_three_hours_are_stale(self):
+    def test_observations_older_than_thirteen_hours_are_stale(self):
         now = datetime(2026, 11, 9, 12, tzinfo=UTC)
-        self.assertTrue(stock.is_stale(now - timedelta(hours=4), now))
-        self.assertFalse(stock.is_stale(now - timedelta(hours=1), now))
+        self.assertTrue(stock.is_stale(now - timedelta(hours=14), now))
+        self.assertFalse(stock.is_stale(now - timedelta(hours=12), now))
         self.assertFalse(stock.is_stale('2020-01-01', now))
 
 
@@ -333,10 +333,12 @@ class CategoryTests(unittest.TestCase):
         self.assertEqual(category_for_query('ზეთის ფილტრი'), 'oil_filter')
 
     def test_the_bundle_covers_the_oil_and_the_filter_but_not_other_parts(self):
-        self.assertEqual(query_patterns('oil change')[1], [])
         self.assertTrue(matches_category({'product_name': 'ძრავის ზეთი 5W40'}, 'oil change'))
         self.assertTrue(matches_category({'product_name': 'ზეთის ფილტრი'}, 'oil change'))
         self.assertFalse(matches_category({'product_name': 'სამუხრუჭე ხუნდი'}, 'oil change'))
+        for other in ('რედუქტორის ზეთი AXLE OIL 75W90', 'ზეთი ჰიდრავლიკის (MB 236.3)',
+                      'Power Steering Fluid', 'ATF Dexron III'):
+            self.assertFalse(matches_category({'product_name': other}, 'oil change'), other)
 
 
 class OilMatchTests(unittest.TestCase):

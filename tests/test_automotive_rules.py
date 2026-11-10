@@ -32,7 +32,7 @@ class RulesFileTests(unittest.TestCase):
     def test_the_shipped_file_loads_and_carries_the_documented_defaults(self):
         rules = load_rules()
         self.assertEqual((rules.min_store, rules.min_tuz11), (0.0, 0.0))
-        self.assertEqual((rules.stale_hours, rules.hide_after_hours), (3.0, 24.0))
+        self.assertEqual((rules.stale_hours, rules.hide_after_hours), (13.0, 25.0))
         self.assertTrue(rules.brands_match('MANN', 'MANN-FILTER'))
         self.assertTrue(rules.brands_match('MB', 'MERCEDES-BENZ'))
         self.assertIn('სენს', rules.not_the_part_words('brake_pads'))

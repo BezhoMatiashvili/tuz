@@ -18,7 +18,7 @@ IN_STORE, WITHIN_HOURS, UNAVAILABLE, UNKNOWN = (
 )
 RANKS = {IN_STORE: 0, WITHIN_HOURS: 1, UNKNOWN: 2, UNAVAILABLE: 3}
 NUMBER = re.compile(r'^\s*(\d+(?:[.,]\d+)?)\s*$')
-FRESH_HOURS = 3
+FRESH_HOURS = 13
 
 # The same numeric test as a SQL expression; non-numeric cells count as zero.
 _SQL_NUMBER = (r"CASE WHEN p.source_columns->>'{col}' ~ '^\s*[0-9]+([.,][0-9]+)?\s*$' "

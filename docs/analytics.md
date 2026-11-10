@@ -2,7 +2,9 @@
 
 The `analytics` schema is a Kimball-style star for the **inventory data actually
 available**. It contains no sales or revenue facts: a listed price does not mean a
-sale took place. Dates are UTC, and no currency is inferred.
+sale took place. Sales and purchases inferred from stock changes are in the separate
+`trade` schema; see [Sales and purchasing](sales-purchasing.md). Dates are UTC, and no
+currency is inferred.
 
 | Table | Grain | Meaning |
 |---|---|---|

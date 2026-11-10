@@ -1,0 +1,78 @@
+{
+  "generated_by": "scripts/build_site_assets.py fonts",
+  "tool": "fonttools[woff]==4.60.1",
+  "source_date_epoch": "1794268800",
+  "licence": "SIL Open Font License 1.1",
+  "sources": {
+    "noto": {
+      "url": "https://raw.githubusercontent.com/google/fonts/8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5/ofl/notosansgeorgian/NotoSansGeorgian%5Bwdth%2Cwght%5D.ttf",
+      "sha256": "dc591156f36842d38996c4a7a17fee9bb58e45da3e2cac7a31b7d33de700adb9"
+    },
+    "barlow": {
+      "url": "https://raw.githubusercontent.com/google/fonts/8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5/ofl/barlowcondensed/BarlowCondensed-ExtraBoldItalic.ttf",
+      "sha256": "331783dae9ec0c398f4d32c9fd5a56d4c602caa0c1628c2b9cbfe93f48eb68c9"
+    },
+    "noto_ofl": {
+      "url": "https://raw.githubusercontent.com/google/fonts/8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5/ofl/notosansgeorgian/OFL.txt",
+      "sha256": "8c02263c5d73d40544f9ed91e30c4e947407057a3cc430d7b786189aeceff6df"
+    },
+    "barlow_ofl": {
+      "url": "https://raw.githubusercontent.com/google/fonts/8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5/ofl/barlowcondensed/OFL.txt",
+      "sha256": "186d750eb496a4c17a76385f82be6aea2ac1cf2de074a811d63786cf374ea73f"
+    }
+  },
+  "versions": {
+    "Noto Sans Georgian": "2.005",
+    "Barlow Condensed": "1.408"
+  },
+  "commands": {
+    "noto-sans-georgian-400.woff2": [
+      "fonttools varLib.instancer wght=400 wdth=100",
+      "pyftsubset --unicodes=U+0020-007E,U+00A0,U+00A9,U+00AB,U+00B7,U+00BB,U+00D7,U+2010,U+2013,U+2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+10D0-10FF,U+1C90-1CBA,U+1CBD-1CBF,U+20BE,U+2116 --layout-features=kern,mark,mkmk,ccmp,locl,case --flavor=woff2 --no-hinting --desubroutinize --name-IDs=1,2,3,4,6 --drop-tables+=DSIG,STAT,MVAR,HVAR,gvar,fvar,avar"
+    ],
+    "noto-sans-georgian-600.woff2": [
+      "fonttools varLib.instancer wght=600 wdth=100",
+      "pyftsubset --unicodes=U+0020-007E,U+00A0,U+00A9,U+00AB,U+00B7,U+00BB,U+00D7,U+2010,U+2013,U+2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+10D0-10FF,U+1C90-1CBA,U+1CBD-1CBF,U+20BE,U+2116 --layout-features=kern,mark,mkmk,ccmp,locl,case --flavor=woff2 --no-hinting --desubroutinize --name-IDs=1,2,3,4,6 --drop-tables+=DSIG,STAT,MVAR,HVAR,gvar,fvar,avar"
+    ],
+    "noto-sans-georgian-xcond-800.woff2": [
+      "fonttools varLib.instancer wght=800 wdth=62.5",
+      "cmap: U+10D0-10FA and U+10FD-10FF drawn with the glyphs of U+1C90-1CBA and U+1CBD-1CBF; name table renamed",
+      "pyftsubset --unicodes=U+0020-007E,U+00A0,U+00A9,U+00AB,U+00B7,U+00BB,U+00D7,U+2010,U+2013,U+2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+10D0-10FF,U+1C90-1CBA,U+1CBD-1CBF,U+20BE,U+2116 --layout-features=kern,mark,mkmk,ccmp,locl,case --flavor=woff2 --no-hinting --desubroutinize --name-IDs=1,2,3,4,6 --drop-tables+=DSIG,STAT,MVAR,HVAR,gvar,fvar,avar"
+    ],
+    "barlow-condensed-800i.woff2": [
+      "pyftsubset --unicodes=U+0020-007E,U+00A0,U+00A9,U+00AB,U+00B7,U+00BB,U+00D7,U+2010,U+2013,U+2014,U+2018-201A,U+201C-201E,U+2022,U+2026 --layout-features=kern,mark,mkmk,ccmp,locl,liga --flavor=woff2 --no-hinting --desubroutinize --name-IDs=1,2,3,4,6 --drop-tables+=DSIG,STAT,MVAR,HVAR,gvar,fvar,avar"
+    ]
+  },
+  "files": [
+    {
+      "path": "OFL-BarlowCondensed.txt",
+      "bytes": 4377,
+      "sha256": "186d750eb496a4c17a76385f82be6aea2ac1cf2de074a811d63786cf374ea73f"
+    },
+    {
+      "path": "OFL-NotoSansGeorgian.txt",
+      "bytes": 4384,
+      "sha256": "8c02263c5d73d40544f9ed91e30c4e947407057a3cc430d7b786189aeceff6df"
+    },
+    {
+      "path": "barlow-condensed-800i.woff2",
+      "bytes": 8524,
+      "sha256": "eefb322709213f68db2770eb05e4188f64db5366dc0e18384a2c54a719d467c1"
+    },
+    {
+      "path": "noto-sans-georgian-400.woff2",
+      "bytes": 15904,
+      "sha256": "7a71e656e09717b184f1ce319108d316f48fd0998f04ccf865300cbfee3d25e2"
+    },
+    {
+      "path": "noto-sans-georgian-600.woff2",
+      "bytes": 16384,
+      "sha256": "f62feadecd8056d253f59ca9d54b4c65b263147ea2cbcc6fe630fdd8ce1a8508"
+    },
+    {
+      "path": "noto-sans-georgian-xcond-800.woff2",
+      "bytes": 11796,
+      "sha256": "fa354bbb72b65272b96b4153308d447f4c3718aa1d6f11780583038884fae31a"
+    }
+  ]
+}

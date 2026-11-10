@@ -1,0 +1,75 @@
+{% from "partials/macros.html" import icon, tt with context %}
+{% set home = "/" if lang == "ka" else "/en" %}
+{% set other = "en" if lang == "ka" else "ka" %}
+{% set origin = alternates.ka[:-1] %}
+{% set display_font = "noto-sans-georgian-xcond-800" if lang == "ka" else "barlow-condensed-800i" %}
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+{# One locked dark theme: the owner asked for the site to match the shop, which is dark red
+   and black, so there is no light mode. #}
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0E0E0F">
+<title>{{ c.seo.title }}</title>
+<meta name="description" content="{{ c.seo.description }}">
+<link rel="preload" as="font" type="font/woff2" crossorigin href="{{ asset('site/fonts/' ~ display_font ~ '.woff2') }}">
+<link rel="preload" as="font" type="font/woff2" crossorigin href="{{ asset('site/fonts/noto-sans-georgian-400.woff2') }}">
+<link rel="stylesheet" href="{{ asset('site/css/site.css') }}">
+<link rel="canonical" href="{{ canonical }}">
+<link rel="alternate" hreflang="ka" href="{{ alternates.ka }}">
+<link rel="alternate" hreflang="en" href="{{ alternates.en }}">
+<link rel="alternate" hreflang="x-default" href="{{ alternates.ka }}">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="{{ asset('site/img/favicon.svg') }}" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{{ asset('site/img/apple-touch-icon.png') }}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Garage 1886">
+<meta property="og:title" content="{{ c.seo.title }}">
+<meta property="og:description" content="{{ c.seo.description }}">
+<meta property="og:url" content="{{ canonical }}">
+<meta property="og:locale" content="{{ 'ka_GE' if lang == 'ka' else 'en_US' }}">
+<meta property="og:locale:alternate" content="{{ 'en_US' if lang == 'ka' else 'ka_GE' }}">
+<meta property="og:image" content="{{ origin }}{{ asset('site/img/og.jpg') }}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="{{ t['hero.art_alt'] }}">
+<meta name="twitter:card" content="summary_large_image">
+{% if c.brand.phone or c.brand.address %}
+{% set ld = {"@context": "https://schema.org", "@type": "AutoRepair", "name": "Garage 1886",
+             "url": canonical, "image": origin ~ asset("site/img/og.jpg"),
+             "description": c.seo.description} %}
+{% if c.brand.phone %}{% set _ = ld.update({"telephone": c.brand.phone}) %}{% endif %}
+{% if c.brand.email %}{% set _ = ld.update({"email": c.brand.email}) %}{% endif %}
+{% if c.brand.address %}
+{% set _ = ld.update({"address": {"@type": "PostalAddress", "streetAddress": c.brand.address,
+                                  "addressCountry": "GE"}}) %}
+{% endif %}
+{% if c.brand.map_url %}{% set _ = ld.update({"hasMap": c.brand.map_url}) %}{% endif %}
+{% set profiles = [c.brand.facebook, c.brand.instagram, c.brand.tiktok]|select|list %}
+{% if profiles %}{% set _ = ld.update({"sameAs": profiles}) %}{% endif %}
+<script type="application/ld+json">{{ ld|tojson }}</script>
+{% endif %}
+</head>
+<body data-chat="{{ 'on' if chat_on else 'off' }}">
+<a class="skip" href="#main">{{ t["nav.skip"] }}</a>
+{% include "partials/nav.html" %}
+<main id="main" tabindex="-1">
+{% include "partials/hero.html" %}
+{% include "partials/band.html" %}
+{% include "partials/engine.html" %}
+{% include "partials/parts.html" %}
+{% include "partials/services.html" %}
+{% include "partials/story.html" %}
+{% include "partials/gallery.html" %}
+{% include "partials/visit.html" %}
+</main>
+{% include "partials/footer.html" %}
+{% include "partials/chat.html" %}
+<div class="grain" aria-hidden="true"></div>
+<script type="application/json" id="site-data">{{ data|tojson }}</script>
+<script type="module" src="{{ asset('site/js/site.js') }}"></script>
+<script type="module" src="{{ asset('site/js/engine/index.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+{
+  "package": "three",
+  "version": "0.187.0",
+  "licence": "MIT",
+  "source": "https://registry.npmjs.org/three/-/three-0.187.0.tgz",
+  "integrity": "sha512-Qiu7R+Cmh8CstZsY1uJOSWnVlfo7ZtNLV7mF8Jltk3LB3AtDu9cRZlcnRKkAk8Y4z6KKw35z7Y7Urd7jWY8etA==",
+  "generated_by": "scripts/vendor_site_assets.py vendor",
+  "files": [
+    {
+      "path": "three.module.js",
+      "from": "package/build/three.module.js",
+      "transform": "esbuild@0.28.2 --minify --format=esm --legal-comments=inline",
+      "bytes": 376429,
+      "sha256": "421d3269659f1aaaeb3d49974373f896c9287b05948635ae9b286f100e4e5ac3"
+    },
+    {
+      "path": "three.core.js",
+      "from": "package/build/three.core.js",
+      "transform": "esbuild@0.28.2 --minify --format=esm --legal-comments=inline",
+      "bytes": 395915,
+      "sha256": "04750c60541ce68acf84ea72bdaea4b2dc7696b0501d36faeaa9d1d0cc63ba78"
+    },
+    {
+      "path": "RoundedBoxGeometry.js",
+      "from": "package/examples/jsm/geometries/RoundedBoxGeometry.js",
+      "transform": "rewrite bare imports to relative paths",
+      "bytes": 6482,
+      "sha256": "8b982e6cf69d31b81b41b4b314c1d198f02eb13528b0973993309ab76226df1a"
+    },
+    {
+      "path": "BufferGeometryUtils.js",
+      "from": "package/examples/jsm/utils/BufferGeometryUtils.js",
+      "transform": "rewrite bare imports to relative paths",
+      "bytes": 39165,
+      "sha256": "319782169ed48af21fcaa251d839ecb8e58f14174aacbf68b74a437f3d6a3a98"
+    },
+    {
+      "path": "LICENSE",
+      "from": "package/LICENSE",
+      "transform": "verbatim",
+      "bytes": 1081,
+      "sha256": "8b378ebe60e2fe500158cb0ac71cb5e8b7d92953c2abcc63a0eb90499653b5bc"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+# Example reverse proxy for the Garage 1886 site (docs/garage-site.md). Not deployed by CI.
+# The application binds to 127.0.0.1 and trusts X-Forwarded-For only from the addresses in
+# AUTOMOTIVE_TRUSTED_PROXIES, so this proxy must always overwrite both forwarded headers.
+# Do not add a second proxy_set_header that appends a client-supplied value.
+# proxy_bind gives this proxy its own loopback source address (set
+# AUTOMOTIVE_TRUSTED_PROXIES=127.0.0.2), so a command run on the host itself is not mistaken
+# for a forwarded request and can still reach the loopback-only operator routes.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name garage.example.ge;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name garage.example.ge;
+
+    ssl_certificate     /etc/letsencrypt/live/garage.example.ge/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/garage.example.ge/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # Gallery uploads are at most 1.5 MB; the application enforces its own smaller caps.
+    client_max_body_size 2m;
+
+    # The application already gzips its text assets and pages; compress nothing twice.
+    gzip off;
+
+    location / {
+        proxy_pass http://127.0.0.1:8767;
+        proxy_bind 127.0.0.2;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+        # A chat turn is polled, never held open; nothing needs a long read timeout.
+        proxy_read_timeout 30s;
+    }
+}

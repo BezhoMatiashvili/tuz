@@ -1,0 +1,747 @@
+/*
+ * Engine section: a scroll-driven exploded view of a V8.
+ *
+ * Tokens (--ink-*, --paper-*, --wall-*, --stripe-500, --ease-*, --nav-h) and
+ * the type and button classes (t-h2, t-h3, t-lead, btn) are global; this file
+ * only uses them. It follows the page's --gutter and --maxw when they exist.
+ *
+ * What is written here without a [data-engine-mode] is the static tier: it is
+ * what a visitor without JavaScript or with reduced motion gets. The script
+ * sets data-engine-mode="scroll" to switch on the tall wrapper and sticky stage.
+ *
+ * State written by js/engine/index.js on the section:
+ *   data-engine-mode   static | scroll
+ *   data-engine-state  static | lite | 3d
+ *   data-engine-step   0 | 1 | 2   (the active copy beat)
+ *   --engine-p         scroll progress 0..1, on the art box
+ * Read by the script from the art box:
+ *   --engine-safe-start  fraction of the frame, from the left, left free for copy
+ */
+
+.engine {
+  --engine-gutter: var(--gutter, 16px);
+  --engine-wide: var(--maxw, 1360px);
+  --engine-pin: 24px;
+  position: relative;
+  background-color: var(--wall-700);
+  color: var(--paper-50);
+  /* clip, not hidden: hidden on an ancestor would break the sticky stage. */
+  overflow-x: clip;
+}
+
+.engine__stage {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 32px;
+  padding-block: 56px;
+  padding-inline: max(var(--engine-gutter), (100% - var(--engine-wide)) / 2);
+}
+
+.engine__frame {
+  min-inline-size: 0;
+}
+
+/* The art box. Static tier: the two posters, one after the other. */
+.engine__art {
+  --engine-p: 0;
+  --engine-safe-start: 0;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  justify-items: center;
+  align-items: center;
+}
+
+.engine__art picture {
+  display: contents;
+}
+
+.engine__poster {
+  display: block;
+  inline-size: 100%;
+  max-inline-size: 380px;
+  block-size: auto;
+}
+
+/* The assembled poster has room around the engine for the explosion; trim it here. */
+.engine__poster[data-engine-poster='0'] {
+  grid-area: 1 / 1;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  object-position: right center;
+}
+
+.engine__poster[data-engine-poster='1'] {
+  grid-area: 2 / 1;
+}
+
+.engine__canvas {
+  display: none;
+}
+
+/* ---- pins: a mark on the part, a leader, a numbered tag ------------------
+   Square, like everything else on the page; the tag is the legend's number block. */
+
+.engine__pins {
+  display: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+}
+
+.engine__pin {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: 0;
+  block-size: 0;
+}
+
+.engine__pin.is-off {
+  visibility: hidden;
+}
+
+.engine__pin::before {
+  content: '';
+  position: absolute;
+  inset-block-start: -3px;
+  inset-inline-start: -3px;
+  inline-size: 6px;
+  block-size: 6px;
+  background-color: var(--stripe-500);
+  box-shadow: 0 0 0 1.5px var(--ink-950);
+}
+
+.engine__pin-line {
+  position: absolute;
+  inset-block-start: -1px;
+  inset-inline-start: 0;
+  block-size: 2px;
+  background-color: var(--stripe-500);
+  box-shadow: 0 0 0 1px var(--ink-950);
+  transform-origin: 0 50%;
+}
+
+.engine__pin-tag {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+}
+
+.engine__pin-dot {
+  display: grid;
+  place-items: center;
+  inline-size: var(--engine-pin);
+  block-size: var(--engine-pin);
+  margin: calc(var(--engine-pin) / -2) 0 0 calc(var(--engine-pin) / -2);
+  background-color: var(--stripe-500);
+  color: var(--ink-950);
+  box-shadow:
+    0 0 0 2px var(--ink-950),
+    0 6px 14px rgb(0 0 0 / 0.4);
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Static tier: tags sit beside their part on the exploded poster, by percentage. */
+.engine__pins--static {
+  position: relative;
+  display: block;
+  grid-area: 2 / 1;
+  align-self: stretch;
+  inline-size: 100%;
+  max-inline-size: 380px;
+}
+
+.engine__pins--static .engine__pin::before,
+.engine__pins--static .engine__pin-line {
+  display: none;
+}
+
+/* ---- copy and legend ------------------------------------------------------ */
+
+.engine__copy {
+  display: grid;
+  /* A definite column: a beat is as wide as the caption, whatever is in it. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  align-content: start;
+  min-inline-size: 0;
+  max-inline-size: 60ch;
+}
+
+.engine__title {
+  margin: 0;
+}
+
+/* One thing per row, except the button and the stock line, which share one
+   when there is room. */
+.engine__beat {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: flex-start;
+  gap: 8px 14px;
+  min-inline-size: 0;
+}
+
+.engine__beat > * {
+  flex: 0 0 100%;
+  min-inline-size: 0;
+  margin: 0;
+}
+
+.engine__beat > .btn {
+  flex: none;
+}
+
+/* Beside the button only while it fits there on one line; otherwise under it,
+   in every language, and never a narrow column of words. */
+.engine__beat > .engine__stock {
+  flex: 0 1 auto;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.engine__legend {
+  counter-reset: engine-part;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.engine__legend > li {
+  counter-increment: engine-part;
+}
+
+/* A parts-catalogue tag: a yellow number block, then the name. */
+.engine__legend a {
+  --engine-tag: 32px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-block-size: var(--engine-tag);
+  padding-inline-end: 12px;
+  background-color: var(--ink-950);
+  color: var(--paper-50);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  transition: background-color 160ms linear;
+}
+
+/* The number is the pin's number: a CSS counter, so hidden items are skipped. */
+.engine__legend a::before {
+  content: counter(engine-part);
+  flex: none;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  inline-size: var(--engine-tag);
+  background-color: var(--stripe-500);
+  color: var(--ink-950);
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Stretch the tap target to 44px without growing the chip. */
+.engine__legend a::after {
+  content: '';
+  position: absolute;
+  inset: -6px 0;
+}
+
+.engine__legend a:hover {
+  background-color: var(--ink-800);
+}
+
+.engine__legend a:focus-visible {
+  outline: 2px solid var(--paper-50);
+  outline-offset: 2px;
+}
+
+/* The phone model has fewer loose parts, so it has fewer legend items. */
+@media (max-width: 1023.98px), (orientation: portrait) {
+  .engine__legend > li[data-tier='desktop'] {
+    display: none;
+  }
+}
+
+@media (min-width: 768px) {
+  .engine {
+    --engine-pin: 26px;
+  }
+
+  .engine__art {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .engine__poster,
+  .engine__pins--static {
+    max-inline-size: none;
+  }
+
+  .engine__poster[data-engine-poster='1'],
+  .engine__pins--static {
+    grid-area: 1 / 2;
+  }
+
+  .engine__legend {
+    gap: 8px;
+  }
+
+  .engine__legend a {
+    --engine-tag: 36px;
+    gap: 10px;
+    padding-inline-end: 14px;
+  }
+
+  .engine__legend a::after {
+    inset: -4px 0;
+  }
+}
+
+/* The landscape posters keep their left third free for copy: show the rest. */
+@media (min-width: 1024px) and (orientation: landscape) {
+  .engine__poster[data-engine-poster='1'],
+  .engine__pins--static {
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    object-position: right center;
+  }
+}
+
+/* ==========================================================================
+   Scroll mode: tall wrapper, sticky stage
+   ========================================================================== */
+
+.engine[data-engine-mode='scroll'] {
+  block-size: 300vh;
+  block-size: 300svh;
+}
+
+.engine[data-engine-mode='scroll'] .engine__stage {
+  position: sticky;
+  inset-block-start: var(--nav-h, 0px);
+  block-size: calc(100vh - var(--nav-h, 0px));
+  block-size: calc(100svh - var(--nav-h, 0px));
+  --engine-pad-top: 8px;
+  --engine-pad-bottom: 0px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0;
+  padding-block: var(--engine-pad-top) var(--engine-pad-bottom);
+  /* The starburst spills out of the art box; the stage is where it stops. */
+  overflow: hidden;
+}
+
+/* A size container, so the art box can be the largest fixed-aspect box that fits. */
+.engine[data-engine-mode='scroll'] .engine__frame {
+  container-type: size;
+  display: grid;
+  place-items: center;
+  min-block-size: 0;
+}
+
+.engine[data-engine-mode='scroll'] .engine__art {
+  display: block;
+  flex: none;
+  aspect-ratio: 2 / 3;
+  inline-size: min(100%, (100vh - var(--nav-h, 0px) - 200px) * 2 / 3);
+  inline-size: min(100cqw, 100cqh * 2 / 3);
+}
+
+/* Black spray starburst behind the engine, as the muralist would have put it. */
+.engine[data-engine-mode='scroll'] .engine__art::before {
+  content: '';
+  position: absolute;
+  inset: -14% -46%;
+  z-index: -1;
+  background: url('../img/engine/burst.webp') center / contain no-repeat;
+  transform: rotate(calc(var(--engine-p) * -9deg)) scale(calc(0.92 + var(--engine-p) * 0.2));
+  will-change: transform;
+  pointer-events: none;
+}
+
+/* The starburst is wider and taller than the stage, which cuts it off. So that
+   no straight edge shows where the section meets its neighbours, the wall is
+   painted back over it towards the stage's top and bottom edges: above the
+   burst, under the engine. The art box is centred in its frame (100cqh tall),
+   which is how the stage's edges are found from in here. */
+.engine[data-engine-mode='scroll'] .engine__art::after {
+  --engine-fade: clamp(48px, 16cqh, 132px);
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset-inline: -100vw;
+  inset-block: -10%;
+  inset-block:
+    calc((100% - 100cqh) / 2 - var(--engine-pad-top))
+    calc((100% - 100cqh) / 2 - var(--engine-pad-bottom));
+  background:
+    linear-gradient(to bottom, var(--wall-700) 4%, transparent) top / 100% var(--engine-fade) no-repeat,
+    linear-gradient(to top, var(--wall-700) 4%, transparent) bottom / 100% var(--engine-fade) no-repeat;
+  pointer-events: none;
+}
+
+.engine[data-engine-mode='scroll'] .engine__poster,
+.engine[data-engine-mode='scroll'] .engine__canvas,
+.engine[data-engine-mode='scroll'] .engine__pins {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  max-inline-size: none;
+}
+
+.engine[data-engine-mode='scroll'] .engine__poster {
+  aspect-ratio: auto;
+  object-fit: contain;
+  object-position: center;
+  opacity: 0;
+  transition: opacity 200ms linear;
+}
+
+.engine[data-engine-mode='scroll'] .engine__poster.is-active {
+  opacity: 1;
+}
+
+/* Never let the canvas take a touch: the page must keep scrolling under it. */
+.engine[data-engine-mode='scroll'] .engine__canvas {
+  display: block;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 320ms linear;
+}
+
+.engine[data-engine-state='3d'] .engine__canvas {
+  opacity: 1;
+}
+
+/* The poster leaves only after the live frame has faded in over it. */
+.engine[data-engine-state='3d'] .engine__poster.is-active {
+  opacity: 0;
+  transition-delay: 320ms;
+}
+
+.engine[data-engine-mode='scroll'] .engine__pins {
+  display: block;
+}
+
+.engine[data-engine-mode='scroll'] .engine__pin {
+  will-change: transform;
+  opacity: 0;
+  transition: opacity 160ms linear;
+}
+
+.engine[data-engine-mode='scroll'] .engine__pins.is-visible .engine__pin {
+  opacity: 1;
+}
+
+.engine[data-engine-mode='scroll'] .engine__pin-dot {
+  transform: scale(0.4);
+  transition: transform 260ms var(--ease-out);
+}
+
+.engine[data-engine-mode='scroll'] .engine__pins.is-visible .engine__pin-dot {
+  transform: none;
+}
+
+.engine[data-engine-mode='scroll'] .engine__pins.is-visible .engine__pin.is-hot .engine__pin-dot {
+  transform: scale(1.3);
+}
+
+/* Copy: the title on top, the three beats stacked in one cell below it. */
+.engine[data-engine-mode='scroll'] .engine__copy {
+  position: relative;
+  z-index: 1;
+  /* The flexible second row is what lets the last beat span both rows on
+     phones without stretching the title's row. */
+  grid-template-rows: auto 1fr;
+  gap: 4px;
+  min-block-size: 168px;
+  max-inline-size: none;
+  margin-inline: calc(var(--engine-gutter) * -1);
+  padding: 4px var(--engine-gutter) 14px;
+  /* Paint the wall back in under the caption, so no ray of the starburst runs
+     behind the words. */
+  background-color: var(--wall-700);
+}
+
+.engine[data-engine-mode='scroll'] .engine__copy::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 100%;
+  block-size: 28px;
+  background: linear-gradient(to top, var(--wall-700), transparent);
+  pointer-events: none;
+}
+
+.engine[data-engine-mode='scroll'] .engine__title {
+  grid-area: 1 / 1;
+  transition: opacity 200ms linear;
+}
+
+/* Inactive beats are only transparent, never hidden: screen readers get all
+   three, and the script scrolls to a beat when keyboard focus lands in it. */
+.engine[data-engine-mode='scroll'] .engine__beat {
+  grid-area: 2 / 1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms linear;
+}
+
+.engine[data-engine-mode='scroll'] .engine__beat.is-active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.engine[data-engine-mode='scroll'] .engine__legend > li {
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 200ms linear,
+    transform 320ms var(--ease-out);
+}
+
+.engine[data-engine-mode='scroll'] .engine__beat.is-active .engine__legend > li {
+  opacity: 1;
+  transform: none;
+}
+
+/* 50 ms stagger, legend and pins together. */
+.engine[data-engine-mode='scroll'] .engine__beat.is-active .engine__legend > li:nth-child(2),
+.engine[data-engine-mode='scroll'] .engine__pins.is-visible .engine__pin:nth-child(2),
+.engine[data-engine-mode='scroll'] .engine__pins.is-visible .engine__pin:nth-child(2) .engine__pin-dot {
+  transition-delay: 50ms;
+}
+
+.engine[data-engine-mode='scroll'] .engine__beat.is-active .engine__legend > li:nth-child(3),
+.engine[data-engine-mode='scroll'] .engine__pins.is-visible .engine__pin:nth-child(3),
+.engine[data-engine-mode='scroll'] .engine__pins.is-visible .engine__pin:nth-child(3) .engine__pin-dot {
+  transition-delay: 100ms;
+}
+
+.engine[data-engine-mode='scroll'] .engine__beat.is-active .engine__legend > li:nth-child(4),
+.engine[data-engine-mode='scroll'] .engine__pins.is-visible .engine__pin:nth-child(4),
+.engine[data-engine-mode='scroll'] .engine__pins.is-visible .engine__pin:nth-child(4) .engine__pin-dot {
+  transition-delay: 150ms;
+}
+
+.engine[data-engine-mode='scroll'] .engine__beat.is-active .engine__legend > li:nth-child(5),
+.engine[data-engine-mode='scroll'] .engine__pins.is-visible .engine__pin:nth-child(5),
+.engine[data-engine-mode='scroll'] .engine__pins.is-visible .engine__pin:nth-child(5) .engine__pin-dot {
+  transition-delay: 200ms;
+}
+
+.engine[data-engine-mode='scroll'] .engine__beat.is-active .engine__legend > li:nth-child(6),
+.engine[data-engine-mode='scroll'] .engine__pins.is-visible .engine__pin:nth-child(6),
+.engine[data-engine-mode='scroll'] .engine__pins.is-visible .engine__pin:nth-child(6) .engine__pin-dot {
+  transition-delay: 250ms;
+}
+
+.engine[data-engine-mode='scroll'] .engine__beat.is-active .engine__legend > li:nth-child(7),
+.engine[data-engine-mode='scroll'] .engine__pins.is-visible .engine__pin:nth-child(7),
+.engine[data-engine-mode='scroll'] .engine__pins.is-visible .engine__pin:nth-child(7) .engine__pin-dot {
+  transition-delay: 300ms;
+}
+
+.engine[data-engine-mode='scroll'] .engine__beat.is-active .engine__legend > li:nth-child(8),
+.engine[data-engine-mode='scroll'] .engine__pins.is-visible .engine__pin:nth-child(8),
+.engine[data-engine-mode='scroll'] .engine__pins.is-visible .engine__pin:nth-child(8) .engine__pin-dot {
+  transition-delay: 350ms;
+}
+
+/* Stacked layout (art on top, caption below): the last beat carries the legend
+   and the button, so it takes the title's row too. */
+@media (max-width: 1023.98px), (orientation: portrait) {
+  /* Short beats sit at the bottom of the caption, where the button will be. */
+  .engine[data-engine-mode='scroll'] .engine__copy {
+    grid-template-rows: 1fr auto;
+  }
+
+  .engine[data-engine-mode='scroll'] .engine__title {
+    align-self: end;
+  }
+
+  .engine[data-engine-mode='scroll'] .engine__beat[data-engine-beat='2'] {
+    grid-row: 1 / span 2;
+  }
+
+  .engine[data-engine-mode='scroll'][data-engine-step='2'] .engine__title {
+    opacity: 0;
+  }
+
+  .engine[data-engine-mode='scroll'] .engine__beat .t-lead {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+}
+
+/* Phones: the caption must stay short so the engine stays large. The last beat
+   drops its supporting sentence and the legend becomes one swipeable row, the
+   same height in every language. */
+@media (max-width: 767.98px) {
+  .engine[data-engine-mode='scroll'] .engine__beat[data-engine-beat='2'] .t-lead {
+    display: none;
+  }
+
+  /* The caption must stay short here: two lines beside the button are fine,
+     as long as the column is wide enough for them. */
+  .engine[data-engine-mode='scroll'] .engine__beat > .engine__stock {
+    flex: 1 1 10rem;
+  }
+
+  /* The chat button stays in the bottom corner for as long as the caption is pinned,
+     so the lines that end there wrap before it instead of running underneath: the
+     button's 78px corner (56 + 16 inset + 6 of air) less the page gutter. */
+  body[data-chat='on'] .engine[data-engine-mode='scroll'] .engine__beat .t-lead,
+  body[data-chat='on'] .engine[data-engine-mode='scroll'] .engine__beat > .engine__stock {
+    padding-inline-end: calc(78px - var(--engine-gutter));
+  }
+
+  body[data-chat='on'] .engine[data-engine-mode='scroll'] .engine__beat > .engine__stock {
+    flex-basis: calc(10rem + 78px - var(--engine-gutter));
+  }
+
+  .engine[data-engine-mode='scroll'] .engine__legend {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    margin: -4px calc(var(--engine-gutter) * -1);
+    padding: 6px var(--engine-gutter);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-padding-inline: var(--engine-gutter);
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+
+  .engine[data-engine-mode='scroll'] .engine__legend::-webkit-scrollbar {
+    display: none;
+  }
+
+  .engine[data-engine-mode='scroll'] .engine__legend > li {
+    flex: none;
+    scroll-snap-align: start;
+  }
+}
+
+/* The narrowest phones: the shortened line would need a fourth row at full size. */
+@media (max-width: 359.98px) {
+  body[data-chat='on'] .engine[data-engine-mode='scroll'] .engine__beat .t-lead {
+    font-size: 0.9375rem;
+  }
+}
+
+/* A phone on its side: too short to stack, so the caption goes beside the art. */
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 1023.98px) {
+  .engine[data-engine-mode='scroll'] .engine__stage {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    grid-template-rows: minmax(0, 1fr);
+    --engine-pad-bottom: 8px;
+    align-items: center;
+    column-gap: 24px;
+  }
+
+  .engine[data-engine-mode='scroll'] .engine__frame {
+    grid-area: 1 / 2;
+    block-size: 100%;
+  }
+
+  .engine[data-engine-mode='scroll'] .engine__copy {
+    grid-area: 1 / 1;
+    min-block-size: 0;
+    margin-inline: 0;
+    padding: 0;
+    background: none;
+  }
+
+  .engine[data-engine-mode='scroll'] .engine__copy::before {
+    display: none;
+  }
+
+  .engine[data-engine-mode='scroll'] .engine__art {
+    inline-size: min(100%, (100vh - var(--nav-h, 0px) - 16px) * 2 / 3);
+    inline-size: min(100cqw, 100cqh * 2 / 3);
+  }
+}
+
+/*
+ * Wide screens: the art box takes the whole stage and the copy is laid over
+ * its left side. --engine-safe-start tells the script how much of the frame
+ * to leave free; the camera composes the engine in the rest.
+ */
+@media (min-width: 1024px) and (orientation: landscape) {
+  .engine[data-engine-mode='scroll'] .engine__stage {
+    --engine-pad-top: 20px;
+    --engine-pad-bottom: 20px;
+    grid-template-rows: minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .engine[data-engine-mode='scroll'] .engine__frame {
+    grid-area: 1 / 1;
+    block-size: 100%;
+    justify-items: end;
+  }
+
+  .engine[data-engine-mode='scroll'] .engine__art {
+    --engine-safe-start: 0.38;
+    aspect-ratio: 16 / 10;
+    inline-size: min(100%, (100vh - var(--nav-h, 0px) - 40px) * 1.6);
+    inline-size: min(100cqw, 100cqh * 1.6);
+  }
+
+  /* Centred on the engine, not on the box, and faded out before it reaches the copy. */
+  .engine[data-engine-mode='scroll'] .engine__art::before {
+    inset: -19% -12% -19% 26%;
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 22%);
+    mask-image: linear-gradient(to right, transparent 0, #000 22%);
+  }
+
+  .engine[data-engine-mode='scroll'] .engine__copy {
+    grid-area: 1 / 1;
+    gap: 16px;
+    min-block-size: 0;
+    max-inline-size: min(34%, 30rem);
+    margin-inline: 0;
+    padding: 0;
+    background: none;
+  }
+
+  .engine[data-engine-mode='scroll'] .engine__copy::before {
+    display: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  .engine[data-engine-mode='scroll'] {
+    block-size: 350vh;
+    block-size: 350svh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .engine *,
+  .engine *::before,
+  .engine *::after {
+    transition: none !important;
+  }
+}

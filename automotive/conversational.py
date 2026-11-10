@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from automotive import dialogue as talk
 from automotive import engine_match, grounding, name_match, oil_match, replies, stock
 from automotive.codes import normalize_code, parse_codes, product_codes
+from automotive.knowledge import knowledge_for
 from automotive.recommendations import RecommendationService
 from automotive.rules import Rules, axle_verdict, requested_axle
 from automotive.vehicle_inventory import VehicleInventoryService
@@ -31,6 +32,7 @@ INFO_WARNINGS = {'STOCK_MAY_BE_STALE', 'VIN_NOT_PROVIDED', 'NAME_MATCH_ONLY',
 VEHICLE_FIELDS = {
     'make', 'model', 'model_year', 'trim', 'engine_code', 'fuel_type', 'fuel', 'transmission',
     'market', 'displacement_l', 'engine_cylinders', 'body', 'drive',
+    'generation', 'aspiration',
 }
 ACTS = Literal[
     'greeting', 'help', 'clarify_vehicle', 'clarify_engine', 'clarify_brakes',
@@ -350,6 +352,8 @@ class ConversationTurn:
                     'clarification': 'VIN_REQUIRED', 'vehicle': self.context}
         snapshot = self.search_service.start(
             self.vin, self.category, self.context.get('model_year'), self.context or None,
+            **({'request': self.message, 'field_origins': {k: 'context' for k in self.context}}
+               if knowledge_for(self.search_service) else {}),
         )
         identifier = snapshot['search_id']
         while True:
@@ -1101,7 +1105,8 @@ class ConversationTurn:
         # A lookup whose sources failed has not shown that the car lacks codes or a grade.
         failed = ((self.lookup_mode or self.direct_mode) and not cards and not supplier
                   and 'SOURCE_UNAVAILABLE' in self.warnings)
-        if ((oil_checked or category in {'engine_oil', 'oil_change'}) and not oil_verified
+        if (not getattr(self, 'ai_led', False)
+                and (oil_checked or category in {'engine_oil', 'oil_change'}) and not oil_verified
                 and not self.direct_mode and not failed and not act.startswith('clarify_vehicle')
                 and act not in {'clarify_year', 'clarify_model', 'vin_unreadable'}):
             resolved = bool(self.requirements.get('grades'))
