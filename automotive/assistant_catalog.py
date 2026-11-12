@@ -56,6 +56,7 @@ MAX_LIMIT = 60
 MAX_TERMS = 40  # in one group
 MAX_TERM_LENGTH = 80
 MAX_WORDS = 8  # in one term
+SHORTENED = 4  # the shortest shortened word a longer search word still finds
 MAX_JOIN = 6  # adjacent catalogue tokens one typed word may span
 CROSS_SHOWN = 8
 MIN_NUMBER = 4  # shorter numbers are not looked up
@@ -676,7 +677,9 @@ class CatalogIndex:
     # -- words -------------------------------------------------------------------------
 
     def _georgian_rows(self, word: str, exact: bool) -> set[int]:
-        """Rows with a Georgian token that starts with the word."""
+        """Rows with a Georgian token that starts with the word, and rows with a token of
+        four or more letters that the word starts with: the shop shortens its words
+        (`გამათ.` for `გამათბობელი`, `ამორტ.` for `ამორტიზატორის`)."""
         if exact:
             return set(self._georgian.get(word, ()))
         found: set[int] = set()
@@ -685,6 +688,8 @@ class CatalogIndex:
             if not words[at].startswith(word):
                 break
             found.update(self._georgian[words[at]])
+        for size in range(SHORTENED, len(word)):
+            found.update(self._georgian.get(word[:size], ()))
         return found
 
     def _splits(self, key: str) -> list[tuple[str, ...]]:

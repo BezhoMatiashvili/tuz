@@ -101,6 +101,7 @@ class Settings:
     operator_token: str = field(default="", repr=False)
     vin_hmac_key: str = field(default="", repr=False)
     anthropic_api_key: str = field(default="", repr=False)
+    openrouter_api_key: str = field(default="", repr=False)
     anthropic_workspace_id: str = ""
     anthropic_model: str = "claude-haiku-5-5"
     catalog_api_key: str = field(default="", repr=False)
@@ -148,6 +149,20 @@ class Settings:
     # rows that carry them (python -m automotive --read-part-names) and printed in the
     # guide the assistant reads. Empty or missing: the guide lists the names alone.
     assistant_names_path: str = ""
+    # Web research inside a turn (assistant_research): off, staff (the staff chat only) or
+    # all (the public widget too, once the provider path has been checked). It runs beside
+    # the catalogue search, waits at most AUTOMOTIVE_RESEARCH_SECONDS, and fills its cache.
+    assistant_research: str = "staff"
+    assistant_research_model: str = "claude-haiku-5-5"
+    assistant_research_seconds: float = 8.0
+    assistant_research_cache_path: str = "data/assistant/research_cache.sqlite3"
+    # What the catalogue's vehicle texts mean, read once by a model
+    # (python -m automotive.assistant_vehicles) and shown beside search results. Empty or
+    # missing: the results carry the texts alone.
+    assistant_vehicle_readings_path: str = ""
+    # The same for the catalogue's part names (python -m automotive.assistant_vehicles
+    # --names): what each part is and the positions its marks state.
+    assistant_name_readings_path: str = ""
     automotive_cache_path: str = "data/automotive-cache.sqlite3"
     knowledge_enabled: bool = False
     knowledge_validator_database_url: str = field(default="", repr=False)
@@ -178,6 +193,7 @@ class Settings:
             operator_token=os.getenv("AUTOMOTIVE_OPERATOR_TOKEN", ""),
             vin_hmac_key=os.getenv("AUTOMOTIVE_VIN_HMAC_KEY", ""),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
+            openrouter_api_key=os.getenv("OPENROUTER_API_KEY", "").strip(),
             anthropic_workspace_id=os.getenv("ANTHROPIC_WORKSPACE_ID", ""),
             anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-haiku-5-5"),
             catalog_api_key=os.getenv("CATALOG_API_KEY", ""),
@@ -210,6 +226,16 @@ class Settings:
             assistant_cache_ttl=os.getenv("AUTOMOTIVE_ASSISTANT_CACHE_TTL", "1h").strip().lower(),
             assistant_names_path=os.getenv(
                 "AUTOMOTIVE_ASSISTANT_NAMES_PATH", "data/assistant/part_names.json").strip(),
+            assistant_research=os.getenv("AUTOMOTIVE_RESEARCH", "staff").strip().lower(),
+            assistant_research_model=os.getenv(
+                "AUTOMOTIVE_RESEARCH_MODEL", "claude-haiku-5-5").strip(),
+            assistant_research_seconds=float(os.getenv("AUTOMOTIVE_RESEARCH_SECONDS", "8")),
+            assistant_research_cache_path=os.getenv(
+                "AUTOMOTIVE_RESEARCH_CACHE_PATH", "data/assistant/research_cache.sqlite3").strip(),
+            assistant_vehicle_readings_path=os.getenv(
+                "AUTOMOTIVE_VEHICLE_READINGS_PATH", "data/assistant/vehicle_readings.json").strip(),
+            assistant_name_readings_path=os.getenv(
+                "AUTOMOTIVE_NAME_READINGS_PATH", "data/assistant/name_readings.json").strip(),
             automotive_cache_path=os.getenv(
                 "AUTOMOTIVE_CACHE_PATH", "data/automotive-cache.sqlite3"),
             knowledge_enabled=_flag("AUTOMOTIVE_KNOWLEDGE_ENABLED", "false"),
@@ -256,6 +282,10 @@ class Settings:
             raise ValueError("AUTOMOTIVE_ASSISTANT_MAX_TOOL_CALLS must be between 1 and 20.")
         if settings.assistant_cache_ttl not in {"5m", "1h"}:
             raise ValueError("AUTOMOTIVE_ASSISTANT_CACHE_TTL must be 5m or 1h.")
+        if settings.assistant_research not in {"off", "staff", "all"}:
+            raise ValueError("AUTOMOTIVE_RESEARCH must be off, staff or all.")
+        if not 1 <= settings.assistant_research_seconds <= 30:
+            raise ValueError("AUTOMOTIVE_RESEARCH_SECONDS must be between 1 and 30.")
         validator = settings.knowledge_validator_database_url
         if validator and validator in {settings.database_url, settings.enrichment_database_url}:
             raise ValueError("Use a separate automotive validator credential.")

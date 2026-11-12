@@ -215,6 +215,18 @@ class ConversationTests(unittest.TestCase):
         self.assertEqual(self.engine.calls[-1][1]["vehicle"], {"make": "Changed"})
         self.assertIsNone(self.engine.calls[-1][1]["vin"])
 
+    def test_the_openrouter_key_is_redacted_like_the_anthropic_key(self):
+        backup = "fixture-openrouter-private"
+        self.engine.settings = Settings(anthropic_api_key="fixture-private",
+                                        openrouter_api_key=backup)
+        cid = self.store.create()["conversation_id"]
+        first = self.store.submit(cid, f"front pads {backup}", language="en")
+        self.finish(cid, first["turn_id"])
+        later = self.store.submit(cid, "rear ones", language="en")
+        self.finish(cid, later["turn_id"])
+        self.assertNotIn(backup, str(self.engine.calls[-1][1]["history"]))
+        self.assertNotIn(backup, str(self.store.get(cid, first["turn_id"])))
+
     def test_initial_vehicle_payload_redacts_secrets_and_vin(self):
         self.engine.release.clear()
         cid = self.store.create()["conversation_id"]

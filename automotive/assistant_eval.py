@@ -58,6 +58,8 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SCENARIOS = ROOT / "tests" / "fixtures" / "assistant" / "conversations.json"
 DEFAULT_LEDGER = ROOT / "data" / "assistant_eval" / "cost_ledger.jsonl"
 DEFAULT_VINS = ROOT / "vins.csv"
+BENCH_TURN_SECONDS = 45.0  # a bench turn also starts its session
+BENCH_RESEARCH_CACHE = "data/assistant_bench/research_cache.sqlite3"
 DEFAULT_BUDGET = 40.0
 # USD per million tokens: input, output, cache read, cache write kept five minutes. A write
 # kept for an hour costs twice the input price.
@@ -1954,11 +1956,13 @@ def stock_reader(index: Any) -> Any:
 
 
 def live(model: str | None, audience: str,
-         cars: dict[str, dict] | None = None) -> tuple[Any, Any, Any, str]:
+         cars: dict[str, dict] | None = None,
+         client: Any = None) -> tuple[Any, Any, Any, str]:
     """The application as the chats run it, with the assistant engine and no chat log, so
     test turns never reach the owner's logs. ``cars`` are the stand-in VINs of the run
-    with the car each decodes to. Returns the app, the store of the audience, the
-    catalogue index and the model in use."""
+    with the car each decodes to. ``client`` replaces the provider's client (the
+    subscription bench); its turns get more time, as its sessions start per turn.
+    Returns the app, the store of the audience, the catalogue index and the model in use."""
     from dataclasses import replace
 
     from automotive.api import create_app
@@ -1968,6 +1972,8 @@ def live(model: str | None, audience: str,
     changes: dict = {"chat_engine": "assistant", "chat_log_path": "", "site_chat_log_path": ""}
     if model:
         changes["assistant_model"] = model
+    if client is not None:
+        changes["assistant_turn_seconds"] = BENCH_TURN_SECONDS
     settings = replace(Settings.from_env(), **changes)
     app = create_app(settings=settings)
     app.state.site.catalog_store.refresh()
@@ -1975,6 +1981,17 @@ def live(model: str | None, audience: str,
     if audience == "public" and public is None:
         raise RuntimeError("The public chat is not installed in this configuration.")
     store = public.store if audience == "public" else app.state.conversations
+    if client is not None:
+        store.chat_service.client = client
+        store.turn_seconds = max(float(getattr(store, "turn_seconds", 0) or 0),
+                                 BENCH_TURN_SECONDS + 30)
+        # Research on the bench runs on the subscription too: never the paid client that
+        # the application built it with.
+        extras = getattr(store.chat_service, "assistant_extras", None)
+        if isinstance(extras, dict) and extras.get("research") is not None:
+            from automotive.assistant_extras import bench_research
+
+            extras["research"] = bench_research(settings, BENCH_RESEARCH_CACHE)
     index = catalogue_index(store.chat_service)
     if index is None:
         raise RuntimeError("The catalogue could not be loaded.")
@@ -2018,11 +2035,23 @@ def earlier_sample(index: Any, earlier: dict[str, dict], only: str | None) -> li
     return sample
 
 
+def bench_client(args: Any) -> Any:
+    """The subscription bench's client when ``--runtime subscription`` is asked for."""
+    if getattr(args, "runtime", "api") != "subscription":
+        return None
+    from automotive.assistant_bench import SubscriptionClient
+
+    return SubscriptionClient()
+
+
 def run_catalogue(parser: Any, args: Any, out: TextIO) -> None:
     """The ``--evaluate-assistant catalogue`` command."""
     ledger = Ledger(args.ledger or os.getenv("AUTOMOTIVE_EVAL_LEDGER") or DEFAULT_LEDGER)
     budget = DEFAULT_BUDGET if args.budget is None else float(args.budget)
     before = ledger.total()
+    client = bench_client(args)
+    if client is not None:  # nothing is billed: the paid ledger neither limits nor counts it
+        budget, before = float("inf"), 0.0
     if before >= budget:
         parser.exit(2, f"Nothing was run: ${before:.2f} of the ${budget:.2f} budget is "
                        f"already spent ({ledger.path}).\n")
@@ -2038,7 +2067,7 @@ def run_catalogue(parser: Any, args: Any, out: TextIO) -> None:
     judging = getattr(args, "review", None)
     judging = JUDGED_TURNS if judging is None else max(0, int(judging))
     audience = args.audience or "public"
-    app, store, index, model = live(args.model, audience)
+    app, store, index, model = live(args.model, audience, client=client)
     sample = earlier_sample(index, earlier, args.only) if earlier is not None \
         else draw(index.rows(), size, seed)
     if not sample:
@@ -2072,15 +2101,20 @@ def run_catalogue(parser: Any, args: Any, out: TextIO) -> None:
                             budget_left=left - spent - models.total(), parallel=workers)
     finally:
         what = f"assistant-eval:catalogue:{audience}:{len(sample)} rows"
-        ledger.append(model, what, spent + warming)
-        for name, usd in models.spent().items():
-            ledger.append(name, f"{what}:{'judge' if name == models.judge_model else 'writer'}",
-                          usd)
+        if client is None:
+            ledger.append(model, what, spent + warming)
+            for name, usd in models.spent().items():
+                ledger.append(name, f"{what}:"
+                              f"{'judge' if name == models.judge_model else 'writer'}", usd)
     summary = summarize_catalogue(records, judged)
     summary["spent_usd"] = {model: round(spent + warming, 4),
                             **{name: round(usd, 4) for name, usd in models.spent().items()}}
     print_catalogue(summary, records, out, model)
-    out.write(f"ledger: ${ledger.total():.2f} of ${budget:.2f} ({ledger.path})\n")
+    if client is None:
+        out.write(f"ledger: ${ledger.total():.2f} of ${budget:.2f} ({ledger.path})\n")
+    else:
+        out.write("runtime: subscription; the dollar figures above are what the same tokens "
+                  "would cost on the API, nothing was billed\n")
     if getattr(args, "csv_out", None) and judged is not None:
         out.write(f"{write_csv(args.csv_out, judged)} judged offers written to "
                   f"{args.csv_out}\n")
@@ -2088,6 +2122,7 @@ def run_catalogue(parser: Any, args: Any, out: TextIO) -> None:
         settings = store.chat_service.settings
         report = {"kind": "catalogue", "model": model, "writer": models.writer,
                   "judge": models.judge_model, "audience": audience, "seed": seed,
+                  "runtime": getattr(args, "runtime", "api"),
                   "started_at": started,
                   "settings": {key: getattr(settings, key, None) for key in (
                       "assistant_effort", "assistant_thinking", "assistant_turn_seconds",
@@ -2099,7 +2134,7 @@ def run_catalogue(parser: Any, args: Any, out: TextIO) -> None:
         out.write(f"report written to {args.report_out}\n")
     out.flush()
     for closing in (getattr(app.state.site, "chat", None), app.state.conversations,
-                    getattr(store, "search_service", None), store.chat_service):
+                    getattr(store, "search_service", None), store.chat_service, client):
         with contextlib.suppress(Exception):  # Closing is best effort at the end of a run.
             closing.close()
 
@@ -2113,6 +2148,9 @@ def run(parser: Any, args: Any, out: TextIO) -> None:
     ledger = Ledger(args.ledger or os.getenv("AUTOMOTIVE_EVAL_LEDGER") or DEFAULT_LEDGER)
     budget = DEFAULT_BUDGET if args.budget is None else float(args.budget)
     before = ledger.total()
+    client = bench_client(args)
+    if client is not None:  # nothing is billed: the paid ledger neither limits nor counts it
+        budget, before = float("inf"), 0.0
     if before >= budget:
         parser.exit(2, f"Nothing was run: ${before:.2f} of the ${budget:.2f} budget is "
                        f"already spent ({ledger.path}).\n")
@@ -2126,7 +2164,7 @@ def run(parser: Any, args: Any, out: TextIO) -> None:
     vins = read_vins(args.vins or DEFAULT_VINS)
     cars = stand_ins(data["cars"], scenarios, vins)
     audience = args.audience or "public"
-    app, store, index, model = live(args.model, audience, cars)
+    app, store, index, model = live(args.model, audience, cars, client=client)
     out.write(f"{len(scenarios)} scenarios, model {model}, audience {audience}; "
               f"{len(cars)} stand-in VINs; ${before:.2f} of ${budget:.2f} spent so far\n")
     out.flush()
@@ -2139,14 +2177,20 @@ def run(parser: Any, args: Any, out: TextIO) -> None:
             topics=data["topics"], budget_left=budget - before - warming,
             parallel=max(1, int(args.parallel or 1)))
     finally:
-        ledger.append(model, f"assistant-eval:{audience}:{len(scenarios)} scenarios",
-                      spent + warming)
+        if client is None:
+            ledger.append(model, f"assistant-eval:{audience}:{len(scenarios)} scenarios",
+                          spent + warming)
     summary = summarize(results)
     print_summary(summary, out, model)
-    out.write(f"ledger: ${ledger.total():.2f} of ${budget:.2f} ({ledger.path})\n")
+    if client is None:
+        out.write(f"ledger: ${ledger.total():.2f} of ${budget:.2f} ({ledger.path})\n")
+    else:
+        out.write("runtime: subscription; the dollar figures above are what the same tokens "
+                  "would cost on the API, nothing was billed\n")
     if args.report_out:
         settings = store.chat_service.settings
         report = {"model": model, "audience": audience, "started_at": started,
+                  "runtime": getattr(args, "runtime", "api"),
                   "settings": {key: getattr(settings, key, None) for key in (
                       "assistant_effort", "assistant_thinking", "assistant_turn_seconds",
                       "assistant_max_requests", "assistant_max_tool_calls")},
@@ -2157,6 +2201,6 @@ def run(parser: Any, args: Any, out: TextIO) -> None:
         out.write(f"report written to {args.report_out}\n")
     out.flush()
     for closing in (getattr(app.state.site, "chat", None), app.state.conversations,
-                    getattr(store, "search_service", None), store.chat_service):
+                    getattr(store, "search_service", None), store.chat_service, client):
         with contextlib.suppress(Exception):  # Closing is best effort at the end of a run.
             closing.close()

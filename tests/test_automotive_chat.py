@@ -157,8 +157,9 @@ class ChatTests(unittest.TestCase):
         settings = Settings(anthropic_api_key="key", anthropic_workspace_id="workspace")
         with patch("automotive.chat.anthropic.Anthropic") as constructor:
             ChatService(self.repository, self.vin, settings)._client()
+        # The direct client sends only its API key, never a bearer token from the environment.
         self.assertEqual(constructor.call_args.kwargs["default_headers"],
-                         {"anthropic-workspace-id": "workspace"})
+                         {"anthropic-workspace-id": "workspace", "Authorization": anthropic.omit})
         self.assertEqual(constructor.call_args.kwargs["max_retries"], 0)
         self.assertEqual(Settings().anthropic_model, "claude-haiku-5-5")
 

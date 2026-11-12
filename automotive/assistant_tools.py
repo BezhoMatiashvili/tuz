@@ -43,7 +43,12 @@ DEPENDS = "depends"
 JUDGEMENTS = (*CONFIDENCES, DEPENDS)
 OUTCOMES = ("offered", "asked", "nothing_found", "sold_out", "chat", "handoff")
 LANGUAGES = ("ka", "en", "ru")
-READ_TOOLS = ("search_catalog", "lookup_codes", "equivalents", "supplier_parts", "oil_guide")
+READ_TOOLS = ("search_catalog", "lookup_codes", "equivalents", "supplier_parts", "oil_guide",
+              "car_numbers", "research", "shop_info")
+RESEARCH_KINDS = ("numbers", "verify", "fact")
+SHOP_NUMBER = 5  # shorter numbers name parts of several brands: not matched to rows
+CARRIED_ROWS = 24  # rows a car_numbers or research answer carries
+CROSS_PER_PART = 8  # cross numbers shown per crawled part
 
 SUPPLIER_SECONDS = 6.0  # how long supplier_parts and oil_guide wait for outside sources
 SETTLE_SECONDS = 0.6  # no outside source running for this long: nothing more is coming
@@ -221,7 +226,8 @@ def tool_definitions(ttl: str = "") -> list[dict]:
     schemas = {
         "search_catalog": _schema({
             "make_terms": _strings("make_terms"), "vehicle_terms": _strings("vehicle_terms"),
-            "part_terms": _strings("part_terms"),
+            "part_terms": _strings("part_terms"), "exclude_terms": _strings("exclude_terms"),
+            "in_stock_only": _field("boolean", "in_stock_only"),
         }),
         "lookup_codes": _schema({"numbers": _strings("numbers"),
                                  "vehicle_hint": _field("string", "vehicle_hint")}),
@@ -229,6 +235,21 @@ def tool_definitions(ttl: str = "") -> list[dict]:
         "supplier_parts": _schema({
             "part_group": _field("string", "part_group", enum=list(SUPPLIER_GROUPS)), **car}),
         "oil_guide": _schema(copy.deepcopy(car)),
+        "car_numbers": _schema({
+            "make": _field("string", "cn_make"), "model_terms": _strings("model_terms"),
+            "year": _field("integer", "cn_year"), "engine_terms": _strings("engine_terms"),
+            "part_terms": _strings("cn_part_terms"), "vehicle_ids": _strings("vehicle_ids"),
+        }),
+        "research": _schema({
+            "kind": _field("string", "research_kind", enum=list(RESEARCH_KINDS)),
+            **{name: copy.deepcopy(car[name]) for name in (
+                "make", "model", "year", "trim", "engine_code", "body")},
+            "part": _field("string", "research_part"),
+            "position": _field("string", "research_position"),
+            "numbers": _strings("research_numbers"),
+            "question": _field("string", "research_question"),
+        }),
+        "shop_info": _schema({}),
         # In the order the answer is decided: the language and the car, the rows, what to
         # ask, and only then the words for the customer.
         "finish": _schema({
@@ -340,8 +361,11 @@ class Toolbox:
 
     def __init__(self, *, index: Any, repository: Any, search_service: Any, vin: str | None,
                  audience: str, handles: dict | None, deadline: float,
-                 crawled: Any = None, clock: Any = time.monotonic) -> None:
+                 crawled: Any = None, clock: Any = time.monotonic,
+                 extras: dict | None = None) -> None:
         self.index, self.search_service, self.vin = index, search_service, vin
+        # Services of the newer tools (see assistant_extras): each may be missing.
+        self.extras: dict = dict(extras) if isinstance(extras, dict) else {}
         self.audience, self.deadline, self.clock = audience, deadline, clock
         self.crawled = crawled or PartsCatalogService(_bounded(repository))
         self.handles: dict[str, str] = {
@@ -408,8 +432,24 @@ class Toolbox:
         data = convert(output.data)
         if count:
             data = {"columns": [*self.columns, *output.extra_columns], **data}
+            for key, field_name in (("vehicle_readings", "vehicle"), ("name_readings", "name")):
+                readings = self._readings(output, key, field_name)
+                if readings:
+                    data[key] = readings
         self.sourced.update(output.sourced)
         return data, count
+
+    def _readings(self, output: Output, key: str, field_name: str) -> dict[str, str]:
+        """What the vehicle texts (or part names) of a result's rows mean, as a model read
+        them once (``assistant_vehicles``): advice beside the rows; the row decides."""
+        known = self.extras.get(key) or {}
+        found: dict[str, str] = {}
+        if known:
+            for row in self._rows(self.rows_in(output)):
+                text = (getattr(row, field_name, "") or "").strip()
+                if text in known and text not in found:
+                    found[text] = known[text]
+        return found
 
     @staticmethod
     def rows_in(output: Output) -> list[str]:
@@ -477,7 +517,8 @@ class Toolbox:
                             "Send every field of the tool's schema.")
         tools = {"search_catalog": self._search, "lookup_codes": self._lookup,
                  "equivalents": self._equivalents, "supplier_parts": self._supplier,
-                 "oil_guide": self._oil}
+                 "oil_guide": self._oil, "car_numbers": self._car_numbers,
+                 "research": self._research, "shop_info": self._shop_info}
         tool = tools.get(name)
         if tool is None:
             raise ToolError(f"There is no tool named {name!r}.",
@@ -493,14 +534,15 @@ class Toolbox:
         conversation holds a VIN. A source whose state is unknown counts as able."""
         if self.search_service is None:
             return {"supplier_parts": "cannot answer in this turn",
-                    "oil_guide": "cannot answer in this turn"}
+                    "oil_guide": "cannot answer in this turn", **self._extra_sources()}
         has_vin = self.vin is not None
         every = [group for group in SUPPLIER_GROUPS if group not in OIL_GROUPS]
         groups = [group for group in every if self._able(group, has_vin) != []]
         oil = self._able(OIL_GROUPS[0], has_vin) != []
         return {"supplier_parts": "any part group" if groups == every else
                 groups or "cannot answer in this turn",
-                "oil_guide": "can answer" if oil else "cannot answer in this turn"}
+                "oil_guide": "can answer" if oil else "cannot answer in this turn",
+                **self._extra_sources()}
 
     def label(self, name: str, args: Any) -> str:
         """A short text for the progress line, built from the call's own terms."""
@@ -520,6 +562,17 @@ class Toolbox:
         elif name == "equivalents":
             row = self.row(args.get("id"))
             text = f"{row.brand} {row.code}".strip() if row is not None else ""
+        elif name == "car_numbers":
+            text = " · ".join(part for part in (
+                " ".join([str(args.get("make") or ""), words("model_terms", 2)]).strip(),
+                words("part_terms", 2)) if part)
+        elif name == "research":
+            car = " ".join(str(args.get(key)) for key in ("make", "model", "year")
+                           if args.get(key))
+            text = " · ".join(part for part in (
+                car, str(args.get("part") or "") or words("numbers", 2)) if part)
+        elif name == "shop_info":
+            text = "shop"
         else:
             car = " ".join(str(args.get(key)) for key in ("make", "model", "year")
                            if args.get(key))
@@ -544,8 +597,19 @@ class Toolbox:
         position = columns.index("id") if "id" in columns else 0
         rows = self._rows(item[position] for item in found.get("rows") or [])
         near = self._rows(item[position] for item in found.get("similar_spelling_rows") or [])
-        elsewhere = self._elsewhere([*rows, *near])
-        letters = same_parts([*rows, *near, *elsewhere])
+        unmade = self._without_make(groups, args, [*rows, *near])
+        hidden = self._hidden(groups, limit) if args.get("in_stock_only") is True else []
+        visible = [*rows, *near, *unmade]
+        elsewhere = self._elsewhere([*visible, *hidden])
+        behind: list[Any] = []
+        if hidden and elsewhere:
+            # The hidden rows that explain a twin: the out-of-stock rows that name the car.
+            marks = same_parts([*elsewhere, *hidden])
+            twins = set(marks[:len(elsewhere)]) - {""}
+            behind = [row for row, mark in zip(hidden, marks[len(elsewhere):], strict=True)
+                      if mark in twins]
+        letters = same_parts([*visible, *elsewhere, *behind])
+        end = len(visible) + len(elsewhere)
         listed = Table(rows, [[letter] for letter in letters[:len(rows)]])
         data: dict = {}
         for key, value in found.items():
@@ -563,10 +627,52 @@ class Toolbox:
         if near:
             data["rows_under_similar_spellings"] = Table(
                 near, [[letter] for letter in letters[len(rows):len(rows) + len(near)]])
+        if unmade:
+            start = len(rows) + len(near)
+            data["rows_without_the_make_word"] = Table(
+                unmade, [[letter] for letter in letters[start:start + len(unmade)]])
         if elsewhere:
             data["in_stock_under_other_cars"] = Table(
-                elsewhere, [[letter] for letter in letters[len(rows) + len(near):]])
+                elsewhere, [[letter] for letter in letters[len(visible):end]])
+        if behind:
+            data["out_of_stock_rows_with_a_twin_in_stock"] = Table(
+                behind, [[letter] for letter in letters[end:]])
         return Output(data, ("same_part",))
+
+    def _hidden(self, groups: dict, limit: int) -> list[Any]:
+        """The out-of-stock rows that match the car words and the part, which in_stock_only
+        hid: an in-stock row that is the same part by its numbers, filed under another car,
+        is reached only through them."""
+        if not groups["vehicle_terms"]:
+            return []
+        try:
+            loose = self.index.search(**groups, in_stock_only=False, limit=limit)
+        except SearchError:
+            return []
+        columns = list(loose.get("columns") or ROW_COLUMNS)
+        position = columns.index("id") if "id" in columns else 0
+        matched = int(loose.get("matched_vehicle") or 0)
+        found = self._rows(item[position] for item in (loose.get("rows") or [])[:matched])
+        return [row for row in found if not ((row.store or 0) > 0 or (row.warehouse or 0) > 0)]
+
+    def _without_make(self, groups: dict, args: dict, shown: list[Any]) -> list[Any]:
+        """Rows that match the car words and the part but write no make word: the make terms
+        left them out of the result, and the catalogue omits the make on some rows."""
+        if not (groups["make_terms"] and groups["vehicle_terms"] and groups["part_terms"]):
+            return []
+        try:
+            loose = self.index.search(
+                make_terms=[], vehicle_terms=groups["vehicle_terms"],
+                part_terms=groups["part_terms"], exclude_terms=groups["exclude_terms"],
+                in_stock_only=args.get("in_stock_only") is True, limit=SEARCH_LIMIT)
+        except SearchError:
+            return []
+        columns = list(loose.get("columns") or ROW_COLUMNS)
+        position = columns.index("id") if "id" in columns else 0
+        matched = int(loose.get("matched_vehicle") or 0)
+        inside = {str(row.id) for row in shown}
+        found = self._rows(item[position] for item in (loose.get("rows") or [])[:matched])
+        return [row for row in found if str(row.id) not in inside][:ELSEWHERE_ROWS]
 
     def _elsewhere(self, rows: list[Any]) -> list[Any]:
         """Rows in stock, outside a result, that are the same part by their numbers as a
@@ -612,9 +718,9 @@ class Toolbox:
             entry["rows"] = Table(rows, [[FIELD_NAMES.get(fields.get(str(row.id)), "")]
                                          for row in rows])
             shown.update(str(row.id) for row in rows)
-            known = self._crawled(number, hint, entry, shown)
-            if known:
-                sourced.append(plain(number))
+            # What the crawled catalogues list for a number is shown, but a list of cars
+            # is not a source for this car: `confirmed` rests on car-specific tools only.
+            self._crawled(number, hint, entry, shown)
             if not rows and len(entry) == 2:
                 entry["note"] = "No catalogue row carries this number."
         data: dict = {"numbers": entries}
@@ -703,6 +809,103 @@ class Toolbox:
                         "part, one is a weak hint. Position and car must still agree."
                         if rows else f"No other row shares a number with {handle}.")
         return Output(data, ("shared_numbers", "same_brand"))
+
+    # -- data beyond the shop's catalogue: crawled fitments, the web, the shop's facts ------
+
+    def _extra_sources(self) -> dict:
+        return {"car_numbers": "can answer" if self.extras.get("car_numbers") is not None
+                else "cannot answer in this turn",
+                "research": "can answer" if self._research_on()
+                else "cannot answer in this turn",
+                "shop_info": "can answer" if self.extras.get("site_content") is not None
+                else "cannot answer in this turn"}
+
+    def _research_on(self) -> bool:
+        return self.extras.get("research") is not None and \
+            self.audience in tuple(self.extras.get("research_audiences") or ())
+
+    def _carriers(self, numbers: list[str]) -> Table:
+        """The shop rows that carry any of the numbers, in stock first, each with the number
+        it carries. Numbers shorter than five letters and digits are not matched: they
+        name parts of several brands."""
+        usable = [number for number in dict.fromkeys(numbers)
+                  if len(plain(number)) >= SHOP_NUMBER]
+        hits = self.index.by_codes(usable, limit_per_number=12) if usable else {}
+        rows, via, seen = [], [], set()
+        for number in usable:
+            for item in _matches(hits, number):
+                row = self.index.row(_row_id(item))
+                if row is None or str(row.id) in seen or item.get("field") == "shop_code":
+                    continue
+                seen.add(str(row.id))
+                rows.append(row)
+                via.append([number])
+        order = sorted(range(len(rows)), key=lambda position: not (
+            (rows[position].store or 0) > 0 or (rows[position].warehouse or 0) > 0))
+        return Table([rows[position] for position in order][:CARRIED_ROWS],
+                     [via[position] for position in order][:CARRIED_ROWS])
+
+    def _car_numbers(self, args: dict) -> Output:
+        from automotive.assistant_sources import BadArguments, SourceUnavailable, numbers_for
+
+        service = self.extras.get("car_numbers")
+        if service is None:
+            raise ToolError("The crawled manufacturer catalogues are not connected here.",
+                            JUDGE)
+        try:
+            found = service.find(args)
+        except (BadArguments, SourceUnavailable) as exc:
+            raise ToolError(exc.error, exc.fix) from None
+        vehicles = found.get("vehicles") or []
+        chosen = [str(item) for item in args.get("vehicle_ids") or [] if str(item).strip()]
+        ids = chosen or ([str(vehicles[0].get("id"))] if len(vehicles) == 1 else [])
+        numbers = numbers_for(found, ids or None)
+        parts = []
+        for part in (found.get("parts") or [])[:30]:
+            cross = part.get("cross") or []
+            entry = {key: part.get(key) for key in ("vehicle_id", "brand", "number", "part",
+                                                    "position", "note") if part.get(key)}
+            if cross:
+                entry["cross"] = [f"{item.get('brand') or ''} {item.get('number')}".strip()
+                                  for item in cross[:CROSS_PER_PART]]
+                if len(cross) > CROSS_PER_PART:
+                    entry["more_cross"] = len(cross) - CROSS_PER_PART
+            parts.append(entry)
+        data: dict = {"vehicles": vehicles, "parts": parts, "rows": self._carriers(numbers)}
+        if found.get("note"):
+            data["note"] = found["note"]
+        if not ids and len(vehicles) > 1:
+            data["choose"] = ("Several crawled vehicles match: call car_numbers again with "
+                              "vehicle_ids of the one that is the customer's car. Only the "
+                              "numbers of a vehicle you chose count for confirmed.")
+        # The numbers of a vehicle the model chose (or the only match) are this car's.
+        return Output(data, ("via",), tuple(plain(number) for number in numbers) if ids else ())
+
+    def _research(self, args: dict) -> Output:
+        from automotive.assistant_research import numbers_of
+
+        if not self._research_on():
+            raise ToolError("Web research is not available in this chat.", JUDGE)
+        seconds = float(self.extras.get("research_seconds") or 8.0)
+        # Leave the finish request its time: research waits at most what the turn can spare.
+        wait = max(0.5, min(seconds, self.deadline - self.clock() - 8.0))
+        result = self.extras["research"].ask(args, wait=wait)
+        status = result.get("status")
+        data: dict = {key: result.get(key) for key in ("status", "findings", "answer", "note")
+                      if result.get(key)}
+        if status == "answered":
+            data["rows"] = self._carriers(numbers_of(result))
+        # Numbers found on the web support check, never confirmed: nothing is sourced.
+        return Output(data, ("via",))
+
+    def _shop_info(self, args: dict) -> Output:
+        from automotive.assistant_sources import shop_info
+
+        site = self.extras.get("site_content")
+        if site is None:
+            raise ToolError("The shop's details are not available here.",
+                            "Say that the shop staff will tell, and offer to look for parts.")
+        return Output({"georgian": shop_info(site, "ka"), "english": shop_info(site, "en")})
 
     # -- outside sources -------------------------------------------------------------------
 

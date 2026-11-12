@@ -55,6 +55,7 @@ from automotive.assistant_tools import (
     typed_tokens,
 )
 from automotive.codes import codes_in_text
+from automotive.model_client import out_of_credit
 from automotive.rules import Rules
 
 LOGGER = logging.getLogger(__name__)
@@ -87,7 +88,8 @@ DASHES = re.compile("[\u2010-\u2015\u2212]")
 EPHEMERAL = {"type": "ephemeral"}
 ACTS = {"offered": "results", "asked": "clarify", "nothing_found": "no_results",
         "sold_out": "none_in_stock", "chat": "help", "handoff": "help"}
-SECRET_SETTINGS = ("anthropic_api_key", "operator_token", "vin_hmac_key", "database_url",
+SECRET_SETTINGS = ("anthropic_api_key", "openrouter_api_key", "operator_token", "vin_hmac_key",
+                   "database_url",
                    "enrichment_database_url", "catalog_api_key", "site_database_url",
                    "knowledge_validator_database_url")
 # What the staff form and the VIN decoder may state about a car.
@@ -376,7 +378,8 @@ class AssistantTurn:
         self.toolbox = Toolbox(
             index=index, repository=self.repository, search_service=self.search_service,
             vin=self.vin, audience=self.audience, handles=self.memory.get("handles"),
-            deadline=self.deadline, crawled=getattr(self.service, "crawled_catalog", None))
+            deadline=self.deadline, crawled=getattr(self.service, "crawled_catalog", None),
+            extras=getattr(self.service, "assistant_extras", None))
         context = self._context()
         request = {
             "system": prompt.system_blocks(self.redact(str(index.guide() or "")),
@@ -392,16 +395,23 @@ class AssistantTurn:
             return self._failure("AUTHENTICATION_ERROR")
         except anthropic.PermissionDeniedError:
             return self._failure("ACCESS_DENIED")
-        except anthropic.RateLimitError:
-            return self._failure("PROVIDER_RATE_LIMITED")
+        except anthropic.RateLimitError as exc:
+            # The usage tier's monthly spend cap is a 429 too; asking again fails until
+            # the month ends.
+            return self._failure("PROVIDER_BILLING" if out_of_credit(exc)
+                                 else "PROVIDER_RATE_LIMITED")
         except (anthropic.APITimeoutError, TimeoutError):
             return self._failure("TIMEOUT")
         except anthropic.BadRequestError as exc:
             # A request the provider refuses for the account's sake says so in its words
             # ("Your credit balance is too low ..."): that is no fault of this request.
             said = str(getattr(exc, "message", "") or exc).casefold()
-            billing = "credit balance" in said or "billing" in said
+            billing = out_of_credit(exc) or "credit balance" in said or "billing" in said
             return self._failure("PROVIDER_BILLING" if billing else "PROVIDER_UNAVAILABLE")
+        except anthropic.APIStatusError as exc:
+            # A 402: no money on the account, the backup's included when neither can pay.
+            return self._failure("PROVIDER_BILLING" if out_of_credit(exc)
+                                 else "PROVIDER_UNAVAILABLE")
         except anthropic.APIError:
             return self._failure("PROVIDER_UNAVAILABLE")
         except (RuntimeError, OSError, psycopg.Error):
@@ -539,8 +549,9 @@ class AssistantTurn:
                 said = str(getattr(exc, "message", "") or exc).casefold()
                 if forced and "tool_choice" in said:
                     state["auto_only"] = True
-                elif quiet and "thinking" in said:
+                elif quiet and ("thinking" in said or "reasoning" in said):
                     # First the lowest setting the model names, then its own default.
+                    # OpenRouter says "Reasoning is mandatory" where Anthropic says thinking.
                     state["thinks" if quiet == "between_tools" else "no_disabled"] = True
                 elif effort and ("output_config" in said or "effort" in said):
                     state["no_effort"] = True

@@ -6,6 +6,7 @@ import copy
 import json
 import time
 import unittest
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -135,12 +136,15 @@ class ConversationalChatTests(unittest.TestCase):
         self.assertTrue(all(r['is_error'] for r in messages[2]['content']))
 
     def test_history_vin_context_and_secret_values_are_redacted_from_every_payload(self):
+        self.service.settings = replace(self.service.settings,
+                                        openrouter_api_key='fixture-backup-private-key')
         self.client.messages.create.return_value = finish(act='help')
-        self.turn('help operator-secret', history=[{'question': f'{VIN} secret-key',
+        self.turn('help operator-secret fixture-backup-private-key',
+                  history=[{'question': f'{VIN} secret-key',
                                                   'answer': 'operator-secret'}],
                   vehicle={**VEHICLE, 'engine_code': VIN})
         payload = json.dumps(self.client.messages.create.call_args.kwargs)
-        for secret in (VIN, 'secret-key', 'operator-secret'):
+        for secret in (VIN, 'secret-key', 'operator-secret', 'fixture-backup-private-key'):
             self.assertNotIn(secret, payload)
 
     def test_previous_exchange_code_does_not_authorize_current_reads(self):

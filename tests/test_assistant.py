@@ -713,9 +713,9 @@ class ToolTests(unittest.TestCase):
         tools = tool_definitions()
         self.assertEqual([tool["name"] for tool in tools], [
             "search_catalog", "lookup_codes", "equivalents", "supplier_parts", "oil_guide",
-            "finish"])
+            "car_numbers", "research", "shop_info", "finish"])
         self.assertEqual([bool(tool.get("cache_control")) for tool in tools],
-                         [False] * 5 + [True])
+                         [False] * 8 + [True])
         forbidden = {"minItems", "maxItems", "minLength", "maxLength", "minimum", "maximum",
                      "pattern", "anyOf", "oneOf", "allOf", "format"}
 
@@ -829,6 +829,35 @@ class ToolTests(unittest.TestCase):
         content, _ = self.one("search_catalog", search(["TOYOTA"], ["CAMRY"], ["ხუნდი"]))
         self.assertNotIn("in_stock_under_other_cars", content)
 
+    def test_in_stock_only_still_reaches_the_twin_of_an_out_of_stock_row_for_the_car(self):
+        name = "ზეთის ფილტრი"
+        rows = [row("h1", "501", name, "HONDA CIVIC CRV", "JS-ASAKASHI", "C809J",
+                    "15400-RTA-003/15400-PLM-A02", store="0"),
+                row("h2", "502", name, "HONDA ACCORD", "ASHIKA", "10-04-410",
+                    "C809J/15400-RTA-003", store="2"),
+                row("h3", "503", name, "HONDA CIVIC", "ASHIKA", "10-04-401", "", store="1"),
+                # Out of stock with no twin in stock: stays hidden.
+                row("h4", "504", name, "HONDA CIVIC", "SAKURA", "C1821", "", store="0")]
+        # More rows than a result holds, so only the CIVIC rows are listed.
+        rows += [row(f"j{number}", f"6{number:02d}", name, "HONDA JAZZ", "ASHIKA",
+                     f"10-04-{number + 600}", "", store="1") for number in range(32)]
+        args = {**search(["HONDA"], ["CIVIC"], [name]), "in_stock_only": True}
+        content, is_error = self.one("search_catalog", args, settings={"rows": rows})
+        self.assertFalse(is_error)
+        self.assertEqual([item[4] for item in content["rows"]], ["10-04-401"])
+        self.assertEqual([(item[4], item[2], item[-1])
+                          for item in content["in_stock_under_other_cars"]],
+                         [("10-04-410", "HONDA ACCORD", "A")])
+        self.assertEqual([(item[4], item[7], item[-1])
+                          for item in content["out_of_stock_rows_with_a_twin_in_stock"]],
+                         [("C809J", 0, "A")])
+        # Without in_stock_only the row is in the result itself, and nothing else is added.
+        content, _ = self.one("search_catalog", {**args, "in_stock_only": False},
+                              settings={"rows": rows})
+        self.assertNotIn("out_of_stock_rows_with_a_twin_in_stock", content)
+        self.assertEqual([item[4] for item in content["in_stock_under_other_cars"]],
+                         ["10-04-410"])
+
     def test_lookup_codes_reads_rows_and_tolerates_missing_crawled_data(self):
         content, is_error = self.one("lookup_codes", {"numbers": ["gdb-3429", "E1", "ZZ9999"],
                                                      "vehicle_hint": "Camry"})
@@ -865,8 +894,14 @@ class ToolTests(unittest.TestCase):
             return done(products=[product(handles(request)["PN1521"], confidence="confirmed",
                                           evidence="PN1521")])
 
+        def corrected(request):
+            # The cars a crawled catalogue lists for a number are no source for this car.
+            return done(products=[product(handles(request)["PN1521"], confidence="check",
+                                          evidence="PN1521", reason="ნომრით შემოწმება")])
+
         script = Script(says(use("lookup_codes", {"numbers": ["PN1521", "XYZ9999"],
-                                                  "vehicle_hint": "Toyota Camry 2015"})), judge)
+                                                  "vehicle_hint": "Toyota Camry 2015"})), judge,
+                        corrected)
         chat = service(script)
         chat.crawled_catalog = Crawled()
         result = run(chat, "PN1521 Camry 2015-ზე მოდის?")
@@ -882,7 +917,7 @@ class ToolTests(unittest.TestCase):
         self.assertNotIn("rows", entry["equivalents"][0])
         self.assertEqual(entry["equivalents_not_in_catalogue"], ["BOSCH 0986494154"])
         self.assertEqual(unknown["note"], "No catalogue row carries this number.")
-        self.assertEqual(result["cards"][0]["confidence"], "confirmed")
+        self.assertEqual(result["cards"][0]["confidence"], "check")
 
     def test_equivalents_lists_rows_sharing_numbers(self):
         content, is_error = self.one("equivalents", {"id": "r1"}, dialogue={"memory": KNOWN})
@@ -1101,6 +1136,133 @@ class RequestTests(unittest.TestCase):
         self.assertGreaterEqual(timing["blocks"][0][1], 0)
         self.assertEqual(timing["first_ms"], timing["blocks"][0][1])
 
+    def test_credit_exhaustion_mid_turn_keeps_search_results_and_finishes_via_openrouter(self):
+        sdk, requests = anthropic.Anthropic, []
+        content = [
+            use("search_catalog", search(["TOYOTA"], ["CAMRY"], ["ხუნდი წნ"]))]
+        completed = [use("finish", finish(products=[product("r1")], outcome="offered"))]
+
+        def answer(request):
+            requests.append(request)
+            if len(requests) == 1:
+                return sse(content, {"input_tokens": 5, "output_tokens": 5})
+            if request.url.host == "api.anthropic.com":
+                return httpx.Response(400, json={"type": "error", "error": {
+                    "type": "invalid_request_error", "message": "Your credit balance is too low"}})
+            return sse(completed, {"input_tokens": 6, "output_tokens": 6})
+
+        def factory(**options):
+            options["http_client"] = httpx.Client(transport=httpx.MockTransport(answer))
+            return sdk(**options)
+
+        chat = service(assistant_model="claude-sonnet-5-5",
+                       openrouter_api_key="fixture-openrouter-key")
+        self.addCleanup(chat.close)
+        with patch("anthropic.Anthropic", side_effect=factory):
+            result = run(chat, "Camry 2015 წინა ხუნდები")
+        self.assertEqual(result["status"], "OK", result["diagnostics"])
+        self.assertEqual(result["outcome"], "offered")
+        self.assertEqual(result["cards"][0]["product"]["source_product_id"], "p1")
+        self.assertEqual(result["usage"]["model_requests"], 2)
+        self.assertEqual(result["usage"]["tool_executions"], 1)
+        self.assertEqual([r.url.host for r in requests], [
+            "api.anthropic.com", "api.anthropic.com", "openrouter.ai"])
+        refused, retried = [json.loads(r.content) for r in requests[1:]]
+        self.assertEqual(retried.pop("model"), "anthropic/claude-sonnet-5.5")
+        refused.pop("model")
+        retried.pop("provider")
+        self.assertEqual(refused, retried)
+        self.assertEqual(retried["messages"][-2]["content"], content)
+        self.assertEqual(retried["messages"][-1]["content"][0]["type"], "tool_result")
+
+    def test_with_the_account_unfunded_every_turn_finishes_on_openrouter_as_on_anthropic(self):
+        """As measured on 2026-11-11: the unfunded account answers every request, a forced
+        tool choice too, with the credit refusal. Through OpenRouter, Anthropic refuses the
+        forced choice in its own words, so the turn asks again unforced as it does on the
+        direct API; OpenRouter's own parameter check, when asked for, answers it with a
+        404 instead, and the customer would get an error."""
+        sdk, requests = anthropic.Anthropic, []
+        replies = iter([
+            [use("search_catalog", search(["TOYOTA"], ["CAMRY"], ["ხუნდი წნ"]))],
+            [use("finish", finish(products=[product("r1")], outcome="offered"))],
+            [use("finish", finish())]])
+
+        def answer(request):
+            requests.append(request)
+            body = json.loads(request.content)
+            if request.url.host == "api.anthropic.com":
+                return httpx.Response(400, json={"type": "error", "error": {
+                    "type": "invalid_request_error", "message": (
+                        "Your credit balance is too low to access the Anthropic API. Please go "
+                        "to Plans & Billing to upgrade or purchase credits.")}})
+            if body["tool_choice"]["type"] == "any":
+                if body["provider"].get("require_parameters"):
+                    return httpx.Response(404, json={"error": {
+                        "type": "not_found_error", "message": "No endpoints found that support "
+                        "the provided 'tool_choice' value."}})
+                return httpx.Response(400, json={"type": "error", "error": {
+                    "type": "invalid_request_error",
+                    "message": 'tool_choice: type "tool" and "any" are not supported for this '
+                               'model.'}})
+            return sse(next(replies), {"input_tokens": 5, "output_tokens": 5})
+
+        def factory(**options):
+            options["http_client"] = httpx.Client(transport=httpx.MockTransport(answer))
+            return sdk(**options)
+
+        chat = service(assistant_model="claude-sonnet-5-5",
+                       openrouter_api_key="fixture-openrouter-key")
+        self.addCleanup(chat.close)
+        with patch("anthropic.Anthropic", side_effect=factory):
+            first = run(chat, "Camry 2015 წინა ხუნდები")
+            second = run(chat, "მადლობა")
+        self.assertEqual((first["status"], first["outcome"]), ("OK", "offered"),
+                         first["diagnostics"])
+        self.assertEqual(first["cards"][0]["product"]["source_product_id"], "p1")
+        self.assertEqual(second["status"], "OK", second["diagnostics"])
+        bodies = [json.loads(r.content) for r in requests]
+        # One refused request to the unfunded account, then OpenRouter only; the next turn
+        # neither asks the unfunded account nor forces the tool choice again.
+        self.assertEqual([(r.url.host, b["tool_choice"]["type"]) for r, b in zip(
+            requests, bodies, strict=True)], [
+            ("api.anthropic.com", "any"), ("openrouter.ai", "any"),
+            ("openrouter.ai", "auto"), ("openrouter.ai", "auto"), ("openrouter.ai", "auto")])
+        for body in bodies[1:]:
+            self.assertEqual(body["model"], "anthropic/claude-sonnet-5.5")
+            self.assertEqual(body["provider"], {"only": ["anthropic"], "allow_fallbacks": False})
+            self.assertEqual(body["output_config"], {"effort": "low"})
+        self.assertTrue(chat.assistant_state["claude-sonnet-5-5"]["auto_only"])
+
+    def test_when_no_account_can_pay_the_turn_says_so_instead_of_asking_to_try_again(self):
+        sdk = anthropic.Anthropic
+        credit = {"type": "error", "error": {"type": "invalid_request_error",
+                                             "message": "Your credit balance is too low."}}
+        cap = {"type": "error", "error": {
+            "type": "rate_limit_error", "message": "You have reached your API usage limits.",
+            "details": {"error_code": "enforced_spend_limit_reached"}}}
+        cases = {
+            # The direct account is unfunded and OpenRouter has no credit left either.
+            "backup without credit": ("fixture-openrouter-key", lambda r: httpx.Response(
+                400, json=credit) if r.url.host == "api.anthropic.com" else httpx.Response(
+                402, json={"error": {"code": 402, "message": "Insufficient credits."}})),
+            # No backup, and the usage tier's monthly spend cap is reached.
+            "spend cap, no backup": ("", lambda _: httpx.Response(429, json=cap)),
+        }
+        for name, (backup, answer) in cases.items():
+            with self.subTest(name):
+                def factory(answer=answer, **options):
+                    options["http_client"] = httpx.Client(transport=httpx.MockTransport(answer))
+                    return sdk(**options)
+
+                chat = service(assistant_model="claude-sonnet-5-5", openrouter_api_key=backup)
+                self.addCleanup(chat.close)
+                with patch("anthropic.Anthropic", side_effect=factory), \
+                        self.assertLogs("automotive.assistant", level="ERROR") as logs:
+                    result = run(chat, "Camry 2015 წინა ხუნდები")
+                self.assertEqual(result["status"], "PROVIDER_BILLING", result["diagnostics"])
+                self.assertEqual(result["suggestions"], [])
+                self.assertIn("assistant_provider_account", "\n".join(logs.output))
+
     def test_the_fixed_prefix_is_kept_as_long_as_the_setting_says(self):
         hour, short = {"type": "ephemeral", "ttl": "1h"}, {"type": "ephemeral"}
         self.assertEqual((assistant_prompt.cache_control("1h"), assistant_prompt.cache_control(),
@@ -1207,14 +1369,16 @@ class RequestTests(unittest.TestCase):
                  use("search_catalog", search(["TOYOTA"], ["CAMRY"], ["ფილტრი"]))),
             done(reply="ფილტრი ქვემოთაა.", car_label="Toyota Camry 2015"))
         vin = Vin()
-        chat = service(script, vin=vin, operator_token="operator-token-" + "x" * 24)
+        backup_key = "fixture-backup-private-key"
+        chat = service(script, vin=vin, operator_token="operator-token-" + "x" * 24,
+                       openrouter_api_key=backup_key)
         federation = Search(vehicle={"make": "TOYOTA", "model": "Camry", "model_year": 2015})
-        result = run(chat, f"ჰაერის ფილტრი {VIN} {SECRET} operator-token-{'x' * 24}",
+        result = run(chat, f"ჰაერის ფილტრი {VIN} {SECRET} {backup_key} operator-token-{'x' * 24}",
                      search_service=federation, vin=VIN)
         self.assertEqual(vin.calls, [VIN])
         self.assertEqual(federation.started[0][0], VIN)
         sent = json.dumps(script.requests, ensure_ascii=False, default=str)
-        for private in (VIN, VIN.lower(), SECRET, "operator-token-", "h" * 32):
+        for private in (VIN, VIN.lower(), SECRET, backup_key, "operator-token-", "h" * 32):
             self.assertNotIn(private, sent)
             self.assertNotIn(private, json.dumps(result, ensure_ascii=False, default=str))
         context = context_of(script.requests[0])
@@ -1300,7 +1464,8 @@ class ButtonTests(unittest.TestCase):
                           schema["suggestions"]["items"]),
                          ("string", {"type": "string"}, {"type": "string"}))
         search_schema = tool_definitions()[0]["input_schema"]["properties"]
-        self.assertEqual(list(search_schema), ["make_terms", "vehicle_terms", "part_terms"])
+        self.assertEqual(list(search_schema), ["make_terms", "vehicle_terms", "part_terms",
+                                               "exclude_terms", "in_stock_only"])
 
 
 class KeptBackTests(unittest.TestCase):
@@ -1624,6 +1789,13 @@ class SpeedTests(unittest.TestCase):
         self.assertEqual(run(service(script, assistant_thinking="off"), "x")["status"], "OK")
         self.assertNotIn("thinking", script.requests[2])
         self.assertEqual(script.requests[2]["tool_choice"], {"type": "any"})
+        # Through OpenRouter (measured 2026-11-11) the same refusal says "reasoning".
+        script = Script(refused("Reasoning is mandatory for this endpoint and cannot be "
+                                "disabled."), done())
+        chat = service(script, assistant_thinking="off", assistant_model="claude-sonnet-5-5")
+        self.assertEqual(run(chat, "x")["status"], "OK")
+        self.assertEqual([request["thinking"]["type"] for request in script.requests],
+                         ["disabled", "between_tools"])
 
     def test_a_streamed_reply_is_read_as_it_is_written(self):
         client = Stream(says(use("search_catalog", search(["TOYOTA"], ["CAMRY"], ["ხუნდი"]))),
@@ -1693,7 +1865,9 @@ class SpeedTests(unittest.TestCase):
         first = run(service(script), "Camry 2015 ზეთი", search_service=federation)
         sent = context_of(script.requests[0])
         self.assertEqual(sent["outside_sources"], {
-            "supplier_parts": "cannot answer in this turn", "oil_guide": "can answer"})
+            "supplier_parts": "cannot answer in this turn", "oil_guide": "can answer",
+            "car_numbers": "cannot answer in this turn", "research": "cannot answer in this turn",
+            "shop_info": "cannot answer in this turn"})
         self.assertNotIn("language_so_far", sent)
         run(service(script), "ჰაერის ფილტრი " + VIN, search_service=federation,
             dialogue={"memory": first["memory"]})
@@ -1704,7 +1878,9 @@ class SpeedTests(unittest.TestCase):
         script = Script(done())
         run(service(script), "ზეთი")
         self.assertEqual(context_of(script.requests[0])["outside_sources"], {
-            "supplier_parts": "any part group", "oil_guide": "can answer"})
+            "supplier_parts": "any part group", "oil_guide": "can answer",
+            "car_numbers": "cannot answer in this turn", "research": "cannot answer in this turn",
+            "shop_info": "cannot answer in this turn"})
 
 
 class LimitTests(unittest.TestCase):

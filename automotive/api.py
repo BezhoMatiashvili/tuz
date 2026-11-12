@@ -820,4 +820,11 @@ def create_app(
     if getattr(chat_service, "catalog_store", None) is None:
         with contextlib.suppress(AttributeError):
             chat_service.catalog_store = context.catalog_store
+    # The services of the newer read tools: crawled fitments, web research, shop facts.
+    if getattr(chat_service, "assistant_extras", None) is None:
+        with contextlib.suppress(Exception):
+            from automotive.assistant_extras import extras_for
+
+            chat_service.assistant_extras = extras_for(settings, chat_service, repository,
+                                                       context)
     return app

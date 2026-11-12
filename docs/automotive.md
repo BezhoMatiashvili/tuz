@@ -55,6 +55,58 @@ intended workspace, as described in the official
 [authentication documentation](https://platform.claude.com/docs/en/manage-claude/authentication).
 The official Python SDK runs only on the server. No catalog subscription is purchased.
 
+Optionally set `OPENROUTER_API_KEY` in the server's `.env` to keep chat working when
+the direct Anthropic account cannot pay: its credit balance is too low (400), a spend
+limit set on the organization or a workspace is reached (400, "You have reached your
+specified ... API usage limits"), the usage tier's monthly spend cap is reached (429 with
+`error.details.error_code` `enforced_spend_limit_reached`), or there is a billing problem
+(402). Every chat client path (the shared assistant client, the per-turn clients of the
+older engines and their `with_options` copies) then sends the same request through
+OpenRouter's Anthropic Messages endpoint, with the same prompts, history, tools, cache
+controls, thinking and effort. The model stays the same: `claude-sonnet-5-5` maps to
+`anthropic/claude-sonnet-5.5`, and `claude-haiku-5-5` to `anthropic/claude-haiku-5.5`, at
+the same per-token prices. Unknown model IDs never fall back to a different model.
+Routing is restricted to Anthropic's own endpoint, without OpenRouter fallbacks. See
+[OpenRouter's Anthropic integration](https://openrouter.ai/docs/cookbook/coding-agents/claude-code-integration)
+and [provider routing](https://openrouter.ai/docs/guides/routing/provider-selection).
+OpenRouter's `require_parameters` is deliberately not sent: measured on 2026-11-11, its own
+parameter check answers the engine's opening request (a forced `tool_choice`, which Claude
+Sonnet 5.5 refuses) with a 404 that names nothing to drop, while without it Anthropic
+answers with its own 400 naming `tool_choice`, so the turn asks again unforced exactly as
+on the direct API. The same probes showed OpenRouter passing `output_config.effort`,
+`thinking`, strict tools and 1-hour cache lifetimes through to Anthropic, with cache
+writes and reads billed as on the direct API. The client absorbs three differences:
+OpenRouter reads `max_tokens: 0` (the engine's cache warm-up) as unset and writes a whole
+reply, so the backup is asked for one token instead; it sends nothing, headers included,
+until the model's first event, which took 1.3 to 7.3 seconds with the chat's cached prompt
+where the direct API answers within about 2, so a backup request may stay silent up to 15
+seconds (never beyond the request's own time; a 30-second turn still has time to ask once
+more) where a turn allows the direct API 10; and
+it refuses `thinking: disabled` in its own words ("Reasoning is mandatory"), which the
+engine reads as Anthropic's refusal and answers with `between_tools`. OpenRouter also
+returns thinking summaries where Anthropic omits them by default; the engine never shows
+thinking text and passes the blocks back unchanged. OpenRouter uses
+its own account balance. Ordinary request errors, authorization failures, rate limits and
+outages keep their existing handling. The shared assistant client (and every copy of it)
+skips an unfunded direct account and asks it again after 1 minute; while it keeps
+refusing, each wait doubles up to 10 minutes, so a top-up is in use within 10 minutes and
+needs no restart. The older engines build a client for each turn, so each of their turns
+asks the direct account once first. A rejected stream can
+switch before it opens; a stream that has already started is never replayed. Thinking
+blocks and prompt caches belong to the account that made them: when a turn moves to the
+other account, the API drops that turn's earlier thinking and the request succeeds, and
+the first request there reads the fixed prompt (about 33,000 tokens) afresh. While the
+backup is in use, conversations pass through OpenRouter as well as Anthropic. The switch
+is logged as `chat_billing_fallback` (a warning the first time, then at info level for
+each recheck) and the return as `chat_billing_restored`, with the status code and model
+only. Restart the application after first adding or changing either key. Both keys
+remain server-side and are redacted from conversation payloads, stored conversations and
+logs; the direct client never sends a bearer token from the environment. Other code that
+must reach OpenRouter uses `automotive.model_client.openrouter_client(key)`, which applies
+the same credential isolation. When neither account can pay, a turn ends as
+`PROVIDER_BILLING` (no "try again", and the `assistant_provider_account` error in the
+log), as it does when no backup is configured.
+
 `AUTOMOTIVE_OPERATOR_TOKEN` (at least 32 characters) and
 `AUTOMOTIVE_ENRICHMENT_DATABASE_URL` enable operator-only imports and indexing.
 Missing operator configuration disables those operations. These are independent from
@@ -780,6 +832,9 @@ when the customer starts to write, not when the message is sent.
 | `equivalents` | Rows that share reference numbers with a row (one shared number is flagged as a hint only). |
 | `supplier_parts` | Outside catalogues for this car and part group, through the existing source federation, for at most 6 seconds. |
 | `oil_guide` | The Shell, Pakelo and Fuchs oil selectors: grades, capacity and engine code. |
+| `car_numbers` | The crawled manufacturer catalogues (MANN-FILTER, NGK and the others in `parts_catalog`): which part numbers they list for this car in one part group, and the shop rows that carry those numbers, whatever car a row's own text names. The model gives the car's words and codes; it then picks the crawled vehicle that is the customer's car (`vehicle_ids`), and only that vehicle's numbers count for `confirmed`. Numbers shorter than five letters and digits are not matched to rows. |
+| `research` | A separate, time-boxed web-search request (`assistant_research.py`): the numbers that fit this car for a part, whether given numbers fit it, or a fact about the car. It runs beside the catalogue search, waits at most `AUTOMOTIVE_RESEARCH_SECONDS` (8 by default), keeps running in the background to fill its cache when it takes longer, and returns findings with their sources and the shop rows that carry the numbers found. Never a VIN or anything about the customer in a query; 7zap, PartSouq, RealOEM and RockAuto are blocked. Rows found this way are `check`, never `confirmed`. |
+| `shop_info` | The shop's own facts from the site content (phone, address, hours, services), in Georgian and English. |
 | `finish` | Ends the turn (see step 4). |
 
 All tools are read-only. Rows reach the model under per-conversation handles (`r1`, `r2`),
@@ -795,13 +850,28 @@ for is shown without one.
 
 | Level | Meaning | Label |
 |---|---|---|
-| `confirmed` | A part number from a source specific to this car is on the row. | Matches by part number |
+| `confirmed` | A part number that a tool returned for this car in particular (`supplier_parts`, `oil_guide`, or `car_numbers` for the crawled vehicle the model chose) is on the row; the cars `lookup_codes` lists for a number are not enough. | Matches by part number |
 | `listed` | The row's own text names this model with a year range or generation that includes the car. | Listed for this model and year |
 | `check` | The fit rests on the model's name alone or on indirect evidence; the reason says what to check. | Needs checking |
 | `spec` | The row's text ties the product to no car (an engine oil, a fluid, a universal item); it was chosen because its specification is what the car needs, and the reason names that specification. | Chosen by specification |
 
 One more judgement, `depends`, is internal: rows that fit only if the customer answers the
 open question one way are held back until that answer.
+
+### Alternatives
+
+One pad, filter or link often fits several models while the shop's row names only one of
+them. A row is offered for the customer's car when one of its numbers is listed for that car
+by a tool that answers for that car (`car_numbers` for the chosen crawled vehicle,
+`supplier_parts`, a `research` finding that names the car), or when it shares two or more
+numbers with a row that fits. It is shown in a group of its own, with a reason saying that the
+catalogue lists it under another car and that the part number matches (an E63 row carrying the
+E400's number is offered to the E400 owner). When the row that names the customer's car is
+out of stock, a search also lists the in-stock rows that are the same part by their numbers
+(`in_stock_under_other_cars`); a search narrowed to stock (`in_stock_only`) still finds them
+and shows the out-of-stock rows they stand for (`out_of_stock_rows_with_a_twin_in_stock`).
+The model judges every such row; no table of interchangeable models exists anywhere in the
+code.
 
 ### Settings
 
@@ -816,6 +886,8 @@ open question one way are held back until that answer.
 | `AUTOMOTIVE_ASSISTANT_MAX_TOOL_CALLS` | 10 | Read-tool calls in one turn (1 to 20). |
 | `AUTOMOTIVE_ASSISTANT_CACHE_TTL` | `1h` | How long the provider keeps the fixed part of the prompt ready: `1h` or `5m`. With an hour the first message after a quiet spell does not wait for the prompt to be read again; writing it costs twice the input price instead of 1.25 times. |
 | `AUTOMOTIVE_ASSISTANT_NAMES_PATH` | `data/assistant/part_names.json` | The file with what the catalogue's part names mean, printed in the guide. Empty, or a file that does not exist: the guide lists the names without meanings. |
+| `AUTOMOTIVE_VEHICLE_READINGS_PATH` | `data/assistant/vehicle_readings.json` | What the catalogue's vehicle texts mean (makes, models, generations and years), read once by a model and carried beside search results as `vehicle_readings`; the row's own text decides when they disagree. Made with `uv run python -m automotive.assistant_vehicles` (Claude subscription, nothing billed; it continues where it stopped, `--all` reads everything again, `--everything` also texts no row in stock carries). Empty, or a file that does not exist: results carry the texts alone. |
+| `AUTOMOTIVE_NAME_READINGS_PATH` | `data/assistant/name_readings.json` | The same for the catalogue's part names, carried as `name_readings`: what each part is and every position its marks state (for a bush or mount, which arm or beam and which of its bushes). Made with `uv run python -m automotive.assistant_vehicles --names`. Empty, or a file that does not exist: none. |
 
 The part-name file is made by a model, not by hand, and `data/` is not in the repository:
 run `uv run python -m automotive --read-part-names` once on every machine that serves the
@@ -892,6 +964,91 @@ checking" where it should ask; and when a row names only the chassis, the headin
 engine gives a variant comes from its reading of the part number and can be wrong. The
 full account is in `IMPLEMENTATION_PROGRESS.md`; reports and the judged rows for a parts
 person are in `data/assistant_eval/`.
+
+### Research settings
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AUTOMOTIVE_RESEARCH` | `staff` | `off`, `staff` (the staff chat only) or `all` (the public widget too). Keep the widget off until the provider path has been checked once (below). |
+| `AUTOMOTIVE_RESEARCH_MODEL` | `claude-haiku-5-5` | The model of the research request. |
+| `AUTOMOTIVE_RESEARCH_SECONDS` | `8` | How long a turn waits for research (1-30). |
+| `AUTOMOTIVE_RESEARCH_CACHE_PATH` | `data/assistant/research_cache.sqlite3` | Answers kept 30 days, empty answers a day. |
+
+Research goes through the chat's own client, so the OpenRouter billing fallback applies;
+should the provider refuse Anthropic's search tool there, it is asked once in OpenRouter's own
+search shape. A researched turn costs about 1-3 cents (search fee plus tokens); a cache hit
+costs nothing. To check the provider path once before turning research on for the public
+widget, run `uv run python -m automotive --check-research`: one billed request (about 1-3
+cents) with a fixed question that holds no customer data (front brake pads of a 2015 Camry),
+no cache. It prints the status, seconds, searches and the numbers found with their sources'
+sites, and the `assistant_research ... backend=` log line says whether the direct client or
+OpenRouter's own search shape answered. `status=answered` (or `no_findings`) means the path
+works; anything else keeps research where it is.
+
+### The subscription bench and the randomised exam
+
+Both run on the Claude subscription of the machine's logged-in Claude Code, so nothing is
+billed to the API (`automotive/assistant_bench.py`). The bench's `SubscriptionClient` stands
+where the provider's client stands, so the production turn runs unchanged: each turn is a
+headless `claude -p` session (Sonnet 5.5, effort low) that receives the engine's own system
+prompt, tools and turn context, and whose tool calls are held at a local MCP endpoint until
+the engine has run the real tool. The child processes get a whitelisted environment (no API
+key, no hooks, plugins, memory or project instructions). Measured on 2026-11-11 against the
+last paid run of the 72 test conversations: 67 passed on the bench, 66 in production, with
+the same number of model requests per turn (1.93 and 1.89); speed is not measured on the bench
+(its sessions start per turn) but estimated as requests x 3.4 s plus tool time.
+
+```bash
+uv run python -m automotive --evaluate-assistant conversations --runtime subscription
+uv run python -m automotive.assistant_exam build --name dev-101 --size 170 --seed 101
+uv run python -m automotive.assistant_exam run --name dev-101 --parallel 4 [--research on]
+uv run python -m automotive.assistant_exam report --name dev-101
+uv run python -m automotive.assistant_exam compare --name round-2 --against dev-101
+uv run python -m automotive.assistant_exam regrade --name dev-101   # crawled truth, no model
+```
+
+The exam (`automotive/assistant_exam.py`) draws new cases on every build (the seed is kept, so
+a dev set can be reused): text requests for a stocked row, the same with a VIN that the real
+decoder decodes to the car, typed part numbers in varied forms, alternatives (a crawled
+catalogue lists one of a row's numbers for a car its text does not name, or the in-stock twin
+of an out-of-stock row), numbers the shop does not carry, and questions about the shop. The
+right answers come from data: a case passes when a stocked row of its truth shows within three
+turns (for a number the shop lacks, when nothing is shown as fitting). The
+truth of a crawled alternative is every row carrying a number the crawled catalogue lists for
+that vehicle and part (one car often takes a spin-on filter or an element); runs built before
+that rule are brought up to it with `regrade`, which asks no model.
+Rows shown outside the truth go to a dispute judge (Opus on the subscription); the share it
+calls wrong is the second headline number. Since 2026-11-12, by the owner's decision, a case
+also passes when a stocked row the judge says fits shows within three turns; every report
+prints the share from the data truth alone beside it. Requests that name only a make are
+reported apart.
+Runs log to `data/assistant_eval/exam/<name>/exam.log`, show a progress bar and continue
+where they stopped; once the subscription's usage limit is reached they take no new case (stop
+the run and start the same command again later). A model request of the exam's own that fails
+(the writer, customer or judge) is logged in `errors.jsonl` and never scored against the bot.
+
+Measured on 2026-11-11 over two held-out draws on that day's engine (741 conversations),
+from the data truth alone: 95.5% right outcome (93.8-96.8%) and 2.9% of shown rows wrong (1.7% and
+4.2% in the two draws), short of the 98% and 1% aimed for. With Opus 5.5 as the model, two
+more draws (772 conversations) gave the same 95.5% and 2.6% wrong rows, at twice the price;
+paired on the same new cases it found no more parts, and fewer wrong rows were not shown.
+With the vehicle-text readings beside the results (round H), a paired half draw of 187 cases
+found as many parts and showed no wrong row (against 4 without them). A VIN case whose truth
+row names no generation has no data truth (the VIN pins the year); such cases are now built
+as text cases, and with them set aside the earlier draws score 95.0-96.6%. Typed numbers, numbers the shop lacks and shop questions
+passed every time; alternatives 89-97%, text requests 94-95%, VINs 81-82%. Of the failures
+that repeat on a rerun, at most 10 of 20 were the exam's or the catalogue's, and 10 more
+failures were the bot's run-to-run variance; the wrong rows come mostly from variants
+taken too widely (a related model, another position, a misread year range). The judge
+probably undercounts wrong rows (it called 81% of the rows people marked wrong wrong). Speed
+is estimated (requests x 3.4 s, the median measured on the direct API on 2026-11-10), not
+measured through OpenRouter. On 2026-11-12 the three newest full draws (vehicle readings and
+rounds I and J; the last two also with the part-name readings) scored 97.9%, 96.5% and 95.6%
+right outcome (97.4%, 96.2% and 95.3% from the data truth alone) with 4.1%, 3.3% and 3.3% of
+shown rows wrong; round M, added last, fixed 2 of 193 paired cases and broke none. The bar of
+98% and 1% is not reached. The rounds, the failure sorting and the judge's measured
+reliability are in `data/assistant_eval/rounds/narrative.md`; catalogue rows the tests point
+at, for a parts person to check, are in `data/assistant_eval/catalogue_fix_list.md`.
 
 ### Running the checks
 

@@ -686,3 +686,220 @@ to 0; the remaining soft misses are long name-matched replies.
   priced 55 GEL as 1 L and as 4 L, and Shell Helix Ultra 5W-40 37 GEL as 4 L and 38 GEL as
   1 L.
 
+
+### Follow-up — Parts assistant: alternatives, web research, a free test bench and a randomised exam (2026-11-11)
+
+- Asked for: an assistant that answers every question and finds every part, using web search
+  and tools over the shop's data, at 98-99% accuracy and still fast; alternatives offered
+  (a part listed for E63 that fits the customer's E400); tests that are not deterministic,
+  over many cars, VINs and part numbers; rounds until that level. Decided by the owner: the
+  chat runs on OpenRouter only; testing costs $0 (the owner's Claude subscription plays the
+  bot, the customer and the judge); two scores, never blended (right outcome in >= 98% of
+  conversations, <= 1% of shown rows wrong); part turns p50 <= 9 s, p90 <= 15 s; the MANN
+  crawl's brand searches moved to the front of its queue.
+- Why alternatives failed before: a row filed under another car reached the customer only by
+  two shared numbers in the same result or as the in-stock twin of an out-of-stock row; one
+  shared OE number linked nothing, and the engine had no source of the numbers that fit a
+  car, so the E63 row could never surface for the E400.
+- Built. `automotive/assistant_bench.py`: `SubscriptionClient` stands where the provider's
+  client stands, so the production turn runs unchanged; each turn is a headless `claude -p`
+  session with the engine's own prompt and tools, its tool calls held at a local MCP
+  endpoint until the engine has run the real tool; children get a whitelisted environment
+  (no API key, no hooks, plugins or memory). `automotive/assistant_exam.py`: a randomised
+  exam with truth from data (text, VIN, typed numbers, alternatives, numbers the shop lacks,
+  shop questions), a writer that reads the part names first, a simulated customer, a dispute
+  judge, Wilson intervals, paired comparison, resume, a progress bar and a log. New read
+  tools: `car_numbers` (crawled MANN/NGK/CatCar fitments for the chosen vehicle, and every
+  shop row carrying those numbers; `automotive/assistant_sources.py`), `research` (a separate,
+  time-boxed web-search request, cached, never a VIN in a query, blocked domains;
+  `automotive/assistant_research.py`), `shop_info` (the site content); wiring in
+  `automotive/assistant_extras.py`, `assistant_tools.py`, `assistant.py` (one keyword),
+  `api.py` (one block), `config.py` (`AUTOMOTIVE_RESEARCH*`). Search: `exclude_terms` and
+  `in_stock_only` exposed; rows that match the car words and part without the make word;
+  Georgian search words also find the shop's shortenings (`გამათ.` for `გამათბობელი`).
+  Prompt: an ALTERNATIVES section, when to ask for numbers, showing every variant when the
+  customer does not know the year, side or generation, shop and car questions. `confirmed`
+  no longer rests on a lookup that lists any car. `python -m automotive --check-research`
+  sends one billed research request (about 1-3 cents, a fixed question with no customer
+  data) to check the provider path before research is turned on in the public widget.
+- Fidelity of the bench: the 72 scripted conversations passed 67 on the bench and 66 on the
+  last paid production run, with the same requests per turn (1.93 and 1.89).
+- Rounds (dev set 103, 178 cases; a no-change rerun flips about 6 of 178 cases, so a few
+  points are noise): baseline engine on the first dev set 74.1% (alternatives 27%); with the
+  new tools 94.6% on the corrected dev set; showing every variant 98.2% with 0.8% wrong rows;
+  side exclusion in the search was reverted (the model once excluded the wrong side);
+  shortened words kept (98.2%, 0.7% wrong rows).
+- Rounds after E, each kept or reverted on the dev set: F (never show rows the customer turned
+  down) 95.8%, 2 fixed and 6 broken, reverted; G: (a) with in_stock_only a search still
+  reaches the in-stock twins of the out-of-stock rows that name the car (kept), (b) rows that
+  name only the model offered as check when no in-stock row names the generation (reverted:
+  its rows were the wrong rows), (c) a definition of a variant (reverted: fewer rows shown),
+  (e) crawled vehicles that differ by engine are variants (kept, but its premise was an exam
+  error, see below; no measured effect). The final engine is A+B+C+E+G(a, e), called G'.
+- Exam corrections, applied to every run and reported beside the raw numbers: a crawled
+  alternative's truth now holds every number the crawled catalogue lists for that vehicle
+  and part (MANN lists HU 6024 z and W 7015 for the Jaguar and Land Rover 2.0 cars, and the
+  bot's HU 6024 z had been scored as a miss in four cases); `regrade` applies this to stored
+  conversations without asking any model, and it can only raise a score. The dispute judge
+  was measured on the 160 rows people marked wrong in the test conversations (88 in today's
+  catalogue): it calls 81% of them wrong, the rest plausible, and none of 39 right rows
+  wrong, so the wrong-row rate probably undercounts (39 right rows are too few to rule out
+  false alarms, and before the regrade it had called the right HU 6024 z wrong once).
+- Held-out draws (new random seeds, run once, then read): fresh-1 (engine B+C+D, 195
+  headline cases) 96.9%, wrong rows 2.2%; fresh-2 (B+C+E, 387) 96.1% raw, 96.6% regraded,
+  wrong rows 2.4%; fresh-3 (G', 389) 95.1% raw, 95.6% regraded, wrong rows 1.7%; fresh-4 (G',
+  352; 37 text and VIN cases were lost when Claude Code updated itself during the build)
+  94.9% raw, 95.5% regraded (95.1% reweighted to the usual mix of kinds), wrong rows 4.2%.
+  On the engine in the tree (fresh-3 and fresh-4): 708 of 741 = 95.5% right outcome
+  (93.8-96.8%), 34 of 1,167 = 2.9% wrong rows (1.7% and 4.2% in the two draws; wrong rows
+  come in clusters within a case, so an interval over rows would be too narrow); with fresh-2's earlier engine
+  pooled in, 1,082 of 1,128 = 95.9% and 48 of 1,754 = 2.7%. Headline cases by kind in
+  fresh-2 to fresh-4: typed numbers, numbers the shop lacks and shop questions 100% (fresh-1:
+  31 of 32 typed numbers); alternatives 89-97%; text 94-95%; VIN 81-82%. Estimated speed of part turns: p50 6.8 s, p90 7.1-10.2 s, from requests
+  x 3.4 s (the median measured on the direct API on 2026-11-10, before the prompt and tools
+  grew); through OpenRouter it is not measured yet. The bar (98% and 1%) is not met.
+- Why, from rerunning the 30 headline failures of fresh-2 and fresh-3 twice unchanged: 10
+  pass at least once (the model's run-to-run variance); of the 20 that always fail, 11 looked
+  like the exam's (4 show rows the judge says fit but outside a one-row truth, 5 VIN cases
+  whose truth row names only the model for a car of a later year, 2 ask for an oil filter
+  with no car at all), but Opus later passed 4 of those 11 (both CR-V bushes, the Honda Fit,
+  the Murano VIN) by showing the truth row too, so at most 7 are the exam's; 3 the catalogue's (a hub named front with REAR in its text, `VWA6` written
+  as one word, an ABS sensor named as a brake reservoir) and 6 the bot's (a twin filed under
+  the make alone, see the next point; no new search after "I need the bearing, not the
+  mount"; two variant sets shown incomplete; two search wordings). Wrong rows come from
+  variants taken too widely: a related model (Pajero Sport for a Pajero, 2016 Elantra for a
+  Lantra), another position of the same part, or a year range misread (`MURANO 2008` for a
+  2014 car, CR-V II links for a 2002 changeover year shown as listed).
+- Tried after the last exam and reverted: linking an in-stock row filed under the make alone
+  to the hidden out-of-stock row for the car (the Civic case). Rerun of all 83 twin cases:
+  74 passed before, 71 after; all 5 broken cases searched without in_stock_only, which the
+  change does not touch, one of the 2 fixed did use it, and the Civic case still showed only
+  the row that names the Civic. The engine in the tree is the one fresh-3 and fresh-4
+  measured.
+- Effort medium against low, the same 389 fresh-3 cases: 372 and 372 (3 fixed, 3 broken; the
+  fixed are among the failures that pass on some reruns), wrong rows 9 of 603 and 10 of 592,
+  and 10% slower per turn on the bench. Low stays.
+- Opus 5.5 as the bot instead of Sonnet 5.5 (effort low, same engine and prompt), paired on
+  166 cases of the earlier draws: of the 30 Sonnet failures it passes 17 (Sonnet: 7 on each
+  of two reruns); on the 16 cases where Sonnet showed wrong rows it shows 1 wrong row of 42
+  (Sonnet 34 of 74); of 118 Sonnet passes it keeps 117 (2 wrong rows of 193). It needs about
+  a third more time per turn on the bench and costs twice as much per token ($4/$20 per
+  million against $2/$10). The judge is also Opus, so the disputed rows of the 46 hard cases
+  were judged again by Sonnet: Opus bot 6 wrong of 99 (Opus judge: 4), Sonnet bot 25 of 96
+  (Opus judge: 44), so the gain does not come from the judge. Opus also passed three cases
+  sorted above as the exam's, by showing the truth row too.
+  On new held-out draws, though, Opus scores what Sonnet scores: fresh-5 (seed 878982) 366 of
+  384 = 95.3% with 3.3% wrong rows, fresh-6 (seed 4930) 371 of 388 = 95.6% with 1.8%; pooled
+  737 of 772 = 95.5% (93.8-96.7%) and 34 of 1,305 = 2.6% wrong rows, against Sonnet's 95.5%
+  and 2.9% on fresh-3 and fresh-4. Its gain on the subset came from cases picked because
+  Sonnet had failed them; on new cases it fails others. Not adopted (it would also need
+  `AUTOMOTIVE_ASSISTANT_MODEL=claude-opus-5-5` and an Opus entry in the OpenRouter model map
+  of `automotive/model_client.py`, owned by the other session). Paired on the 151 fresh-5
+  text and VIN cases that Sonnet also finished before the bench stopped on a usage
+  warning it misread as a limit: the same right outcome (139 and 139, 4 flips each way). Wrong rows 15 of 433 against
+  Sonnet's 36 of 419, but per case 8 against 11 of 151 cases (7 only Sonnet, 4 only Opus):
+  the row gap comes from two Sonnet cases with 8 wrong rows each. The subset's wrong-row gap
+  and the judge swap were also on cases picked for Sonnet's errors. So fewer wrong rows with
+  Opus are possible but not shown on new draws. Its request shape (thinking, tool choice) has
+  never reached the API either: the bench ignores those parameters.
+- Research is wired in and called by the model where the catalogue cannot settle a fit (3
+  calls in each of fresh-3 and fresh-4); on the bench a first search outlasts the 8 s cut-off
+  and fills the cache for the next turn. Through the production path it was checked once at
+  19:21 with the owner's approval (`--check-research`): the direct key refused (billing), the
+  fallback sent it to OpenRouter, and Anthropic's own search tool answered there (2 searches,
+  5 numbers incl. Toyota 04465-06100), in 15.2 s: longer than the 8 s a turn waits, so a
+  first search answers on the customer's next message, from the cache. Default: staff only.
+- Real speed, measured at 19:22 with the owner's approval (in-process, the production client,
+  no chat log): two part turns took 15.8 s (the first, with the prompt written to the cache
+  and the direct key's refusal before the fallback) and 7.9 s, with requests of 3.2-8.0 s
+  through OpenRouter, slower than the 3.4 s per request the estimates assume. The next six
+  turns failed at once with PROVIDER_BILLING: the OpenRouter account had $0.51 of its $25
+  left (read-only /api/v1/credits), too little for OpenRouter to take a chat request, and
+  the direct Anthropic account is unfunded, so the live chat answers no one until one of
+  them is topped up. Spent on these checks: about $0.20 of the $0.50 allowed.
+- Round H, vehicle-text readings: Opus read each of the 3,742 vehicle texts that a row in
+  stock carries, once ($0 on the subscription; `python -m automotive.assistant_vehicles`,
+  `AUTOMOTIVE_VEHICLE_READINGS_PATH`); search results carry them beside the rows as
+  `vehicle_readings`. Paired on a random half of a new draw (187 cases, half size chosen by
+  the owner with the weekly window at 85%): right outcome 177 against 176 (noise), wrong rows
+  4 in 2 cases against 0. Kept.
+- A VIN pins the model year, so a VIN case built from a row whose text names no generation
+  (by its reading) has no data truth: 5 to 12 of the 13-22 VIN cases of each draw were such.
+  Set aside on every draw alike, the right outcome is 95.0-96.6% (Sonnet 96.6% and 96.0% on
+  fresh-3 and fresh-4). The builder now makes such rows text cases.
+- Rounds I and J and a confirming draw (20:00-20:55, with the owner's approval at 88-92% of
+  the weekly window): round I (car_numbers before research for any filter and spark plugs; a
+  row in stock with the same same_part letter as the out-of-stock row for the car is always
+  offered) scored 190 of 194 = 97.9% on the unseen half of fresh-7 against 185 (95.4%) without
+  it, 6 fixed and 1 broken. Round J (search universal products before saying they do not
+  exist). The full draw fresh-8 (seed 850980, 385 headline cases) on readings + I + J: 375 =
+  97.4% right outcome (95.3-98.6%; 377 = 97.9% with rows the judge says fit), the best full
+  draw so far, but wrong rows 27 of 656 = 4.1%, 18 of them in three cases (a Hiace read as a
+  Hilux; rear beam bushes and the large rear bush shown as variants of the bush asked for).
+  The shop-question grader now takes times in any order and the address in any script (word
+  stems in Latin letters). Prepared and tested, not yet run: part-name readings
+  (`assistant_vehicles --names`, AUTOMOTIVE_NAME_READINGS_PATH, `name_readings`), aimed at the
+  position mix-ups behind most wrong rows; they wait for the weekly window (97% at 20:55) to
+  reset at 07:00.
+- The owner's E400 / E63 example on real data: MANN lists air filter C 21 020 for the W212 E
+  400 (M276); the shop has MANN C21020 in stock filed only under `MB W205 W213 W222`. Asked
+  for an air filter for a 2015 E400 W212 (in Georgian), the engine called car_numbers and
+  search_catalog in one step and offered MANN C21020 and its same-number twin JS-ASAKASHI
+  A0587SET, as check, saying the shop files the part under other models.
+- Morning of 2026-11-12 (the owner's scheduled continuation after the weekly reset, about 10%
+  of the new window): part-name readings (Opus read the 2,040 names of rows in stock;
+  `name_readings` beside results) kept after a paired half draw (fresh-9, 191 cases: right
+  outcome 183 against 182, wrong-row cases 7 against 4). The confirming full draw fresh-10
+  (seed 975237, 397 headline cases) on the final engine scored 382 = 96.2% right outcome
+  (93.9-97.7%) and 22 of 662 = 3.3% wrong rows. With fresh-8 the two newest full draws give
+  96.8% and 3.7%: the bar of 98% and 1% is not met. Next, from fresh-10's misses: the same-
+  number twin of an out-of-stock row is still left out when the bot lists variants for a
+  customer who does not know the year. OpenRouter stayed out of credit overnight ($25.02 used
+  of $25): the live chat cannot answer until a top-up.
+- After the morning (with the owner's allowance of 20% more of the weekly window, about 12%
+  used): round K (twin scan over cut-off results, twins as variant rows, positions by the name
+  readings) reverted, no gain; round M (an unsaid position within the part, such as an arm's
+  front or rear bush, is an open fact shown as variants) kept, 2 fixed and none broken on 193
+  cases; round N (a sold-out reply told once of an in-stock same-part row) reverted, 75
+  against 73 of 84 twin cases with more wrong rows. The case writer now gets the part-name
+  readings (two fresh-10 "failures" were cases written for a stabiliser bush whose row is a
+  beam bush). Final measured level on unseen draws: about 96% right outcome and 3-4% wrong
+  rows (fresh-8 97.4% / 4.1%, fresh-10 96.2% / 3.3%, fresh-11 95.3% / 3.3%); the bar is not
+  reached, and the last three rounds no longer moved it beyond noise.
+- Round P (14:00): the handles of in-stock same-part rows beside every out-of-stock row
+  (`in_stock_same_part`) instead of a correction; on 82 paired twin cases 73 against 71 right
+  and more wrong-row cases, reverted. The twin cases resist both a rule and a plainer
+  presentation; some twins are catalogue cross-number errors. Stopped near the 20% of the week
+  the owner allowed (the meter shows nothing below its warning level).
+- Scoring, decided by the owner on 2026-11-12: a stocked row that the dispute judge says fits
+  now counts as a right outcome too, and every report prints the share from the data truth
+  alone beside it (`right()` and `print_summary` in `automotive/assistant_exam.py`). Re-scored
+  from the stored results, no model asked: fresh-8 377 of 385 = 97.9% (97.4% from data
+  alone), fresh-10 383 of 397 = 96.5% (96.2%), fresh-11 on the fresh-10 engine 370 of 387 =
+  95.6% (95.3%; 4 more cases than the paired count above, finished by that arm only); wrong
+  rows unchanged (4.1%, 3.3%, 3.3%). The bar is still not met.
+- Catalogue fix list for a parts person (2026-11-12; git-ignored, made by
+  `data/assistant_eval/catalogue_fix_list.py`, which asks no model):
+  `data/assistant_eval/catalogue_fix_list.csv` and `.md` hold 93 rows the last five runs
+  showed as fitting and the judge called wrong (with its reason), 608 pairs in which an
+  in-stock row shares two or more numbers with a row of another make, 3 names that say front
+  where the vehicle text says REAR, 1,628 vehicle texts on in-stock rows that name no
+  generation or years (`TOYOTA/LEXUS` alone is on 216 rows), and 3 part names the reader
+  could not tell. Each line is a candidate to check, not a verdict.
+- Cost: $0 of API spend apart from the two owner-approved checks above (about $0.20); every
+  bot, customer, writer and judge request of the exams ran on the Claude subscription.
+  Committed on 2026-11-12 together with the other session's OpenRouter billing fallback; not
+  pushed. The server on port 8767 was restarted at 15:37 from a terminal (not by this
+  session) and loads the engine at its first chat; it has had none since, so it will run the
+  code in the tree. Checks: on a clean copy of the commit its 1,506 tests pass (53 PostgreSQL
+  tests skipped without the disposable database); ruff and bandit find nothing in the files
+  of this work (ruff's old
+  findings are in db_ui; bandit's are in automotive/meta_store.py, a new file another session
+  was writing at 18:43). Claude Code updated itself at 15:11 during the runs (after the
+  fidelity check; fresh-3 straddles it); the bench now waits through such an update. A judge
+  request that timed out under load had stopped one run; a failed grading is now logged as a
+  harness error and the case runs again on resume. The runs stopped at 18:33 and 19:06 for a
+  usage limit were false alarms: Claude Code reports `allowed_warning` when 85% of the
+  subscription's seven-day window is used (it resets 2026-11-12 07:00) and the bench read that
+  as a refusal; only a refusal counts now. Overage is off, so at 100% every session on the
+  account would stop until the reset: bench runs are kept small until then.

@@ -34,6 +34,30 @@ def check_catalog_api(parser: argparse.ArgumentParser) -> None:
           "or part-group name needs adjusting before relying on this source.")
 
 
+def check_research(parser: argparse.ArgumentParser) -> None:
+    """One billed web-research request (about 1-3 cents) through the chat's own client and
+    its OpenRouter fallback; a fixed public question, no cache. Never prints a key."""
+    import logging
+    import sys
+
+    from automotive.assistant_extras import check_research as run_check
+    from automotive.assistant_extras import research_service
+    from automotive.chat import ChatService
+    from automotive.config import Settings
+
+    settings = replace(Settings.from_env(), assistant_research_cache_path="")
+    if not (settings.anthropic_api_key or settings.openrouter_api_key):
+        parser.exit(2, "Set ANTHROPIC_API_KEY or OPENROUTER_API_KEY in .env first.\n")
+    logging.basicConfig(format="%(message)s")
+    logging.getLogger("automotive.assistant_research").setLevel(logging.INFO)
+    chat = ChatService(None, None, settings)
+    try:
+        code = run_check(research_service(settings, chat), sys.stdout)
+    finally:
+        chat.close()
+    parser.exit(code)
+
+
 def run_evaluation(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     """Evaluate a local VIN list; prints VIN#n only and writes nothing but the misses CSV."""
     import sys
@@ -130,6 +154,9 @@ def main() -> None:
                         help="Write requests with no offer (no VINs) to this CSV")
     parser.add_argument("--check-catalog-api", action="store_true",
                         help="Check the optional catalog API key with one VIN (asked privately)")
+    parser.add_argument("--check-research", action="store_true",
+                        help="Send one web-research request through the chat's provider "
+                             "path and show what came back (billed, about 1-3 cents)")
     parser.add_argument("--evaluate-chat", choices=("mock", "live"),
                         help="Run scripted conversations and score accuracy, feel and speed")
     parser.add_argument("--vins", metavar="FILE",
@@ -170,6 +197,11 @@ def main() -> None:
     parser.add_argument("--all", action="store_true",
                         help="With --read-part-names: read every name again, not only the "
                              "names without a reading")
+    parser.add_argument("--runtime", choices=("api", "subscription"), default="api",
+                        help="Where --evaluate-assistant runs the models: api (billed "
+                             "requests) or subscription (headless Claude Code on the "
+                             "logged-in Claude subscription; no API key reaches it and "
+                             "nothing is billed to the API)")
     parser.add_argument("--model", metavar="ID",
                         help="Model for --evaluate-assistant (default: the configured one) "
                              "or --read-part-names (default: claude-opus-5-5)")
@@ -187,6 +219,9 @@ def main() -> None:
     args = parser.parse_args()
     if args.check_catalog_api:
         check_catalog_api(parser)
+        return
+    if args.check_research:
+        check_research(parser)
         return
     if args.read_part_names:
         import sys

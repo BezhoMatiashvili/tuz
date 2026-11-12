@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from automotive.codes import normalize_code, parse_codes
 from automotive.config import Settings
+from automotive.model_client import model_client
 from automotive.recommendations import RecommendationService
 
 LOGGER = logging.getLogger(__name__)
@@ -150,15 +151,7 @@ class ChatService:
     def _client(self) -> Any:
         if self.client is not None:
             return self.client
-        headers = {}
-        if self.settings.anthropic_workspace_id:
-            headers["anthropic-workspace-id"] = self.settings.anthropic_workspace_id
-        return anthropic.Anthropic(
-            api_key=self.settings.anthropic_api_key,
-            default_headers=headers,
-            timeout=25.0,
-            max_retries=0,
-        )
+        return model_client(self.settings)
 
     def assistant_client(self) -> Any:
         """One client for every assistant turn, so a turn does not pay a new TLS handshake.
@@ -167,12 +160,7 @@ class ChatService:
             return self.client
         with self._assistant_lock:
             if self._assistant_client is None:
-                headers = {}
-                if self.settings.anthropic_workspace_id:
-                    headers["anthropic-workspace-id"] = self.settings.anthropic_workspace_id
-                self._assistant_client = anthropic.Anthropic(
-                    api_key=self.settings.anthropic_api_key, default_headers=headers,
-                    timeout=25.0, max_retries=0)
+                self._assistant_client = model_client(self.settings)
             return self._assistant_client
 
     def prepare(self) -> None:
@@ -209,13 +197,15 @@ class ChatService:
             except (ValueError, RuntimeError, psycopg.Error):
                 return self._answer("VIN_UNAVAILABLE", results, [], usage, language)
         safe_message = _redact(message, (self.settings.anthropic_api_key,
+                                        self.settings.openrouter_api_key,
                                         self.settings.operator_token))
         safe_context = {key: value for key, value in context.items() if key in {
             "make", "model", "model_year", "engine_code", "fuel_type", "fuel",
             "transmission", "market", "displacement_l", "engine_cylinders",
             "body", "drive",
         }}
-        secrets = (self.settings.anthropic_api_key, self.settings.operator_token,
+        secrets = (self.settings.anthropic_api_key, self.settings.openrouter_api_key,
+                   self.settings.operator_token,
                    self.settings.vin_hmac_key, self.settings.database_url,
                    self.settings.enrichment_database_url)
         allowed_codes = {item.normalized for item in parse_codes(safe_message)}

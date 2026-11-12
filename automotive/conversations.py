@@ -94,8 +94,8 @@ class ConversationStore:
     def _safe(self, value: Any) -> Any:
         settings = getattr(self.chat_service, "settings", None)
         private = tuple(getattr(settings, key, "") for key in (
-            "anthropic_api_key", "operator_token", "vin_hmac_key", "database_url",
-            "enrichment_database_url", "catalog_api_key",
+            "anthropic_api_key", "openrouter_api_key", "operator_token", "vin_hmac_key",
+            "database_url", "enrichment_database_url", "catalog_api_key",
         ))
         private = tuple(v for v in private if isinstance(v, str))
         if isinstance(value, str):

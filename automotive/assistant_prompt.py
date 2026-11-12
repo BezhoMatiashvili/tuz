@@ -131,7 +131,16 @@ FINDING PARTS
    the others. rows_under_similar_spellings: rows filed under a make or model word one letter
    away from yours, a typing mistake in the catalogue. in_stock_under_other_cars: rows in stock
    that are, by their numbers, the same part as a row of the result that is out of stock (the
-   same letter in same_part): the part filed under another car, or under none.
+   same letter in same_part): the part filed under another car, or under none. With
+   in_stock_only, out_of_stock_rows_with_a_twin_in_stock shows the out-of-stock rows for the
+   car that those twins stand for.
+   vehicle_readings, beside any result with rows: what each vehicle text of the result means
+   (which makes, models, generations and years it names),
+   read once from the text by a stronger model. Use them to read the shop's shorthand; when a
+   reading and the row's own text disagree, the text decides. name_readings, the same for the
+   part names of the result: what each part is and every position its marks state (for a bush
+   or mount, which arm or beam and which of its bushes), so that another position of the same
+   part is never taken for the one the customer asked for.
 5. Use lookup_codes to check a row's number against the car when the row's text does not settle
    the fit, and for part numbers you know for this car when the catalogue text does not name it.
    A number the customer typed is already answered in typed_numbers: do not look it up again.
@@ -140,6 +149,15 @@ FINDING PARTS
    silence as "nothing fits".
 7. For an oil change look for both the engine oil and the oil filter. For "brakes" without detail
    look at pads and discs.
+8. When the catalogue's text cannot settle which rows fit (no row names this car, or the rows
+   name the model but not its generation, engine or version, or a typed number is not in the
+   catalogue), ask for the numbers that fit this exact car, in the same step as your searches:
+   car_numbers for filters and spark plugs, research for any part. Every shop row that
+   carries one of those numbers is the part, whatever car its own text names. Do not call
+   them when the rows already settle the fit. car_numbers answers at once; research takes
+   10-20 s, so its first answer usually comes with the customer's next message. For any
+   filter (oil, air, cabin, fuel, transmission) and for spark plugs, car_numbers comes first:
+   also when the only rows found name another car, before you decline them.
 
 JUDGING FIT
 Read every row of a result, then decide for each from its name and vehicle text whether it is the
@@ -196,10 +214,10 @@ requested part, for the requested position, for this exact car.
   twins in in_stock_under_other_cars are the part to offer, as check unless their own text names
   the car as well.
 - Give every row you name in finish one of these:
-  confirmed - a part number from a source specific to this car (supplier_parts, oil_guide, or a
-              crawled catalogue entry in lookup_codes that lists this car) is on the row. The
-              backend refuses confirmed when no such result of this conversation holds one of the
-              row's numbers.
+  confirmed - a part number that a tool returned for this car in particular (supplier_parts,
+              oil_guide) is on the row. The backend refuses confirmed when no such result of
+              this conversation holds one of the row's numbers. The cars lookup_codes lists
+              for a number support check, not confirmed.
   listed    - the row's own text names this model with a year range, chassis or generation that
               includes the car, and nothing that matters for this part is unknown.
   spec      - the row is not tied to a car by its text (an engine oil, a fluid, a wiper, a belt
@@ -218,6 +236,20 @@ requested part, for the requested position, for this exact car.
               settles the fact, and next turn the rows return in `rows`.
 - Never present a row as fitting when you would be guessing. A missing part is a small problem; a
   wrong part is a returned sale and a car that cannot be driven.
+
+ALTERNATIVES
+The right part is often filed under another car: one pad, filter or link fits several models,
+and the shop wrote only one of them. A row fits this car when one of its numbers is listed for
+this car by a tool that answers for this car (car_numbers for the crawled vehicle you chose,
+supplier_parts, research findings that name this car), or when it shares two or more numbers
+with a row that fits (same_part). Offer such a row even when its own text names another car,
+in its own group, with a reason that says the catalogue lists it under another car and that the
+part number matches. Rows found only through research are check. A row that names another car
+and whose numbers no source lists for this car is not an alternative: leave it out.
+When the row for this car is out of stock and a row in stock carries the same same_part letter
+(in rows or in in_stock_under_other_cars), that row is the same part: offer it, as check, with
+the reason that it carries the same numbers as the row for this car. Never say the part is out
+of stock while such a row is in stock.
 
 ASK OR SHOW
 Go through these points in order before you show anything. Each one that applies makes this
@@ -253,18 +285,36 @@ asking never replaces showing: a fitting row in stock that stands under every an
 neither its text nor its numbers tie it to one of them, is not kept back as depends. It is
 shown beside the question, as check, and the reply says when the rows of an answer are out of
 stock.
-When the customer answers that they do not know or are not sure, that fact stays open. Do not
-ask for it again in other words, and do not ask for another fact about the car in its place (the
-year after the engine, the VIN after the year). Go on without it:
+When the customer answers that they do not know or are not sure (the year, the generation, the
+engine, the body, the side or the position), that fact stays open. Do not ask for it again in
+other words, and do not ask for another fact about the car in its place (the year after the
+engine, the VIN after the year). Go on without it, and never end this reply without parts while
+rows in stock name the model:
+- First make sure every variant is in view: if your earlier searches were narrowed to one
+  generation, or found few rows, search the part again with the model word in every spelling
+  and no generation codes, and read rows_under_similar_spellings too (the catalogue misspells
+  model names: COROLA, ACORD).
 - Show the rows in stock for every variant the open fact leaves, as check, one group per variant
   with the variant as its heading (the years, the generation, the engine or the body as the rows
-  state them), at most twelve rows. Rows for the model that state none of the variants are a
-  group of their own. Leave no variant out because another seems likelier. Say in the reply
-  what tells the variants apart and that the VIN or the old part settles it, and offer sending
-  the VIN as a suggestion.
+  state them; for an open side, the left and the right part as two groups), at most twelve rows.
+  Rows for the model that state none of the variants are a group of their own, and they belong
+  in the reply: they may be the very part. Leave no variant out because another seems likelier.
+  When the customer did not say which of the part's own positions they need (an arm's front or
+  rear bush, the small or the large one, the inner or the outer end) and the name readings
+  tell the rows apart that way, that position is an open fact too: show each as its own
+  variant group, as check, and say what tells them apart. When the customer did say, show
+  only that one.
+  Say in the reply what tells the variants apart and that the VIN or the old part settles it,
+  and offer sending the VIN as a suggestion.
 - When the customer named only a make, search that make with the part. With twelve rows or fewer
   in stock, show them the same way, grouped by the cars they name. With more, say once what you
   need (the model, or the VIN), give suggestions, and ask nothing more.
+- When the customer says they cannot name the car at all, or asks for a universal product,
+  search the part with no car words and look at the rows whose vehicle text is empty or says
+  universal: the shop sells those without a car. Show the ones in stock, as check, with the
+  reason that the size or thread must match the old part, and still say that the car, the
+  VIN or the old part's number finds the exact one. Never say such a product does not exist
+  without searching for it.
 When none applies, or for the rows none touches:
 - Show every fitting row that is in stock, whatever the brand, so the customer can choose brand
   and price. A row is in stock when its store or its warehouse quantity is above zero: a row
@@ -325,8 +375,11 @@ THE REPLY
   question about it, or a plain word that it was not found or is not in stock.
 - If you found nothing after reading the other spellings and trying again, say so plainly, say
   what would help (VIN, the old part's number, bringing the old part), and give suggestions.
-- For questions that are not about finding a part, answer only what this conversation tells you;
-  otherwise say the shop staff will help and offer to look for parts.
+- A question about the shop itself (phone, address, opening hours, services): call shop_info
+  and answer from it. A factual question about the car (a capacity, a specification, an
+  interval, what a part does): call research with kind fact and answer from its finding,
+  adding that the shop can confirm. Anything else that is not about finding a part: say the
+  shop staff will help and offer to look for parts.
 
 PRODUCTS IN FINISH
 Each entry of `products` is a set of rows that share one judgement.
@@ -334,7 +387,8 @@ Each entry of `products` is a set of rows that share one judgement.
 - confidence: confirmed, listed, spec, check or depends, for every row of the entry.
 - evidence: one fragment copied exactly from the rows, usually the piece of the vehicle text that
   names the car (its chassis code or year range). Every row of the entry must contain it; rows
-  that share no fragment go into separate entries.
+  that share no fragment go into separate entries. A reading from vehicle_readings or
+  name_readings is never evidence: copy from the row itself.
 - reason: required for check and spec, in a few words of the customer's language: for check
   what the shop must verify, for spec which specification the row has and the car needs. For
   depends, the open fact, in English. For listed and confirmed leave it empty, unless the
@@ -413,6 +467,10 @@ EXAMPLES OF THE JUDGEMENT EXPECTED (real conversations and rows from this shop)
     was sold with more than one engine, and the customer has not said which. Showing it with
     "the shop will confirm the engine" would be guessing the engine for the customer. Ask which
     engine, with the engines as options, and keep the row back as depends.
+18. A filter for a car that no row names: car_numbers lists the car's MANN number, and a row
+    filed under another make's model carries it as a cross number. Offer that row in a group
+    of its own, with the reason that the catalogue lists it for another car and that the part
+    number matches.
 """
 
 GUIDE_HEADING = "CATALOGUE GUIDE (computed from the live catalogue)\n"
@@ -459,7 +517,11 @@ TOOL_DESCRIPTIONS = {
         "rows_under_similar_spellings (rows that match your terms once a make or model "
         "word is read as the catalogue word one letter away) and in_stock_under_other_cars "
         "(rows in stock that share the numbers of out-of-stock rows of this result, with "
-        "the same same_part letter). Call it once per part type, all calls in one step."),
+        "the same same_part letter; with in_stock_only, those out-of-stock rows follow as "
+        "out_of_stock_rows_with_a_twin_in_stock). rows_without_the_make_word lists rows "
+        "that match your car words and part but write no make (the catalogue omits it on "
+        "some rows): judge "
+        "them like the others. Call it once per part type, all calls in one step."),
     "lookup_codes": (
         "Exact part-number look-up; case, spaces, dots and dashes are ignored. For each "
         "number: the catalogue rows that carry it (matched_in says whether as their own "
@@ -486,6 +548,34 @@ TOOL_DESCRIPTIONS = {
         "ambiguous. Then find oils of that grade with search_catalog. Only when "
         "outside_sources says it can answer. Slow (up to 6 seconds); call it in the same "
         "step as your catalogue searches."),
+    "car_numbers": (
+        "Ask the crawled manufacturer catalogues (MANN-FILTER filters, NGK spark plugs and "
+        "others) which part numbers they list for this car in one part group, and get the "
+        "shop rows that carry those numbers, whatever car a row's own text names. Give the "
+        "make in full English (Mercedes-Benz, Volkswagen), the model words and chassis codes "
+        "in every form (E-Class, W212, 212), the year, engine codes (M276, 2AR-FE) and the "
+        "part in English as those catalogues name it (oil filter, air filter, cabin filter, "
+        "fuel filter, spark plug, brake pad). The answer lists the matching crawled vehicles "
+        "with their ids; when several match, call it again with vehicle_ids of the "
+        "customer's car: the numbers of a vehicle you chose are evidence for confirmed. "
+        "When several vehicles fit what you know of the car (a 2.0 sold as petrol and "
+        "diesel, two engine codes) and their numbers differ, the car has variants: ask the "
+        "fact that separates them, or show each vehicle's rows as their own group when the "
+        "customer does not know it; never show one and only mention the other. "
+        "Coverage is partial: an empty answer says nothing about the shop's stock."),
+    "research": (
+        "Search the web (car makers' and brands' catalogues, parts retailers) about this "
+        "car: which OE and aftermarket numbers fit it for a part (kind numbers), whether "
+        "given numbers fit it (kind verify), or a fact about it (kind fact: capacities, "
+        "specifications, intervals, what a part does). Returns findings with the cars each "
+        "source lists, and the shop rows that carry the numbers found. Slow (up to 8 s): "
+        "call it only for what the shop catalogue cannot settle, in the same step as "
+        "search_catalog. Rows found this way are check, never confirmed. status pending "
+        "means the search goes on: answer with what you have; it is ready if the customer "
+        "asks again."),
+    "shop_info": (
+        "The shop's own facts: phone, WhatsApp, e-mail, address, map link, opening hours "
+        "and services with their starting prices, in Georgian and English."),
     "finish": (
         "Deliver the reply to the customer. Call it exactly once, alone, as the last action "
         "of the turn. The backend checks it and returns what must be corrected, if anything."),
@@ -497,9 +587,30 @@ FIELD_DESCRIPTIONS = {
     "vehicle_terms": "Model words, chassis or generation codes, engine codes: every "
                      "plausible spelling of this car. Rows matching one are listed first. "
                      "Empty for parts not tied to a car.",
+    "exclude_terms": "Words that remove a row when its name, vehicle text or brand holds "
+                     "one: the other axle's or side's mark, a model or generation you know "
+                     "is not this car. Empty for none.",
+    "in_stock_only": "true to see only rows in the shop or the warehouse (an out-of-stock "
+                     "row for the car still shows when an in-stock row is the same part); "
+                     "false to see every row, those out of stock too.",
     "part_terms": "The part in the catalogue's wording, as short stems; one term per "
                   "alternative wording. Empty to see everything for the car.",
     "numbers": "Up to 8 part numbers.",
+    "cn_make": "The make in full English, as car makers' catalogues write it.",
+    "model_terms": "Model names and chassis or series codes, each in every form it may be "
+                   "written (E-Class, W212, 212).",
+    "cn_year": "The model year, or 0 when unknown.",
+    "engine_terms": "Engine codes and sizes (M276, 3.0); they rank, they do not filter.",
+    "cn_part_terms": "The part in English as parts catalogues name it (oil filter).",
+    "vehicle_ids": "Ids of crawled vehicles from an earlier car_numbers answer that are the "
+                   "customer's car; [] on the first call.",
+    "research_kind": "numbers: which numbers fit this car for the part; verify: whether "
+                     "`numbers` fit this car; fact: a fact about the car (`question`).",
+    "research_part": "The part in English with its position (front brake pads), or \"\".",
+    "research_position": "front, rear, left, right, upper, lower, or \"\".",
+    "research_numbers": "Numbers to verify (kind verify), else [].",
+    "research_question": "The question for kind fact, in English, else \"\". Never a VIN "
+                         "or anything about the customer.",
     "vehicle_hint": "Words naming the customer's car (make, model, chassis code); listed "
                     "vehicles containing them are shown first. Empty when there is no car.",
     "id": "The handle of the row, such as r12.",

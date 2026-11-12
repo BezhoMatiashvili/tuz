@@ -175,7 +175,8 @@ class ConversationTurn:
         self.rejections: Counter = Counter()
         self.language = language if language in {'ka', 'en'} else talk.detect_language(message)
         self.secrets = tuple(str(getattr(service.settings, key, '') or '') for key in (
-            'anthropic_api_key', 'operator_token', 'vin_hmac_key', 'database_url',
+            'anthropic_api_key', 'openrouter_api_key', 'operator_token', 'vin_hmac_key',
+            'database_url',
             'enrichment_database_url',
         ))
         self.dump = _dump

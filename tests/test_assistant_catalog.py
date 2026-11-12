@@ -157,7 +157,8 @@ class WordMatchingTests(unittest.TestCase):
         self.assertEqual(found(part_terms=["ხუნდი"]), pads)
         # A stem also matches after a full stop: `სამუხრ.ხუნდი`.
         self.assertEqual(found(part_terms=["სამუხრ"]), pads | {"50051"})
-        self.assertEqual(found(part_terms=["სამუხრუჭე ხუნდ"]), pads - {"40003"})
+        # The full word also finds the shop's shortening of it: `სამუხრ.ხუნდი` (40003).
+        self.assertEqual(found(part_terms=["სამუხრუჭე ხუნდ"]), pads)
         self.assertEqual(found(part_terms=["უნდი"]), set())  # not the middle of a word
         self.assertEqual(found(part_terms=["ხუნდები"]), set())  # longer than what is written
 
@@ -1070,3 +1071,26 @@ class NoKnowledgeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ShortenedWordTests(unittest.TestCase):
+    """The shop shortens Georgian words with a dot; a full word still finds them."""
+
+    INDEX = CatalogIndex.from_rows([
+        row("90001", "დიზელის გამათ.სპირალი", "TOYOTA HILUX 3.0", "HKT", "PT156", store="2"),
+        row("90002", "ამორტ. ბალიში წნ", "MAZDA CX-5", "FEBI", "183569", store="1"),
+        row("90003", "გამ ფილტრი", "TOYOTA HILUX", "X", "1", store="1"),
+    ])
+
+    def ids(self, *parts: str) -> set[str]:
+        found = self.INDEX.search(part_terms=list(parts))
+        columns = found["columns"]
+        return {dict(zip(columns, item))["id"] for item in found["rows"]}
+
+    def test_a_full_word_finds_the_shortened_one(self) -> None:
+        self.assertEqual(self.ids("გამათბობელი"), {"90001"})
+        self.assertEqual(self.ids("ამორტიზატორის ბალიში"), {"90002"})
+
+    def test_a_short_row_word_is_not_a_stem_for_longer_words(self) -> None:
+        # Three letters are too few to stand for a longer word.
+        self.assertNotIn("90003", self.ids("გამათბობელი"))
