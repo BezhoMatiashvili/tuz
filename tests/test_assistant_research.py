@@ -360,6 +360,14 @@ class FindingsTests(unittest.TestCase):
                                            "fits": ["Lancer 1.6 (2000-2013)", "Lancer"]}]},
                             known=["04465-06100"], strict=True)
         self.assertEqual(glued["findings"][0]["fits"], ["Lancer"])
+        # Any separators count, and only one date or a range of two is a date.
+        slashed = {"status": "answered", "answer": "Order on 599/123/4567, or 2019-2020-2021",
+                   "findings": [{"number": "599/123/4567", "fits": ["Golf 599·123·4567"]},
+                                {"number": "W 712/75", "fits": ["Golf 2009-2013"]}]}
+        cleaned = for_the_bot(slashed, strict=True)
+        self.assertNotIn("answer", cleaned)
+        self.assertEqual(cleaned["findings"], [{"number": "W 712/75", "fits": ["Golf 2009-2013"]}])
+        self.assertFalse(for_the_bot({"answer": "call 2019-2020-2021"}, strict=True))
         # The result itself, as the cache keeps it, is unchanged.
         self.assertEqual(result["findings"][0]["source_urls"][0], "https://www.toyota.com/p")
         self.assertIn("+1 555 010 0222", result["findings"][0]["quote"])

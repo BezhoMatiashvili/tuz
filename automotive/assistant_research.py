@@ -376,9 +376,14 @@ LINK = re.compile(rf"(?i)\b(?:https?://|www\.){_PATH}"
                   rf"|(?<![\w@.-])(?:[a-z0-9-]+\.)+[a-z]{{2,24}}\b(?:/{_PATH})?")
 PART_NUMBER = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9 ./\\\-‐-―−]*[A-Za-z0-9])?")
 # Build and production dates (`09.2007-12.2011`, `(2007-2013)`, `2007.09`) look like phone
-# numbers, but they say which cars a part fits.
+# numbers, but they say which cars a part fits: one date, or a range of two.
 _DATE = r"(?:(?:0?[1-9]|[12]\d|3[01])[./-]){0,2}(?:19|20)\d\d(?:[./-](?:0?[1-9]|[12]\d|3[01])){0,2}"
-DATES = re.compile(rf"\(?{_DATE}(?:[ ./()-]{{1,3}}{_DATE})*\)?")
+DATES = re.compile(rf"\(?{_DATE}(?: ?[-~] ?{_DATE})?\)?")
+# Where customers read the replies, a phone number written with any separators at all
+# (`599/123/4567`, `599·123·4567`), and seven digits in a row once a number's separators
+# are gone.
+PHONE_LIKE = re.compile(r"(?<!\w)\+?\d(?:(?:[^\w]|_){0,2}\d){6,}(?!\w)")
+LONG_DIGITS = re.compile(r"\d{7,}")
 WEB_WORDS = ("brand", "part", "position", "quote")
 
 
@@ -400,18 +405,18 @@ def _phone_free(text: Any, keep: frozenset[str]) -> bool:
     """Whether a text holds no phone-shaped number apart from dates and known numbers."""
     return not isinstance(text, str) or all(
         DATES.fullmatch(found.group(0)) or _compact(found.group(0)) in keep
-        for found in PHONE.finditer(text))
+        for found in PHONE_LIKE.finditer(text))
 
 
-def _usable_number(number: str, keep: frozenset[str], strict: bool) -> bool:
+def _usable_number(number: str, trusted: frozenset[str], strict: bool) -> bool:
     """Whether a finding's number may reach the bot: written like a part number and not like
-    a link and, where customers read the replies (``strict``), not shaped like a phone
-    number, unless it is one the shop's rows carry or the request asked about."""
+    a link and, where customers read the replies (``strict``), without seven digits in a row
+    once its separators are gone, unless the shop's rows carry it or the request asked."""
     if not PART_NUMBER.fullmatch(number):
         return False
-    if _compact(number) in keep:
+    if _compact(number) in trusted:
         return True
-    return not LINK.search(number) and not (strict and PHONE.fullmatch(number))
+    return not LINK.search(number) and not (strict and LONG_DIGITS.search(_compact(number)))
 
 
 def for_the_bot(result: dict, known: Iterable[Any] = (), *, strict: bool = False) -> dict:
@@ -423,12 +428,11 @@ def for_the_bot(result: dict, known: Iterable[Any] = (), *, strict: bool = False
     usable = [finding for finding in result.get("findings") or []
               if isinstance(finding, dict) and isinstance(finding.get("number"), str)
               and _usable_number(finding["number"].strip(), trusted, strict)]
-    keep = trusted | {_compact(finding["number"]) for finding in usable}
 
     def text(key: str, value: Any) -> Any:
         """A piece of web text as shown, or None when it is left out."""
         value = _web_text(value)
-        if strict and (key in ("note", "quote") or not _phone_free(value, keep)):
+        if strict and (key in ("note", "quote") or not _phone_free(value, trusted)):
             return None
         return value
 
@@ -448,7 +452,7 @@ def for_the_bot(result: dict, known: Iterable[Any] = (), *, strict: bool = False
         item["number"] = finding["number"].strip().replace(".", " ")
         if isinstance(finding.get("fits"), list):
             item["fits"] = [fit for fit in map(_web_text, finding["fits"])
-                            if not strict or _phone_free(fit, keep)]
+                            if not strict or _phone_free(fit, trusted)]
         if isinstance(finding.get("source_urls"), list):
             item["sites"] = list(dict.fromkeys(
                 site for site in map(_site_or_nothing, finding["source_urls"]) if site))
