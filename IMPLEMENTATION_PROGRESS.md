@@ -886,26 +886,30 @@ to 0; the remaining soft misses are long name-matched replies.
   where the vehicle text says REAR, 1,628 vehicle texts on in-stock rows that name no
   generation or years (`TOYOTA/LEXUS` alone is on 216 rows), and 3 part names the reader
   could not tell. Each line is a candidate to check, not a verdict.
-- Security review of the commit (automated, 2026-11-12): the research text written from web
-  pages (answer, note, quotes) reached the bot as written, so a page could plant a link or a
-  phone number for the bot to pass on to a customer. The Toolbox now shows the bot a cleaned
-  copy (`for_the_bot` in `automotive/assistant_research.py`): links (also a bare
-  `site.example/path`) and e-mail addresses go, and so do phone-shaped numbers other than
-  year ranges, unless the shop carries the number or the request asked about it (a second
-  review showed that exempting the findings' own numbers let a page exempt its phone number
-  by reporting it as a part number); a finding whose number is not written like a part
-  number is dropped, dots in numbers become spaces, and pages appear by their site only; the
-  cache keeps the result as it came. Research stays off in the public widget by default. A
-  phone-shaped number that a page reports as a part number still shows in that finding's
-  number field (the bot may need it to look up equivalents). The bench numbers above
-  predate this change (research ran in about 3 cases of each full draw).
+- Security reviews of the commits (automated, 2026-11-12, three rounds): the research text
+  written from web pages (answer, note, quotes) reached the bot as written, so a page could
+  plant a link, an address or a phone number for the bot to pass on. Final rule
+  (`for_the_bot` in `automotive/assistant_research.py`, applied by the Toolbox): links (also
+  a bare `site.example/path`) and e-mail addresses are cut, pages appear by their site only,
+  and a finding whose number is not written like a part number, or is written like a link,
+  is dropped. In the customers' chat (`strict`), a phone-shaped number reaches the bot only
+  as a code the shop's own rows write (exact codes, not stem matches) or a number the
+  request asked about; other such findings are dropped, the note and the quotes are left
+  out, and any other web text holding such a number (dates apart) is left out whole.
+  Cutting phone-shaped numbers out of the text instead was tried and replayed on the 46
+  cached research results: it took build years and engine sizes with it (`Lancer 1.6
+  (2000-2013)`, `Tiguan 2012-2016 2.0L TDI`), so staff see the numbers in the web text whole
+  (for staff 0 of 150 findings and 0 of 211 vehicle lines change); in the customers' chat,
+  with no shop code known, 47 of the 150 findings and 2 of 10 fact answers would be left
+  out. Research stays off in the public widget by default. The bench numbers above predate
+  this change (research ran in about 3 cases of each full draw).
 - Cost: $0 of API spend apart from the two owner-approved checks above (about $0.20); every
   bot, customer, writer and judge request of the exams ran on the Claude subscription.
   Committed on 2026-11-12 (6457d9f, together with the other session's OpenRouter billing
-  fallback, and two follow-up commits for the research text); not pushed.
+  fallback, and three follow-up commits for the research text); not pushed.
   The server on port 8767 was restarted at 15:37 from a terminal (not by this
   session) and loads the engine at its first chat; it has had none since, so it will run the
-  code in the tree. Checks: on a clean copy of the two commits 1,508 tests pass (53 PostgreSQL
+  code in the tree. Checks: on a clean copy of the commits 1,509 tests pass (53 PostgreSQL
   tests skipped without the disposable database); ruff and bandit find nothing in the files
   of this work (ruff's old
   findings are in db_ui; bandit's are in automotive/meta_store.py, a new file another session

@@ -3,6 +3,7 @@ services over the synthetic catalogue: no database, network or model."""
 
 from __future__ import annotations
 
+import json
 import time
 import unittest
 from types import SimpleNamespace
@@ -115,26 +116,50 @@ class ResearchTests(unittest.TestCase):
             box.run("research", dict(self.ARGS))
         self.assertEqual(box.sources()["research"], "cannot answer in this turn")
 
-    def test_links_and_contacts_planted_in_web_text_never_reach_the_model(self) -> None:
+    def test_links_and_addresses_planted_in_web_text_never_reach_the_model(self) -> None:
         planted = FakeResearch().ask(dict(self.ARGS))
-        planted["note"] = "Buy at https://parts.example.net/buy?id=7 or call +995 599 12 34 56"
+        planted["note"] = "Buy at https://parts.example.net/buy?id=7 or at parts.example.net"
         planted["findings"][0]["quote"] = "BREMBO P50069 fits E 400; mail sales@parts.example.net"
-        planted["findings"] += [
-            {"number": "17801-15070", "brand": "TOYOTA", "kind": "oe", "part": "air filter",
-             "quote": "TOYOTA 17801-15070 air filter, WhatsApp 599123456",
-             "fits": ["Toyota Corolla"], "source_urls": ["https://example.org/y"]},
-            {"number": "+995 599 123 456", "quote": "call +995 599 123 456",
-             "source_urls": ["https://parts.example.net/z"]}]
+        planted["findings"].append({"number": "+995 599 123 456", "quote": "+995 599 123 456",
+                                    "source_urls": ["https://parts.example.net/z"]})
         box = toolbox(research=SimpleNamespace(ask=lambda args, wait=None: planted),
                       research_audiences=("staff",), research_seconds=8.0)
         data, rows = box.render(box.run("research", dict(self.ARGS)))
-        self.assertEqual(data["note"], "Buy at [link] or call [number]")
-        pads, air = data["findings"]  # the phone number reported as a part number is gone
+        self.assertEqual(data["note"], "Buy at [link] or at [link]")
+        [pads] = data["findings"]  # a phone number is no part number
         self.assertEqual(pads["quote"], "BREMBO P50069 fits E 400; mail [e-mail]")
         self.assertEqual(pads["sites"], ["example.com"])
-        # The shop carries 17801-15070, so it stays; the planted number does not.
-        self.assertEqual(air["quote"], "TOYOTA 17801-15070 air filter, WhatsApp [number]")
         self.assertGreater(rows, 0)  # the numbers still bring their rows
+
+    def test_the_customers_chat_sees_no_phone_number_from_the_web(self) -> None:
+        planted = FakeResearch().ask(dict(self.ARGS))
+        planted["note"] = "Order: call 599 123 4567"
+        planted["findings"] += [
+            {"number": "17801-15070", "part": "air filter, WhatsApp 599123456",
+             "quote": "TOYOTA 17801-15070 air filter", "fits": ["Toyota Corolla 2007-2013"],
+             "source_urls": ["https://example.org/y"]},
+            {"number": "599 123 4567", "quote": "pads 599 123 4567",
+             "source_urls": ["https://parts.example.net/z"]}]
+        seen = {}
+        for audience in ("public", "staff"):
+            box = toolbox(audience, research=SimpleNamespace(ask=lambda args, wait=None: planted),
+                          research_audiences=("staff", "public"), research_seconds=8.0)
+            seen[audience], _ = box.render(box.run("research", dict(self.ARGS)))
+        public = seen["public"]
+        # The shop's rows carry 17801-15070, so it stays; the planted number does not, and
+        # web text that holds a phone number is left out rather than cut.
+        self.assertEqual([item["number"] for item in public["findings"]],
+                         ["P50069", "17801-15070"])
+        self.assertNotIn("note", public)
+        air = public["findings"][1]
+        self.assertEqual((air.get("part"), air.get("quote")), (None, None))
+        self.assertEqual(air["fits"], ["Toyota Corolla 2007-2013"])
+        self.assertNotIn("599", json.dumps(public["findings"]))
+        # Staff read the web text whole: a part number the shop lacks can still lead to an
+        # equivalent.
+        self.assertEqual([item["number"] for item in seen["staff"]["findings"]],
+                         ["P50069", "17801-15070", "599 123 4567"])
+        self.assertEqual(seen["staff"]["note"], "Order: call 599 123 4567")
 
     def test_a_pending_search_returns_no_rows(self) -> None:
         box = toolbox(research=FakeResearch("pending"), research_audiences=("staff",))

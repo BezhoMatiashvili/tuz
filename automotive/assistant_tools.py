@@ -890,11 +890,13 @@ class Toolbox:
         # Leave the finish request its time: research waits at most what the turn can spare.
         wait = max(0.5, min(seconds, self.deadline - self.clock() - 8.0))
         raw = self.extras["research"].ask(args, wait=wait)
+        # Web text, cleaned of links and contacts a page could plant for the bot to pass on.
+        # A phone-shaped token stays only as a code the shop's own rows write or a number the
+        # request asked about; the customers' chat sees no other phone-shaped finding number.
+        codes = [code for row in self._carriers(numbers_of(raw)).rows
+                 for code in row_numbers(row)]
         asked = args.get("numbers") if isinstance(args.get("numbers"), list) else []
-        carried = [via[0] for via in self._carriers(numbers_of(raw)).extras]
-        # Web text, cleaned of links and contacts a page could plant for the bot to pass on;
-        # a phone-shaped number stays only when the shop carries it or the request asked.
-        result = for_the_bot(raw, known=[*carried, *asked])
+        result = for_the_bot(raw, known=[*codes, *asked], strict=self.audience != "staff")
         status = result.get("status")
         data: dict = {key: result.get(key) for key in ("status", "findings", "answer", "note")
                       if result.get(key)}

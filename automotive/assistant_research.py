@@ -360,19 +360,25 @@ def _site(url: str) -> str:
 
 
 # The answer, the note and the words of each finding were written from web pages, and the
-# bot writes to customers. In what the bot sees, links (with or without `http` or `www`)
-# and e-mail addresses go, and so does a phone-shaped number unless it is a run of years;
-# a token stays only when it is a number the shop carries or the request asked about, never
-# because a page called it a part number. Pages appear by their site only, and a finding
-# counts only when its number is written like a part number. A page that asks the reader to
-# call, write or visit somewhere therefore cannot be passed on. The cache keeps the result
-# as it came.
+# bot passes on what it reads. In what the bot sees, links (with or without `http` or
+# `www`) and e-mail addresses are cut, pages appear by their site only, and a finding counts
+# only when its number is written like a part number and not like a link. In the chat
+# customers use (``strict``), a phone-shaped number reaches the bot only as a number the
+# shop's own rows carry or the request asked about: a finding with any other such number is
+# dropped, the note and the quotes are left out, and any other piece of web text holding
+# one (dates apart) is left out whole, because cutting it would also cut build years and
+# engine sizes (`1.6 (2000-2013)`). Staff read the web text whole. The cache keeps the
+# result as it came.
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 _PATH = r"[^\s<>\"'()\[\]{}]*[^\s<>\"'()\[\]{}.,;:!?]"
 # A bare host needs a top-level name of two letters or more, so `4.6 l` and `e.g.` stay.
 LINK = re.compile(rf"(?i)\b(?:https?://|www\.){_PATH}"
                   rf"|(?<![\w@.-])(?:[a-z0-9-]+\.)+[a-z]{{2,24}}\b(?:/{_PATH})?")
 PART_NUMBER = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9 ./\\\-‐-―−]*[A-Za-z0-9])?")
+# Build and production dates (`09.2007-12.2011`, `(2007-2013)`, `2007.09`) look like phone
+# numbers, but they say which cars a part fits.
+_DATE = r"(?:(?:0?[1-9]|[12]\d|3[01])[./-]){0,2}(?:19|20)\d\d(?:[./-](?:0?[1-9]|[12]\d|3[01])){0,2}"
+DATES = re.compile(rf"\(?{_DATE}(?:[ ./()-]{{1,3}}{_DATE})*\)?")
 WEB_WORDS = ("brand", "part", "position", "quote")
 
 
@@ -383,40 +389,66 @@ def _site_or_nothing(url: Any) -> str:
         return ""
 
 
-def _web_text(text: Any, keep: frozenset[str]) -> Any:
-    """Free text from the web as the bot may see it (see EMAIL above)."""
+def _web_text(text: Any) -> Any:
+    """Free text from the web with its links and e-mail addresses cut."""
     if not isinstance(text, str):
         return text
-
-    def link(found: re.Match[str]) -> str:
-        return found.group(0) if _compact(found.group(0)) in keep else "[link]"
-
-    def number(found: re.Match[str]) -> str:
-        token = found.group(0)
-        return token if YEARS.fullmatch(token) or _compact(token) in keep else "[number]"
-
-    return PHONE.sub(number, LINK.sub(link, EMAIL.sub("[e-mail]", text)))
+    return LINK.sub("[link]", EMAIL.sub("[e-mail]", text))
 
 
-def for_the_bot(result: dict, known: Iterable[Any] = ()) -> dict:
-    """A research result as the Toolbox shows it to the bot: a copy with the web's free text
-    cleaned (see EMAIL above), each finding's pages given as their sites, and only the
-    findings whose number is written like a part number. ``known``: the numbers a token of
-    the text may still be, those the shop carries and those the request asked about."""
-    keep = frozenset(_compact(number) for number in known if isinstance(number, str))
-    shown = {key: _web_text(value, keep) if key in ("answer", "note") else value
-             for key, value in result.items()}
+def _phone_free(text: Any, keep: frozenset[str]) -> bool:
+    """Whether a text holds no phone-shaped number apart from dates and known numbers."""
+    return not isinstance(text, str) or all(
+        DATES.fullmatch(found.group(0)) or _compact(found.group(0)) in keep
+        for found in PHONE.finditer(text))
+
+
+def _usable_number(number: str, keep: frozenset[str], strict: bool) -> bool:
+    """Whether a finding's number may reach the bot: written like a part number and not like
+    a link and, where customers read the replies (``strict``), not shaped like a phone
+    number, unless it is one the shop's rows carry or the request asked about."""
+    if not PART_NUMBER.fullmatch(number):
+        return False
+    if _compact(number) in keep:
+        return True
+    return not LINK.search(number) and not (strict and PHONE.fullmatch(number))
+
+
+def for_the_bot(result: dict, known: Iterable[Any] = (), *, strict: bool = False) -> dict:
+    """A research result as the Toolbox shows it to the bot (see EMAIL above): a copy, with
+    only the findings whose number may reach the bot (``_usable_number``) and their pages
+    given as their sites. ``known``: trusted numbers, the codes of the shop's own rows and
+    the numbers the request asked about; ``strict`` for the chat customers use."""
+    trusted = frozenset(_compact(number) for number in known if isinstance(number, str))
+    usable = [finding for finding in result.get("findings") or []
+              if isinstance(finding, dict) and isinstance(finding.get("number"), str)
+              and _usable_number(finding["number"].strip(), trusted, strict)]
+    keep = trusted | {_compact(finding["number"]) for finding in usable}
+
+    def text(key: str, value: Any) -> Any:
+        """A piece of web text as shown, or None when it is left out."""
+        value = _web_text(value)
+        if strict and (key in ("note", "quote") or not _phone_free(value, keep)):
+            return None
+        return value
+
+    shown = {}
+    for key, value in result.items():
+        value = text(key, value) if key in ("answer", "note") else value
+        if value is not None:
+            shown[key] = value
     findings = []
-    for finding in result.get("findings") or []:
-        number = finding.get("number") if isinstance(finding, dict) else None
-        if not isinstance(number, str) or not PART_NUMBER.fullmatch(number.strip()):
-            continue
-        item = {key: _web_text(value, keep) if key in WEB_WORDS else value
-                for key, value in finding.items() if key != "source_urls"}
+    for finding in usable:
+        item = {}
+        for key, value in finding.items():
+            value = text(key, value) if key in WEB_WORDS else value
+            if key != "source_urls" and value is not None:
+                item[key] = value
         # Dots in a part number only separate its groups; as spaces, no number reads as a site.
-        item["number"] = number.strip().replace(".", " ")
+        item["number"] = finding["number"].strip().replace(".", " ")
         if isinstance(finding.get("fits"), list):
-            item["fits"] = [_web_text(fit, keep) for fit in finding["fits"]]
+            item["fits"] = [fit for fit in map(_web_text, finding["fits"])
+                            if not strict or _phone_free(fit, keep)]
         if isinstance(finding.get("source_urls"), list):
             item["sites"] = list(dict.fromkeys(
                 site for site in map(_site_or_nothing, finding["source_urls"]) if site))

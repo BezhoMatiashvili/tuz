@@ -318,7 +318,7 @@ class FindingsTests(unittest.TestCase):
                   "findings": [{"number": "04465-06100", "brand": "TOYOTA", "kind": "oe",
                                 "part": "pads, order on wa.me/995599123456",
                                 "quote": "04465 06100 Camry 2017-2021; call +1 555 010 0222",
-                                "fits": ["Camry XV70 2017-2021", 5],
+                                "fits": ["Camry XV70 09.2017-12.2021", "Camry (2017-2021)", 5],
                                 "source_urls": ["https://www.toyota.com/p",
                                                 "https://toyota.com/q",
                                                 "https://shop.example/r"]},
@@ -326,25 +326,40 @@ class FindingsTests(unittest.TestCase):
                                {"number": "parts.example/x7", "quote": "parts.example/x7"},
                                {"number": "1K0.698.151.AB", "quote": "1K0.698.151.AB Golf"},
                                "junk"]}
+        # Staff: links and e-mail addresses are cut, every number stays whole.
         shown = for_the_bot(result)
         self.assertEqual(shown["answer"], "5W-30, 4.6 l with the filter; questions to [e-mail]")
-        self.assertEqual(shown["note"], "See [link], [link]. Tel. [number]")
-        # A number not written like a part number is no finding; dots in one become spaces.
-        self.assertEqual([item["number"] for item in shown["findings"]],
-                         ["04465-06100", "parts example/x7", "1K0 698 151 AB"])
-        first, _, dotted = shown["findings"]
+        self.assertEqual(shown["note"], "See [link], [link]. Tel. 599 12 34 56")
+        # A number written like no part number, or like a link, is no finding.
+        [first] = shown["findings"]
         self.assertEqual(first["part"], "pads, order on [link]")
-        # Calling it a part number does not keep a phone-shaped token: only a number the shop
-        # carries or the request asked about stays, and runs of years.
-        self.assertEqual(first["quote"], "[number] Camry 2017-2021; call [number]")
-        self.assertEqual(dotted["quote"], "[link] Golf")
-        self.assertEqual(first["fits"], ["Camry XV70 2017-2021", 5])
+        self.assertEqual(first["quote"], "04465 06100 Camry 2017-2021; call +1 555 010 0222")
+        self.assertEqual(first["fits"], ["Camry XV70 09.2017-12.2021", "Camry (2017-2021)", 5])
         self.assertEqual(first["sites"], ["toyota.com", "shop.example"])
         self.assertNotIn("source_urls", first)
-        known = for_the_bot(result, known=["04465-06100", "1K0698151AB", None])
-        self.assertEqual(known["findings"][0]["quote"],
-                         "04465 06100 Camry 2017-2021; call [number]")
-        self.assertEqual(known["findings"][2]["quote"], "1K0.698.151.AB Golf")
+        known = for_the_bot(result, known=["1K0698151AB", None])
+        self.assertEqual([item["number"] for item in known["findings"]],
+                         ["04465-06100", "1K0 698 151 AB"])  # dots in a number become spaces
+        self.assertEqual(known["findings"][1]["quote"], "[link] Golf")  # links always go
+        # The customers' chat: a phone-shaped number must be one the shop's rows carry or the
+        # request asked about, so a page cannot make its phone number a part number; notes,
+        # quotes and any other web text holding such a number are left out, not cut.
+        planted = {"status": "answered", "note": "Order: call 599 123 4567",
+                   "answer": "Ring 599 123 4567 for the capacity",
+                   "findings": [{"number": "599 123 4567", "quote": "call 599 123 4567"}]}
+        self.assertEqual(for_the_bot(planted, strict=True), {"status": "answered", "findings": []})
+        self.assertEqual(for_the_bot(result, strict=True)["findings"], [])
+        strict = for_the_bot(result, known=["04465-06100"], strict=True)
+        self.assertEqual(strict["answer"], shown["answer"])
+        self.assertNotIn("note", strict)
+        [item] = strict["findings"]
+        self.assertEqual((item["number"], item["part"]), ("04465-06100", "pads, order on [link]"))
+        self.assertNotIn("quote", item)
+        self.assertEqual(item["fits"], ["Camry XV70 09.2017-12.2021", "Camry (2017-2021)", 5])
+        glued = for_the_bot({"findings": [{"number": "04465-06100",
+                                           "fits": ["Lancer 1.6 (2000-2013)", "Lancer"]}]},
+                            known=["04465-06100"], strict=True)
+        self.assertEqual(glued["findings"][0]["fits"], ["Lancer"])
         # The result itself, as the cache keeps it, is unchanged.
         self.assertEqual(result["findings"][0]["source_urls"][0], "https://www.toyota.com/p")
         self.assertIn("+1 555 010 0222", result["findings"][0]["quote"])
