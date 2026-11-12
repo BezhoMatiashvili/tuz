@@ -368,6 +368,11 @@ class FindingsTests(unittest.TestCase):
         self.assertNotIn("answer", cleaned)
         self.assertEqual(cleaned["findings"], [{"number": "W 712/75", "fits": ["Golf 2009-2013"]}])
         self.assertFalse(for_the_bot({"answer": "call 2019-2020-2021"}, strict=True))
+        # Glued to letters of any script, a phone number is still one.
+        for glued_text in ("დარეკეთ599123456ზე", "tel599123456", "ტელ: ５９９１２３４５６"):
+            self.assertFalse(for_the_bot({"answer": glued_text}, strict=True), glued_text)
+        kept = "Corolla XV70 09.2017-12.2021, 4G15 1.6"
+        self.assertEqual(for_the_bot({"answer": kept}, strict=True), {"answer": kept})
         # The result itself, as the cache keeps it, is unchanged.
         self.assertEqual(result["findings"][0]["source_urls"][0], "https://www.toyota.com/p")
         self.assertIn("+1 555 010 0222", result["findings"][0]["quote"])

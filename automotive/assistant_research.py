@@ -379,10 +379,12 @@ PART_NUMBER = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9 ./\\\-‐-―−]*[A-Za-z0-9
 # numbers, but they say which cars a part fits: one date, or a range of two.
 _DATE = r"(?:(?:0?[1-9]|[12]\d|3[01])[./-]){0,2}(?:19|20)\d\d(?:[./-](?:0?[1-9]|[12]\d|3[01])){0,2}"
 DATES = re.compile(rf"\(?{_DATE}(?: ?[-~] ?{_DATE})?\)?")
-# Where customers read the replies, a phone number written with any separators at all
-# (`599/123/4567`, `599·123·4567`), and seven digits in a row once a number's separators
-# are gone.
-PHONE_LIKE = re.compile(r"(?<!\w)\+?\d(?:(?:[^\w]|_){0,2}\d){6,}(?!\w)")
+# Where customers read the replies, what could be a phone number: a word of any script with
+# seven digits in a row (`tel599123456`, `დარეკეთ599123456ზე`), or number words joined by
+# at most two separators of any kind (`599/123/4567`, `599·123·4567`) that hold seven
+# digits or more; and in a finding's number, seven digits in a row once its separators are
+# gone.
+WORDS = re.compile(r"[^\W_]+")
 LONG_DIGITS = re.compile(r"\d{7,}")
 WEB_WORDS = ("brand", "part", "position", "quote")
 
@@ -401,11 +403,33 @@ def _web_text(text: Any) -> Any:
     return LINK.sub("[link]", EMAIL.sub("[e-mail]", text))
 
 
-def _phone_free(text: Any, keep: frozenset[str]) -> bool:
-    """Whether a text holds no phone-shaped number apart from dates and known numbers."""
-    return not isinstance(text, str) or all(
-        DATES.fullmatch(found.group(0)) or _compact(found.group(0)) in keep
-        for found in PHONE_LIKE.finditer(text))
+def _phone_free(text: Any, trusted: frozenset[str]) -> bool:
+    """Whether a text holds nothing that could be a phone number (see WORDS above) apart from
+    one date or a range of two and the trusted numbers."""
+    if not isinstance(text, str):
+        return True
+    run: list[re.Match[str]] = []
+
+    def phone(words: list[re.Match[str]]) -> bool:
+        if not words:
+            return False
+        joined = text[words[0].start():words[-1].end()]
+        digits = sum(len(word.group(0)) for word in words)
+        return digits >= 7 and not DATES.fullmatch(joined) and _compact(joined) not in trusted
+
+    for word in WORDS.finditer(text):
+        token = word.group(0)
+        if not token.isdigit():
+            if (LONG_DIGITS.search(token) and _compact(token) not in trusted) or phone(run):
+                return False
+            run = []
+        else:
+            if run and word.start() - run[-1].end() > 2:
+                if phone(run):
+                    return False
+                run = []
+            run.append(word)
+    return not phone(run)
 
 
 def _usable_number(number: str, trusted: frozenset[str], strict: bool) -> bool:

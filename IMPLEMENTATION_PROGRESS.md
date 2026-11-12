@@ -886,15 +886,16 @@ to 0; the remaining soft misses are long name-matched replies.
   where the vehicle text says REAR, 1,628 vehicle texts on in-stock rows that name no
   generation or years (`TOYOTA/LEXUS` alone is on 216 rows), and 3 part names the reader
   could not tell. Each line is a candidate to check, not a verdict.
-- Security reviews of the commits (automated, 2026-11-12, four rounds): the research text
+- Security reviews of the commits (automated, 2026-11-12, five rounds): the research text
   written from web pages (answer, note, quotes) reached the bot as written, so a page could
   plant a link, an address or a phone number for the bot to pass on. Final rule
   (`for_the_bot` in `automotive/assistant_research.py`, applied by the Toolbox): links (also
   a bare `site.example/path`) and e-mail addresses are cut, pages appear by their site only,
   and a finding whose number is not written like a part number, or is written like a link,
   is dropped. In the customers' chat (`strict`), a number that could be a phone number (in
-  a finding's number seven digits in a row once its separators are gone; in the text a digit
-  run with any separators) reaches the bot only as a code the shop's own rows write (exact
+  a finding's number seven digits in a row once its separators are gone; in the text seven
+  digits glued to letters of any script, such as `დარეკეთ599123456ზე`, or joined by up to
+  two separators of any kind) reaches the bot only as a code the shop's own rows write (exact
   codes, not stem matches) or a number the request asked about; other such findings are
   dropped, the note and the quotes are left out, and any other web text holding such a
   number (one date or a range of two apart) is left out whole.
@@ -902,13 +903,13 @@ to 0; the remaining soft misses are long name-matched replies.
   cached research results: it took build years and engine sizes with it (`Lancer 1.6
   (2000-2013)`, `Tiguan 2012-2016 2.0L TDI`), so staff see the numbers in the web text whole
   (for staff 0 of 150 findings and 0 of 211 vehicle lines change); in the customers' chat,
-  with no shop code known, 67 of the 150 findings and 2 of 10 fact answers would be left
+  with no shop code known, 67 of the 150 findings and 3 of 10 fact answers would be left
   out. Research stays off in the public widget by default. The bench numbers above predate
   this change (research ran in about 3 cases of each full draw).
 - Cost: $0 of API spend apart from the two owner-approved checks above (about $0.20); every
   bot, customer, writer and judge request of the exams ran on the Claude subscription.
   Committed on 2026-11-12 (6457d9f, together with the other session's OpenRouter billing
-  fallback, and four follow-up commits for the research text); not pushed.
+  fallback, and five follow-up commits for the research text); not pushed.
   The server on port 8767 was restarted at 15:37 from a terminal (not by this
   session) and loads the engine at its first chat; it has had none since, so it will run the
   code in the tree. Checks: on a clean copy of the commits 1,509 tests pass (53 PostgreSQL
