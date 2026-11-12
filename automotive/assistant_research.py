@@ -360,13 +360,19 @@ def _site(url: str) -> str:
 
 
 # The answer, the note and the words of each finding were written from web pages, and the
-# bot writes to customers. In what the bot sees, a link becomes its site's name, an e-mail
-# address goes, and a phone-shaped number goes unless it is one of the findings' own part
-# numbers or a run of years; pages appear by their site only. A page that asks the reader to
+# bot writes to customers. In what the bot sees, links (with or without `http` or `www`)
+# and e-mail addresses go, and so does a phone-shaped number unless it is a run of years;
+# a token stays only when it is a number the shop carries or the request asked about, never
+# because a page called it a part number. Pages appear by their site only, and a finding
+# counts only when its number is written like a part number. A page that asks the reader to
 # call, write or visit somewhere therefore cannot be passed on. The cache keeps the result
 # as it came.
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
-LINK = re.compile(r"(?i)\b(?:https?://|www\.)[^\s<>\"'()\[\]{}]*[^\s<>\"'()\[\]{}.,;:!?]")
+_PATH = r"[^\s<>\"'()\[\]{}]*[^\s<>\"'()\[\]{}.,;:!?]"
+# A bare host needs a top-level name of two letters or more, so `4.6 l` and `e.g.` stay.
+LINK = re.compile(rf"(?i)\b(?:https?://|www\.){_PATH}"
+                  rf"|(?<![\w@.-])(?:[a-z0-9-]+\.)+[a-z]{{2,24}}\b(?:/{_PATH})?")
+PART_NUMBER = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9 ./\\\-‐-―−]*[A-Za-z0-9])?")
 WEB_WORDS = ("brand", "part", "position", "quote")
 
 
@@ -377,38 +383,40 @@ def _site_or_nothing(url: Any) -> str:
         return ""
 
 
-def _link_site(found: re.Match[str]) -> str:
-    link = found.group(0)
-    return f"[{_site_or_nothing(link if '://' in link else f'http://{link}') or 'link'}]"
-
-
-def _web_text(text: Any, numbers: frozenset[str]) -> Any:
+def _web_text(text: Any, keep: frozenset[str]) -> Any:
     """Free text from the web as the bot may see it (see EMAIL above)."""
     if not isinstance(text, str):
         return text
 
+    def link(found: re.Match[str]) -> str:
+        return found.group(0) if _compact(found.group(0)) in keep else "[link]"
+
     def number(found: re.Match[str]) -> str:
         token = found.group(0)
-        keep = YEARS.fullmatch(token) or _compact(token) in numbers
-        return token if keep else "[number]"
+        return token if YEARS.fullmatch(token) or _compact(token) in keep else "[number]"
 
-    return PHONE.sub(number, LINK.sub(_link_site, EMAIL.sub("[e-mail]", text)))
+    return PHONE.sub(number, LINK.sub(link, EMAIL.sub("[e-mail]", text)))
 
 
-def for_the_bot(result: dict) -> dict:
+def for_the_bot(result: dict, known: Iterable[Any] = ()) -> dict:
     """A research result as the Toolbox shows it to the bot: a copy with the web's free text
-    cleaned and each finding's pages given as their sites."""
-    numbers = frozenset(_compact(number) for number in numbers_of(result))
-    shown = {key: _web_text(value, numbers) if key in ("answer", "note") else value
+    cleaned (see EMAIL above), each finding's pages given as their sites, and only the
+    findings whose number is written like a part number. ``known``: the numbers a token of
+    the text may still be, those the shop carries and those the request asked about."""
+    keep = frozenset(_compact(number) for number in known if isinstance(number, str))
+    shown = {key: _web_text(value, keep) if key in ("answer", "note") else value
              for key, value in result.items()}
     findings = []
     for finding in result.get("findings") or []:
-        if not isinstance(finding, dict):
+        number = finding.get("number") if isinstance(finding, dict) else None
+        if not isinstance(number, str) or not PART_NUMBER.fullmatch(number.strip()):
             continue
-        item = {key: _web_text(value, numbers) if key in WEB_WORDS else value
+        item = {key: _web_text(value, keep) if key in WEB_WORDS else value
                 for key, value in finding.items() if key != "source_urls"}
+        # Dots in a part number only separate its groups; as spaces, no number reads as a site.
+        item["number"] = number.strip().replace(".", " ")
         if isinstance(finding.get("fits"), list):
-            item["fits"] = [_web_text(fit, numbers) for fit in finding["fits"]]
+            item["fits"] = [_web_text(fit, keep) for fit in finding["fits"]]
         if isinstance(finding.get("source_urls"), list):
             item["sites"] = list(dict.fromkeys(
                 site for site in map(_site_or_nothing, finding["source_urls"]) if site))

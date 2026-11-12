@@ -889,8 +889,12 @@ class Toolbox:
         seconds = float(self.extras.get("research_seconds") or 8.0)
         # Leave the finish request its time: research waits at most what the turn can spare.
         wait = max(0.5, min(seconds, self.deadline - self.clock() - 8.0))
-        # Web text, cleaned of links and contacts a page could plant for the bot to pass on.
-        result = for_the_bot(self.extras["research"].ask(args, wait=wait))
+        raw = self.extras["research"].ask(args, wait=wait)
+        asked = args.get("numbers") if isinstance(args.get("numbers"), list) else []
+        carried = [via[0] for via in self._carriers(numbers_of(raw)).extras]
+        # Web text, cleaned of links and contacts a page could plant for the bot to pass on;
+        # a phone-shaped number stays only when the shop carries it or the request asked.
+        result = for_the_bot(raw, known=[*carried, *asked])
         status = result.get("status")
         data: dict = {key: result.get(key) for key in ("status", "findings", "answer", "note")
                       if result.get(key)}

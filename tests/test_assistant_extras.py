@@ -119,12 +119,21 @@ class ResearchTests(unittest.TestCase):
         planted = FakeResearch().ask(dict(self.ARGS))
         planted["note"] = "Buy at https://parts.example.net/buy?id=7 or call +995 599 12 34 56"
         planted["findings"][0]["quote"] = "BREMBO P50069 fits E 400; mail sales@parts.example.net"
+        planted["findings"] += [
+            {"number": "17801-15070", "brand": "TOYOTA", "kind": "oe", "part": "air filter",
+             "quote": "TOYOTA 17801-15070 air filter, WhatsApp 599123456",
+             "fits": ["Toyota Corolla"], "source_urls": ["https://example.org/y"]},
+            {"number": "+995 599 123 456", "quote": "call +995 599 123 456",
+             "source_urls": ["https://parts.example.net/z"]}]
         box = toolbox(research=SimpleNamespace(ask=lambda args, wait=None: planted),
                       research_audiences=("staff",), research_seconds=8.0)
         data, rows = box.render(box.run("research", dict(self.ARGS)))
-        self.assertEqual(data["note"], "Buy at [parts.example.net] or call [number]")
-        self.assertEqual(data["findings"][0]["quote"], "BREMBO P50069 fits E 400; mail [e-mail]")
-        self.assertEqual(data["findings"][0]["sites"], ["example.com"])
+        self.assertEqual(data["note"], "Buy at [link] or call [number]")
+        pads, air = data["findings"]  # the phone number reported as a part number is gone
+        self.assertEqual(pads["quote"], "BREMBO P50069 fits E 400; mail [e-mail]")
+        self.assertEqual(pads["sites"], ["example.com"])
+        # The shop carries 17801-15070, so it stays; the planted number does not.
+        self.assertEqual(air["quote"], "TOYOTA 17801-15070 air filter, WhatsApp [number]")
         self.assertGreater(rows, 0)  # the numbers still bring their rows
 
     def test_a_pending_search_returns_no_rows(self) -> None:
