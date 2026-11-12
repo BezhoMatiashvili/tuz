@@ -882,14 +882,15 @@ class Toolbox:
         return Output(data, ("via",), tuple(plain(number) for number in numbers) if ids else ())
 
     def _research(self, args: dict) -> Output:
-        from automotive.assistant_research import numbers_of
+        from automotive.assistant_research import for_the_bot, numbers_of
 
         if not self._research_on():
             raise ToolError("Web research is not available in this chat.", JUDGE)
         seconds = float(self.extras.get("research_seconds") or 8.0)
         # Leave the finish request its time: research waits at most what the turn can spare.
         wait = max(0.5, min(seconds, self.deadline - self.clock() - 8.0))
-        result = self.extras["research"].ask(args, wait=wait)
+        # Web text, cleaned of links and contacts a page could plant for the bot to pass on.
+        result = for_the_bot(self.extras["research"].ask(args, wait=wait))
         status = result.get("status")
         data: dict = {key: result.get(key) for key in ("status", "findings", "answer", "note")
                       if result.get(key)}

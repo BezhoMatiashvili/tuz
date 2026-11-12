@@ -359,6 +359,65 @@ def _site(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+# The answer, the note and the words of each finding were written from web pages, and the
+# bot writes to customers. In what the bot sees, a link becomes its site's name, an e-mail
+# address goes, and a phone-shaped number goes unless it is one of the findings' own part
+# numbers or a run of years; pages appear by their site only. A page that asks the reader to
+# call, write or visit somewhere therefore cannot be passed on. The cache keeps the result
+# as it came.
+EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+LINK = re.compile(r"(?i)\b(?:https?://|www\.)[^\s<>\"'()\[\]{}]*[^\s<>\"'()\[\]{}.,;:!?]")
+WEB_WORDS = ("brand", "part", "position", "quote")
+
+
+def _site_or_nothing(url: Any) -> str:
+    try:
+        return _site(url) if isinstance(url, str) else ""
+    except ValueError:
+        return ""
+
+
+def _link_site(found: re.Match[str]) -> str:
+    link = found.group(0)
+    return f"[{_site_or_nothing(link if '://' in link else f'http://{link}') or 'link'}]"
+
+
+def _web_text(text: Any, numbers: frozenset[str]) -> Any:
+    """Free text from the web as the bot may see it (see EMAIL above)."""
+    if not isinstance(text, str):
+        return text
+
+    def number(found: re.Match[str]) -> str:
+        token = found.group(0)
+        keep = YEARS.fullmatch(token) or _compact(token) in numbers
+        return token if keep else "[number]"
+
+    return PHONE.sub(number, LINK.sub(_link_site, EMAIL.sub("[e-mail]", text)))
+
+
+def for_the_bot(result: dict) -> dict:
+    """A research result as the Toolbox shows it to the bot: a copy with the web's free text
+    cleaned and each finding's pages given as their sites."""
+    numbers = frozenset(_compact(number) for number in numbers_of(result))
+    shown = {key: _web_text(value, numbers) if key in ("answer", "note") else value
+             for key, value in result.items()}
+    findings = []
+    for finding in result.get("findings") or []:
+        if not isinstance(finding, dict):
+            continue
+        item = {key: _web_text(value, numbers) if key in WEB_WORDS else value
+                for key, value in finding.items() if key != "source_urls"}
+        if isinstance(finding.get("fits"), list):
+            item["fits"] = [_web_text(fit, numbers) for fit in finding["fits"]]
+        if isinstance(finding.get("source_urls"), list):
+            item["sites"] = list(dict.fromkeys(
+                site for site in map(_site_or_nothing, finding["source_urls"]) if site))
+        findings.append(item)
+    if "findings" in result:
+        shown["findings"] = findings
+    return shown
+
+
 def _excerpt(quote: str, compact: str) -> str:
     """At most QUOTE_CHARS of a quote, around the first place it shows the number."""
     if len(quote) <= QUOTE_CHARS:

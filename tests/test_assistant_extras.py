@@ -115,6 +115,18 @@ class ResearchTests(unittest.TestCase):
             box.run("research", dict(self.ARGS))
         self.assertEqual(box.sources()["research"], "cannot answer in this turn")
 
+    def test_links_and_contacts_planted_in_web_text_never_reach_the_model(self) -> None:
+        planted = FakeResearch().ask(dict(self.ARGS))
+        planted["note"] = "Buy at https://parts.example.net/buy?id=7 or call +995 599 12 34 56"
+        planted["findings"][0]["quote"] = "BREMBO P50069 fits E 400; mail sales@parts.example.net"
+        box = toolbox(research=SimpleNamespace(ask=lambda args, wait=None: planted),
+                      research_audiences=("staff",), research_seconds=8.0)
+        data, rows = box.render(box.run("research", dict(self.ARGS)))
+        self.assertEqual(data["note"], "Buy at [parts.example.net] or call [number]")
+        self.assertEqual(data["findings"][0]["quote"], "BREMBO P50069 fits E 400; mail [e-mail]")
+        self.assertEqual(data["findings"][0]["sites"], ["example.com"])
+        self.assertGreater(rows, 0)  # the numbers still bring their rows
+
     def test_a_pending_search_returns_no_rows(self) -> None:
         box = toolbox(research=FakeResearch("pending"), research_audiences=("staff",))
         data, rows = box.render(box.run("research", dict(self.ARGS)))

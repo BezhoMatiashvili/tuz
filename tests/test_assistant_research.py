@@ -40,6 +40,7 @@ from automotive.assistant_research import (
     cache_key,
     clean_findings,
     clean_question,
+    for_the_bot,
     numbers_of,
     question_text,
 )
@@ -309,6 +310,34 @@ class FindingsTests(unittest.TestCase):
         self.assertEqual(numbers_of(result), ["04465-02220", "P83151"])
         self.assertEqual(numbers_of({"status": "pending"}), [])
         self.assertEqual(numbers_of(None), [])
+
+    def test_the_bot_sees_web_text_without_links_or_contacts(self) -> None:
+        result = {"status": "answered",
+                  "answer": "5W-30, 4.6 l with the filter; questions to info@shop.example",
+                  "note": "See https://shop.example/a?b=1, www.toyota.com. Tel. 599 12 34 56",
+                  "findings": [{"number": "04465-06100", "brand": "TOYOTA", "kind": "oe",
+                                "part": "pads, order on wa.me/995599123456",
+                                "quote": "04465 06100 Camry 2017-2021; call +1 555 010 0222",
+                                "fits": ["Camry XV70 2017-2021", 5],
+                                "source_urls": ["https://www.toyota.com/p",
+                                                "https://toyota.com/q",
+                                                "https://shop.example/r"]}, "junk"]}
+        shown = for_the_bot(result)
+        self.assertEqual(shown["answer"], "5W-30, 4.6 l with the filter; questions to [e-mail]")
+        self.assertEqual(shown["note"], "See [shop.example], [toyota.com]. Tel. [number]")
+        [item] = shown["findings"]
+        # The finding's own number and the years stay; a planted phone number goes.
+        self.assertEqual(item["quote"], "04465 06100 Camry 2017-2021; call [number]")
+        self.assertEqual(item["part"], "pads, order on wa.me/[number]")
+        self.assertEqual(item["fits"], ["Camry XV70 2017-2021", 5])
+        self.assertEqual(item["sites"], ["toyota.com", "shop.example"])
+        self.assertNotIn("source_urls", item)
+        self.assertEqual(numbers_of(shown), ["04465-06100"])
+        # The result itself, as the cache keeps it, is unchanged.
+        self.assertEqual(result["findings"][0]["source_urls"][0], "https://www.toyota.com/p")
+        self.assertIn("+1 555 010 0222", result["findings"][0]["quote"])
+        self.assertEqual(for_the_bot({"status": "pending", "note": "wait"}),
+                         {"status": "pending", "note": "wait"})
 
 
 class ApiBackendTests(unittest.TestCase):

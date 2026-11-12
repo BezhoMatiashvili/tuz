@@ -886,12 +886,22 @@ to 0; the remaining soft misses are long name-matched replies.
   where the vehicle text says REAR, 1,628 vehicle texts on in-stock rows that name no
   generation or years (`TOYOTA/LEXUS` alone is on 216 rows), and 3 part names the reader
   could not tell. Each line is a candidate to check, not a verdict.
+- Security review of the commit (automated, 2026-11-12): the research text written from web
+  pages (answer, note, quotes) reached the bot as written, so a page could plant a link or a
+  phone number for the bot to pass on to a customer. The Toolbox now shows the bot a cleaned
+  copy (`for_the_bot` in `automotive/assistant_research.py`): a link becomes its site's
+  name, e-mail addresses and phone-shaped numbers other than the findings' own part numbers
+  and year ranges go, and pages appear by their site only; the cache keeps the result as it
+  came. Research stays off in the public widget by default. A local-format phone number that
+  is also a finding's part number would still pass. The bench numbers above predate this
+  change (research ran in about 3 cases of each full draw).
 - Cost: $0 of API spend apart from the two owner-approved checks above (about $0.20); every
   bot, customer, writer and judge request of the exams ran on the Claude subscription.
-  Committed on 2026-11-12 together with the other session's OpenRouter billing fallback; not
-  pushed. The server on port 8767 was restarted at 15:37 from a terminal (not by this
+  Committed on 2026-11-12 (6457d9f, together with the other session's OpenRouter billing
+  fallback, and a follow-up commit for the research text); not pushed.
+  The server on port 8767 was restarted at 15:37 from a terminal (not by this
   session) and loads the engine at its first chat; it has had none since, so it will run the
-  code in the tree. Checks: on a clean copy of the commit its 1,506 tests pass (53 PostgreSQL
+  code in the tree. Checks: on a clean copy of the two commits 1,508 tests pass (53 PostgreSQL
   tests skipped without the disposable database); ruff and bandit find nothing in the files
   of this work (ruff's old
   findings are in db_ui; bandit's are in automotive/meta_store.py, a new file another session
