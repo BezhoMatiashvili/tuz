@@ -1,342 +1,364 @@
-# Graph Report - tuz  (2026-11-10)
+# Graph Report - tuz  (2026-11-13)
 
 ## Corpus Check
-- 290 files · ~486,481 words
+- 355 files · ~664,504 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 40 file(s) not represented in the graph (top: (none) 8, .css 7, .service 7)
+- Unclassified: 43 file(s) not represented in the graph (top: .service 10, (none) 8, .css 7)
 
 ## Summary
-- 9826 nodes · 24302 edges · 360 communities (224 shown, 136 thin omitted)
-- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 1778 edges (avg confidence: 0.86)
+- 13194 nodes · 34782 edges · 397 communities (242 shown, 155 thin omitted)
+- Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 2666 edges (avg confidence: 0.87)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `4171d895`
+- Built from commit: `1ecdb7df`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- oats.py
+- assistant_extras.py
 - ConversationalChatTests
 - three.module.js
 - search.js
 - geometry.js
 - FederationTests
-- Analytics & Automotive Schema SQL
-- .serve
-- Mn
+- 0004_analytics_star.up.sql
+- I
+- test_automotive_knowledge.py
 - automotive/static/app.js
 - three.core.js
-- API Request Models
+- api.py
 - CI Workflow
 - GarageSiteDatabaseTests
-- VehicleInventoryTests
-- OrchestratedTurn
-- CatalogIndex
-- test_site_admin.py
-- ConversationStore
-- assistant_catalog.py
+- run_catalogue
+- dialogue.py
+- e
+- messenger_engine.py
+- PartsCatalogService
+- q
 - Parts Assistant Mobile UI
 - js/app.js
-- catalog_api.py
+- Store
 - DB Explorer Frontend
 - Production Deploy Workflow
-- Any
-- Page
+- cost
+- Rules
 - Docker Compose Services
-- ChatLogger
+- MetaStore
 - AutomotiveApiTests
-- .__call__
-- .recommend_oil
-- Ns
-- LoggedTurn
-- service
-- warehouse_sync/config.py
-- ui.js
-- io
+- gt
+- vin_search.py
+- png
+- jt
+- el
+- render
+- catalog_api.py
+- t
 - AutomotiveRepository
-- q
-- ChatService
+- OrchestratedTurn
+- .parseObject
 - overview.js
 - w
 - .log
-- oil_match.py
-- SearchError
+- MetaConfigError
+- Dh
 - $t
 - replies.py
-- Store
-- I
+- site_meta_admin.py
+- Et
 - Warehouse to PostgreSQL synchroniser README
-- Wikidata
-- stand_in_vin
+- ConversationTurn
 - Chat Texting Desktop UI
-- e
-- .decode
+- assistant_catalog.py
+- CatCarTests
 - Chat Texting Mobile UI
 - automotive_ui_test.cjs
 - Chat UI DOM Stubs
-- h
-- Settings
-- PartsCatalogService
+- MessengerEndToEndTests
+- Any
+- td
 - Chat UI JS Tests
 - site_chat_widget_test.mjs
-- t
-- parts_crawler/__main__.py
+- card
+- ToolError
 - Automotive Desktop UI
-- Conversational Parts Lookup Desktop Screenshot
-- AssistantTurn
-- _n
+- Automotive catalog UI page (index.html)
+- bot_switched_text
 - chat.js
-- dialogue.py
-- FetcherTests
-- .parseObject
-- FakeStore
+- Page
+- parse
+- clean_service
+- meta_ads.py
 - AutomotiveResearchTests
-- assistant_tools.py
-- Toolbox
-- .one
-- pair
+- site_repository.py
+- LoggedTurn
+- .lookup
+- ChatLogger
 - Initial Warehouse Schema
-- CrawledPage
+- says
 - Dependabot Config
-- PublicChatTests
-- jt
-- AIOrchestrationTests
+- PublicChat
+- .fb
+- PublicSourceError
 - 0009_parts_catalog.up.sql
-- _r
-- store.py
-- requirements
+- mount
+- _n
+- parts_crawler/__main__.py
+- _MockSourceHandler
 - FakeSiteRepository
-- token_digest
-- test_automotive_evidence.py
-- Sync E2E Source Stub
-- br
-- Project Metadata
-- KnowledgePostgresTests
-- SiteContentTests
-- ot
-- mt
-- Element
-- wt
-- SiteRepository
-- ._connect
-- orchestration-surface-qa.md
-- build_admin_router
-- V
-- MockRepository
-- SearchResultTests
+- .login
+- BufferGeometryUtils.js
 - .from_rows
+- ToolError
+- Sync E2E Source Stub
+- AssetsTests
+- Project Metadata
+- FakeEvent
+- SiteContent
+- Any
+- le
+- .assert_refused
+- Element
+- FakeStore
+- FeatureDatabase
+- Settings
+- orchestration-surface-qa.md
+- context_of
+- GraphError
+- V
+- test_parts_crawler_http.py
+- Settings
+- json_ready
 - scene.js
 - nd
-- Et
-- ConversationTurn
-- WarehouseClient
-- gt
-- Parts catalog crawler
-- NumberTests
-- CatalogStore
-- StoredAIConversationTests
-- Yt
+- test_meta_store_database.py
+- ed
+- .call
+- grounding.py
+- GraphClient
+- Any
+- store.py
+- FakeMetaStore
+- 0013_meta_messenger.up.sql
 - timeline.js
 - X
-- PublicSourceError
-- Assets
-- .search
-- dt
+- SignInRouteTests
+- wt
+- packaged_gallery
+- test_messenger_worker.py
 - boot
-- td
-- Dh
-- .login
-- search_trace
-- it
+- dt
+- .connection
+- .error
+- ._salvage
+- delivery
+- build_pages_router
 - Y
-- Ce
-- .submit
+- RecordingBuckets
+- ConversationStore
 - ac
-- Zt
-- response
-- product
-- Settings
-- run_row
-- .from_rows
-- FakeConnection
-- .constructor
+- J
+- integrity.py
+- draw
+- WorkerDatabaseTests
+- Models
+- CatalogSearchTests
+- Store
+- test_assistant_research.py
 - build_site_assets.py
 - Accounts
 - jf
-- site_chat.py
-- test_assistant.py
-- uc
-- .client
+- BillingFallbackTests
+- VehicleInventoryTests
+- ._step
+- client_key
 - LoginThrottle
-- site_settings
-- Qi
-- chat_contract.py
-- Page
-- service.py
-- mountView
-- ii
-- L
-- BufferGeometryUtils.js
-- assistant_eval.py
-- cost
-- trade_report
-- SpeedTests
-- assistant_chat_walk.mjs
-- staff_turn
-- public_turn
-- sc
-- nc
-- rules.py
-- Df
-- mount
-- Automotive intelligence MVP
-- Automotive UI Mobile QA Screenshot
-- Store
-- oc
-- send
-- parts.js
-- Any
-- chat_report
-- build_stores
-- suggestions
-- parser.py
-- ChatLogTests
-- .call
-- test_automotive_knowledge.py
-- ResolutionTests
-- build_auth_router
-- Assistant chat: live walk of both screens (2026-11-10)
-- ln
+- _Funding
+- Assets
 - TokenBuckets
-- scheduler.py
-- FakeStore
+- _Receiver
+- services.js
+- vendor_site_assets.py
+- showFailure
+- FakeGraph
+- 0011_vehicle_detail.up.sql
+- test_meta_comments.py
 - localized
-- one
-- TurnBudget
+- public_turn
+- assistant_chat_walk.mjs
+- shop_info
+- Qi
+- AdminSwitchCycleTests
+- sc
+- .load
+- re
+- DatabaseRouteTests
+- .constructor
+- assistant_research.py
+- MockRepository
+- oc
+- analytics Kimball-style star schema
+- parts.js
+- receiver_environment
+- Shape
+- .turn
+- CommentStore
+- _c
+- chat_contract.py
+- EnvironmentTests
+- Clock
+- assistant_exam.py
+- suggestions
+- Of
+- Page
+- garage.meta_provision
+- Connection
+- ChatService
+- ResearchService
+- assistant_bench.py
+- warehouse_sync/config.py
 - cd
-- ro
-- MediaCache
-- CatCarTests
-- Garage 1886 site: review and verification (2026-11-10)
+- gc
+- nc
+- test_assistant.py
 - Unified VIN read federation (/vehicles/search)
-- Oh
-- FakeService
-- SalesPurchasingIntegrationTests
-- reply
-- CommandTests
-- xo
+- .decode
+- SourceUnavailable
+- references
+- Any
+- Pages
+- ic
+- Images
+- SiteAuthTests
 - Cm
 - createLabels
 - el
-- .run_all
-- Path
-- json
-- TTLCacheTests
-- oats.py
-- showFailure
-- CrawlQueueTests
-- Unified VIN source search QA (2026-11-09)
-- build_pages_router
-- rule_for
-- CatalogApiTests
-- FakeRepository
-- ao
-- PublicHttp
-- gc
-- run
-- Clock
-- bo
-- analytics Kimball-style star schema
+- FakeService
+- Store
+- site_settings
+- Df
+- StockNumberTests
+- Garage 1886 on Facebook
+- FakeGraph
+- pair
+- JobTests
+- SalesPurchasingIntegrationTests
+- out_of_credit
+- SiteRepository
+- Parts catalog crawler
+- _RedactQuerySecrets
+- compose
 - engine-harness.js
-- Automotive API and interface QA (2026-11-08)
-- SiteAppCase
-- Texting-style parts chat UI verification
+- add_packaged_photos
+- Ec
+- BenchTests
+- FakeTime
 - pace.js
 - site/js/dom.js
-- ed
-- Any
-- warehouse_sync/__main__.py
-- _c
-- Ec
-- site_content.py
-- ChatRouteTests
+- MotoriumError
+- site_auth.py
+- test_meta_receiver.py
+- meta_page_stats.py
+- .client
+- FakeGraph
+- Features
+- .client
+- 0008_automotive_knowledge.up.sql
 - element
-- ConsoleHandler
-- Eo
-- SiteAuth
-- FakeEvent
-- shown_as
-- MockModel
-- test_site_guard.py
-- run_once
-- Of
-- ld
-- Migration 0006_automotive (private schema with RLS)
-- .fake_connection
-- add_packaged_photos
-- bounded
-- test_assistant.py
-- FakeConnection
-- confidence
-- ProductionSettingsTests
-- seed_defaults
-- SQLiteTTLCache
-- WidgetStringTests
-- AutomotivePostgresTests
-- Runtime requirements pin list
-- Optional TecDoc-style catalog API (CATALOG_API_KEY)
-- .chat
-- done
-- create_app
-- RateLimiter
-- RoundedBoxGeometry.js
-- AutoPartsTests
-- .rows
-- .constructor
-- Customer
-- GoldenTurnTests
-- _MockSourceHandler
-- _E2ESourceHandler
-- sp
-- ic
-- chat_review.py
-- describe_schema
-- Sales and purchasing
-- catcar.py
-- PartsCatalogRouteTests
-- pr
-- automotive.part_numbers code index
-- _QuietHandler
-- .rows_in
-- grades
-- _ClientGone
+- assistant_eval.py
+- FailureTests
 - .test_the_real_store_takes_the_replay
-- summary
+- Automotive UI Mobile QA Screenshot
+- _sync_once
+- page
+- split_text
+- verify_password
+- ld
+- CrawledPage
+- seed_defaults
+- MessengerSetupDatabaseTests
+- build_meta_activity_router
+- WidgetStringTests
+- CarNumbersTests
+- SearchError
+- 0012_garage_site.up.sql
+- parser.py
+- FakeRepository
+- .chat
+- json
+- handle_of
+- assistant_sources.py
+- it
+- converse
+- LocalSetupError
+- Assistant chat: live walks of both screens (2026-11-10)
+- Garage 1886 site: review and verification (2026-11-10)
+- pg_roles
+- ro
+- ForwardedAddressTests
+- build_stores
+- chat_review.py
+- test_parts_crawler_catalogs.py
+- read_log
+- Runtime requirements pin list
+- CatalogStore
+- Owner setup, in order
+- r
+- merge_parts
+- _GraphHandler
+- test_meta_page_stats.py
+- Captured
+- RerunTests
+- _E2ESourceHandler
+- SlowUploadTests
+- assistant_tools.py
+- Result
+- SiteAuth
+- Settings
+- CrawledFitments
+- _search_refused
+- Toolbox
+- confidence
+- On
+- CarNumbers
+- ShortenedWordTests
+- Clock
+- ProductMetadata
+- messenger_worker.py
+- MemoryInbox
+- Eo
+- Claude billing fallback verification
+- ProductionSettingsTests
+- GoldenTurnTests
+- h
+- MediaCache
+- test_assistant_names.py
+- .test_a_client_that_leaves_mid_body_is_not_passed_on_as_a_short_request
+- .__init__
 
 ## God Nodes (most connected - your core abstractions)
-1. `w` - 140 edges
-2. `t()` - 116 edges
-3. `h()` - 107 edges
-4. `I` - 101 edges
-5. `Settings` - 85 edges
-6. `create_app()` - 80 edges
-7. `ConversationalChatTests` - 74 edges
-8. `X` - 72 edges
-9. `Store` - 71 edges
-10. `q` - 68 edges
+1. `t()` - 204 edges
+2. `h()` - 170 edges
+3. `w` - 142 edges
+4. `MessengerWorker` - 125 edges
+5. `Settings` - 120 edges
+6. `I` - 102 edges
+7. `GraphError` - 100 edges
+8. `MetaStore` - 89 edges
+9. `create_app()` - 83 edges
+10. `MetaSettings` - 79 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `Truncated Lower Card (Below Fold)` --references--> `Automotive catalog UI page (index.html)`  [AMBIGUOUS]
   docs/automotive-review/automotive-desktop.png → automotive/static/index.html
-- `Found in the engine's answers, not changed here` --references--> `updateSelectedVehicle()`  [INFERRED]
-  docs/automotive-review/assistant-chat-qa.md → automotive/static/app.js
-- `What broke where the engine and the screens meet in the first walk, and was fixed` --references--> `requirements()`  [INFERRED]
-  docs/automotive-review/assistant-chat-qa.md → automotive/oil_match.py
-- `Live checks in headless Chrome 151 (real server, real data)` --references--> `brand()`  [INFERRED]
-  docs/automotive-review/garage-site-qa.md → tests/test_site_content.py
-- `Direct Search & Vehicle Details Disclosure` --references--> `Automotive catalog UI page (index.html)`  [INFERRED]
-  docs/automotive-review/conversational-parts-desktop.png → automotive/static/index.html
+- `Why a Meta app, when everything goes through the Graph API?` --references--> `appsecret_proof()`  [INFERRED]
+  docs/garage-messenger.md → automotive/meta_graph.py
+- `6. Connect the page` --references--> `read_insights()`  [INFERRED]
+  docs/garage-messenger.md → automotive/meta_page_stats.py
+- `4. Install and start the services` --references--> `ok()`  [INFERRED]
+  docs/garage-messenger.md → tests/test_messenger_worker.py
+- `Settings (`.env`)` --references--> `Settings`  [INFERRED]
+  docs/garage-messenger.md → automotive/config.py
 
 ## Import Cycles
 - None detected.
@@ -362,91 +384,95 @@
 - **Grounded chat reply pipeline** — docs_automotive_deterministic_dialogue, docs_automotive_backend_replies, docs_automotive_optional_rephrase, docs_automotive_strict_tool_use, docs_automotive_claude_grounding [INFERRED 0.85]
 - **Least-privilege database role model** — agents_least_privilege_model, readme_warehouse_sync_writer_role, readme_backup_restore_operator_role, docs_production_runbook_database_roles, docs_asvs_l2_evidence_v4_access_control [INFERRED 0.85]
 
-## Communities (360 total, 136 thin omitted)
+## Communities (397 total, 155 thin omitted)
 
-### Community 0 - "oats.py"
+### Community 0 - "assistant_extras.py"
 Cohesion: 0.09
-Nodes (21): by_body(), by_engine(), engine_code(), engine_family(), engine_matches(), engine_option(), engine_options(), words() (+13 more)
+Nodes (7): bench_research(), extras_for(), _openrouter_model(), research_audiences(), research_service(), BenchBackend, _MemoryStore
+
+### Community 1 - "ConversationalChatTests"
+Cohesion: 0.07
+Nodes (7): AIOrchestrationTests, intent(), response(), ConversationalChatTests, finish(), response(), tool()
 
 ### Community 2 - "three.module.js"
 Cohesion: 0.01
-Nodes (83): Ef, Ka(), We, Xf, $a(), ac(), af(), at() (+75 more)
+Nodes (95): Ef, hf(), Hn, Ka(), _o, We, Xf, Ye (+87 more)
 
 ### Community 3 - "search.js"
 Cohesion: 0.12
 Nodes (33): body, box, brand, carLabel(), chooseMake(), cleanVin(), currentQuery(), decode() (+25 more)
 
 ### Community 4 - "geometry.js"
-Cohesion: 0.04
-Nodes (64): ALT, around(), Bag, bankMatrix(), bankPoint(), bankSpheres(), boltRow(), box() (+56 more)
+Cohesion: 0.05
+Nodes (65): ALT, around(), Bag, bankMatrix(), bankPoint(), bankSpheres(), boltRow(), box() (+57 more)
 
 ### Community 5 - "FederationTests"
-Cohesion: 0.05
-Nodes (15): _identity(), MotoriumClient, MotoriumError, ProductMetadata, _text(), FluidFederationTests, details(), MotoriumTests (+7 more)
+Cohesion: 0.14
+Nodes (3): FluidFederationTests, FederationTests, product()
 
-### Community 6 - "Analytics & Automotive Schema SQL"
+### Community 6 - "0004_analytics_star.up.sql"
 Cohesion: 0.05
 Nodes (52): warehouse.finish_sync_run(), warehouse.prune_product_versions(), warehouse.record_page_seen(), warehouse.record_product(), warehouse.warehouse_sync_seen_pages, analytics.dim_date, analytics.dim_product, analytics.fact_product_current (+44 more)
 
-### Community 7 - ".serve"
-Cohesion: 0.07
-Nodes (10): HardeningTests, NoSearch, QuietChat, ResponseHeaderTests, session_of(), SignInRouteTests, StaffGateTests, _stream() (+2 more)
+### Community 7 - "I"
+Cohesion: 0.02
+Nodes (11): bd(), n(), Bt, D(), I, _l, om, $s() (+3 more)
 
-### Community 8 - "Mn"
-Cohesion: 0.06
-Nodes (8): cm, ee, em, Jf, Mn, Pf, tf(), vh
+### Community 8 - "test_automotive_knowledge.py"
+Cohesion: 0.04
+Nodes (42): check_verdicts(), _compact(), dataset(), InvalidJudgement, _plain(), ResearchJudge, knowledge_for(), KnowledgeService (+34 more)
 
 ### Community 9 - "automotive/static/app.js"
 Cohesion: 0.10
-Nodes (57): accountWarnings, byId(), cardLists, carLabel(), chatMessage(), chatText(), chatWarnings, choiceGroup() (+49 more)
+Nodes (54): accountWarnings, api(), byId(), cardLists, carLabel(), chatText(), chatWarnings, choiceGroup() (+46 more)
 
 ### Community 10 - "three.core.js"
 Cohesion: 0.01
-Nodes (237): $a, Ac, Ae, af(), ah, Ai(), al(), an (+229 more)
+Nodes (246): $a, Ac, Ae, af(), ah, Ai(), al(), an (+238 more)
 
-### Community 11 - "API Request Models"
-Cohesion: 0.08
-Nodes (35): CatalogProduct, ChatGroup, ChatOption, ChatQuestion, ChatRequest, ConversationCard, ConversationMessage, ConversationTurn (+27 more)
+### Community 11 - "api.py"
+Cohesion: 0.06
+Nodes (40): CatalogProduct, ChatGroup, ChatOption, ChatQuestion, ChatRequest, ConversationCard, ConversationMessage, fitments() (+32 more)
 
 ### Community 12 - "CI Workflow"
 Cohesion: 0.05
 Nodes (40): permissions, runs-on, steps, GITHUB_TOKEN, POSTGRES_DB, POSTGRES_PASSWORD, POSTGRES_USER, WAREHOUSE_TEST_ADMIN_DATABASE_URL (+32 more)
 
-### Community 14 - "VehicleInventoryTests"
-Cohesion: 0.11
-Nodes (10): vehicle_inventory(), _vehicle_scoped(), VehicleInventoryService, _year_scoped(), CategoryPaginationTests, page(), evidence(), product() (+2 more)
+### Community 14 - "run_catalogue"
+Cohesion: 0.05
+Nodes (23): chat(), bench_client(), _check_expectation(), earlier_rows(), Ledger, live(), load_scenarios(), opening_cost() (+15 more)
 
-### Community 15 - "OrchestratedTurn"
-Cohesion: 0.16
-Nodes (3): IntentInput, OrchestratedTurn, tool_definitions()
+### Community 15 - "dialogue.py"
+Cohesion: 0.05
+Nodes (27): _bmw_at(), _class_at(), _clean(), code_question(), continues(), _designation_at(), displacement_answer(), _display() (+19 more)
 
-### Community 16 - "CatalogIndex"
-Cohesion: 0.09
-Nodes (5): CatalogIndex, cut(), _in_chain(), _one_edit(), _Word
+### Community 16 - "e"
+Cohesion: 0.04
+Nodes (8): eo, es, is, Kt, so, Tm, t(), uc
 
-### Community 17 - "test_site_admin.py"
-Cohesion: 0.11
-Nodes (14): describe(), _jpeg(), packaged_gallery(), _png(), sniff(), _webp(), jpeg(), PackagedGalleryTests (+6 more)
+### Community 17 - "messenger_engine.py"
+Cohesion: 0.03
+Nodes (39): _bare_memory(), build_engine(), _choice(), clean_state(), compact(), data_directory(), EngineResult, _export() (+31 more)
 
-### Community 18 - "ConversationStore"
-Cohesion: 0.13
-Nodes (4): ConversationStore, cancelled(), progress(), _shown()
+### Community 18 - "PartsCatalogService"
+Cohesion: 0.19
+Nodes (3): parts_alternatives(), _brand_norm(), PartsCatalogService
 
-### Community 19 - "assistant_catalog.py"
+### Community 19 - "q"
 Cohesion: 0.02
-Nodes (54): _by_rounded(), _cell_codes(), add(), _clip(), _ending(), _fold(), _latin_tail(), _name_form() (+46 more)
+Nodes (40): am, at(), bm, cm, dm, dn, Ds, ee (+32 more)
 
 ### Community 20 - "Parts Assistant Mobile UI"
-Cohesion: 0.08
-Nodes (31): Automotive catalog UI page (index.html), Part code search panel, Source and evidence panel, Fitment, cross-reference and oil panel, Vehicle parts (warehouse) panel, VIN and configuration forms, Conversational Parts Assistant Mobile QA Screenshot, Assistant Reply: Catalog Candidates Need Fitment Verification (+23 more)
+Cohesion: 0.12
+Nodes (22): Conversational Parts Assistant Mobile QA Screenshot, Assistant Reply: Catalog Candidates Need Fitment Verification, Bilingual Georgian/English UI Labels, Parts Assistant Chat Panel, Collapsible Direct Search & Vehicle Details, Fitment Unknown Badge, Footer Read-Only Data Disclaimer, Match Source (EXACT_CODE) (+14 more)
 
 ### Community 21 - "js/app.js"
 Cohesion: 0.06
-Nodes (49): getUser(), isAdmin(), setSession(), app, askToLeave(), buildShell(), ctx, drawShell() (+41 more)
+Nodes (49): getUser(), isAdmin(), app, askToLeave(), buildShell(), ctx, drawShell(), ICON_OF (+41 more)
 
-### Community 22 - "catalog_api.py"
-Cohesion: 0.14
-Nodes (14): _body(), _capacity(), CatalogApiClient, _dicts(), _engine_codes(), _fuel(), _normalized(), parse_articles() (+6 more)
+### Community 22 - "Store"
+Cohesion: 0.04
+Nodes (3): connect(), QueueItem, Store
 
 ### Community 23 - "DB Explorer Frontend"
 Cohesion: 0.12
@@ -456,129 +482,117 @@ Nodes (29): acceptSuggestion(), activateTab(), api(), completionContext(), drawS
 Cohesion: 0.06
 Nodes (30): concurrency, cancel-in-progress, group, environment, name, runs-on, steps, DEPLOY_HOST (+22 more)
 
-### Community 25 - "Any"
-Cohesion: 0.10
-Nodes (11): _asked(), bad(), _bare(), _brief(), _fold(), _named(), _options(), turn_context() (+3 more)
+### Community 25 - "cost"
+Cohesion: 0.04
+Nodes (29): card_turns(), check_catalogue(), cost(), evaluate(), found_by_turn(), grouped(), offer_summary(), print_catalogue() (+21 more)
 
-### Community 26 - "Page"
-Cohesion: 0.07
-Nodes (7): LandingPageTests, site_data(), OtherPageTests, Page, PageRules, same_origin(), strings_in()
+### Community 26 - "Rules"
+Cohesion: 0.05
+Nodes (36): coverage(), engine_family_rows(), _fuel_excludes(), normalize_grade(), oil_rows(), pack_litres(), product_line(), requirements() (+28 more)
 
 ### Community 27 - "Docker Compose Services"
 Cohesion: 0.08
 Nodes (28): context, dockerfile, build, depends_on, environment, ports, restart, postgres (+20 more)
 
-### Community 28 - "ChatLogger"
-Cohesion: 0.11
-Nodes (3): ChatLogger, _text(), Engine
+### Community 28 - "MetaStore"
+Cohesion: 0.03
+Nodes (13): _actor(), _attachments(), _columns(), _detail(), _digits(), forget_comments(), _forgetting(), _limit() (+5 more)
 
 ### Community 29 - "AutomotiveApiTests"
 Cohesion: 0.08
 Nodes (4): AutomotiveApiTests, FakeChat, FakeVin, test_unified_search_uses_provider_rate_budget()
 
-### Community 30 - ".__call__"
-Cohesion: 0.17
-Nodes (5): _loopback(), finish(), reply(), receive(), _trusted()
+### Community 31 - "vin_search.py"
+Cohesion: 0.03
+Nodes (37): import_evidence(), oil(), vehicle_inventory(), CodeInput, EmptyInput, PresentInput, applies_to(), evaluate_compatibility() (+29 more)
 
-### Community 31 - ".recommend_oil"
+### Community 32 - "png"
+Cohesion: 0.12
+Nodes (13): describe(), _jpeg(), _png(), sniff(), _webp(), MediaTests, jpeg(), png() (+5 more)
+
+### Community 34 - "el"
 Cohesion: 0.16
-Nodes (8): _matches_viscosity(), _positive_approval(), _required(), _signature(), _specific_configuration(), _viscosities(), evidence(), RecommendationTests
+Nodes (29): addMessage(), addPager(), addStarters(), addSystem(), addTyping(), answerGroup(), appendCards(), cardHolder() (+21 more)
 
-### Community 32 - "Ns"
-Cohesion: 0.08
-Nodes (5): gh(), im, Ns, Ot(), wh
+### Community 35 - "render"
+Cohesion: 0.19
+Nodes (10): render(), RenderedReply, card(), CardTests, check_messages(), options(), QuickReplyTests, RenderTests (+2 more)
 
-### Community 33 - "LoggedTurn"
-Cohesion: 0.16
-Nodes (7): ask(), _car_name(), card_summary(), _failure(), judge(), LoggedTurn, _text()
+### Community 36 - "catalog_api.py"
+Cohesion: 0.05
+Nodes (26): _FileStore, _body(), _capacity(), CatalogApiClient, categories_for(), _dicts(), _engine_codes(), _fuel() (+18 more)
 
-### Community 34 - "service"
-Cohesion: 0.15
-Nodes (12): FailureTests, finish(), LimitTests, option(), RequestTests, run(), says(), Script (+4 more)
-
-### Community 35 - "warehouse_sync/config.py"
-Cohesion: 0.29
-Nodes (11): _configuration_error(), _database_url_is_production_safe(), _decode_hmac_key(), _load_environment(), load_maintenance_hmac_key(), load_migration_database_url(), _positive_float(), _positive_int() (+3 more)
-
-### Community 36 - "ui.js"
-Cohesion: 0.09
-Nodes (46): api, ApiError, detailOf(), readJson(), refreshCsrf(), request(), sessionEnded(), upload() (+38 more)
-
-### Community 37 - "io"
-Cohesion: 0.06
-Nodes (17): main(), column_name(), export_result(), spreadsheet_value(), text_value(), xml_value(), browse(), Handler (+9 more)
+### Community 37 - "t"
+Cohesion: 0.10
+Nodes (84): uid(), dateTime(), t(), busy(), button(), confirmDialog(), expireToast(), openDialog() (+76 more)
 
 ### Community 38 - "AutomotiveRepository"
-Cohesion: 0.07
-Nodes (4): AutomotiveRepository, _evidence(), _product(), RepositoryBoundaryTests
+Cohesion: 0.04
+Nodes (21): parse_codes(), PartCode, product_codes(), AutomotiveRepository, sanitized(), _evidence(), _product(), main() (+13 more)
 
-### Community 39 - "q"
-Cohesion: 0.02
-Nodes (49): am, at(), bm, dm, dn, Dn, Ds, ds (+41 more)
+### Community 39 - "OrchestratedTurn"
+Cohesion: 0.09
+Nodes (8): EmptyInput, _identity(), summary(), IntentInput, OrchestratedTurn, tool_definitions(), DeadlineRepository, TurnBudget
 
-### Community 40 - "ChatService"
-Cohesion: 0.12
-Nodes (10): ChatService, CodeInput, EmptyInput, PresentInput, tool_definitions(), MessageBody, ChatTests, handler() (+2 more)
+### Community 40 - ".parseObject"
+Cohesion: 0.03
+Nodes (30): bf, ce(), Hl, hs, a(), c(), h(), If (+22 more)
 
 ### Community 41 - "overview.js"
-Cohesion: 0.13
-Nodes (51): bindMark(), chartCard(), chartEmpty(), columnChart(), columnPath(), dataTable(), ensureTip(), hideTip() (+43 more)
+Cohesion: 0.12
+Nodes (56): bindMark(), chartCard(), chartEmpty(), columnChart(), columnPath(), dataTable(), ensureTip(), hideTip() (+48 more)
 
 ### Community 42 - "w"
-Cohesion: 0.03
-Nodes (13): a(), c(), d(), f(), g(), h(), m(), o() (+5 more)
+Cohesion: 0.02
+Nodes (38): ds, En, Gn, $h, Jn, a(), c(), d() (+30 more)
 
 ### Community 43 - ".log"
-Cohesion: 0.14
-Nodes (9): card(), FakeStore, LimitAndBudgetTests, PrivacyTests, ReplayTests, build(), reply(), ReviewCase (+1 more)
+Cohesion: 0.18
+Nodes (7): card(), FakeStore, LimitAndBudgetTests, PrivacyTests, ReplayTests, reply(), ReviewCase
 
-### Community 44 - "oil_match.py"
-Cohesion: 0.14
-Nodes (10): coverage(), engine_family_rows(), _fuel_excludes(), normalize_grade(), oil_rows(), pack_litres(), requirements(), _row() (+2 more)
+### Community 44 - "MetaConfigError"
+Cohesion: 0.12
+Nodes (7): _matching(), MetaConfigError, _number(), _public_url(), main(), MetaSettingsTests, StartupTests
 
-### Community 45 - "SearchError"
-Cohesion: 0.15
-Nodes (3): SearchError, _unchanged(), SearchErrorTests
+### Community 45 - "Dh"
+Cohesion: 0.06
+Nodes (5): Dh, se(), Zt, Re(), rr()
 
 ### Community 46 - "$t"
-Cohesion: 0.03
-Nodes (12): el(), eo, Es, es, il, io, is, nl (+4 more)
+Cohesion: 0.06
+Nodes (6): Es, il, io, nl, no, $t
 
 ### Community 47 - "replies.py"
-Cohesion: 0.08
-Nodes (33): availability(), _axle(), brand_name(), car_label(), _clarify(), compose(), _compose(), engine_choice() (+25 more)
+Cohesion: 0.15
+Nodes (25): availability(), _axle(), brand_name(), car_label(), _clarify(), compose(), _compose(), engine_choice() (+17 more)
 
-### Community 48 - "Store"
+### Community 48 - "site_meta_admin.py"
 Cohesion: 0.05
-Nodes (5): _counts(), refresh(), connect(), QueueItem, Store
+Nodes (71): _address(), _admin(), build_admin_router(), audit(), changed(), create_service(), create_user(), delete_media() (+63 more)
 
-### Community 49 - "I"
+### Community 49 - "Et"
 Cohesion: 0.03
-Nodes (4): D(), I, _l, om
+Nodes (16): br, Ce, Et, Gf, kf, kr(), mr, Wd (+8 more)
 
 ### Community 50 - "Warehouse to PostgreSQL synchroniser README"
-Cohesion: 0.07
-Nodes (29): Repository Guidelines (AGENTS.md), CI checks: ruff, bandit, pip-audit, unittest, PostgreSQL security/E2E tests (WAREHOUSE_TEST_ADMIN_DATABASE_URL), Warehouse analytics guide, Owner-only idempotent analytics refresh/backfill, OWASP ASVS Level 2 release evidence matrix, Required release attachments (pentest, SBOM, restore drill, sign-off), ASVS V10 malicious input (cell-text parser, bounded response) (+21 more)
+Cohesion: 0.05
+Nodes (37): Repository Guidelines (AGENTS.md), CI checks: ruff, bandit, pip-audit, unittest, PostgreSQL security/E2E tests (WAREHOUSE_TEST_ADMIN_DATABASE_URL), Warehouse analytics guide, Owner-only idempotent analytics refresh/backfill, OWASP ASVS Level 2 release evidence matrix, Required release attachments (pentest, SBOM, restore drill, sign-off), ASVS V10 malicious input (cell-text parser, bounded response) (+29 more)
 
-### Community 51 - "Wikidata"
-Cohesion: 0.17
-Nodes (3): Wikidata, FakeResponse, FakeSession
-
-### Community 52 - "stand_in_vin"
-Cohesion: 0.25
-Nodes (5): needed_vins(), stand_in_vin(), stand_ins(), card(), StandInTests
+### Community 52 - "ConversationTurn"
+Cohesion: 0.08
+Nodes (6): conversation_tools(), ConversationTurn, read(), run(), read(), PartInput
 
 ### Community 53 - "Chat Texting Desktop UI"
 Cohesion: 0.17
 Nodes (17): Chat Texting Desktop QA Screenshot, Bilingual Georgian/English Labels, Details Disclosure, Fitment and Stock Disclaimer, Match Reason ('Chosen because'), Car-name Match Fallback, New Chat Button, Part Result Card (+9 more)
 
-### Community 54 - "e"
-Cohesion: 0.06
-Nodes (26): Af, bd(), n(), hf(), Kt, ql, Tm, e() (+18 more)
+### Community 54 - "assistant_catalog.py"
+Cohesion: 0.04
+Nodes (28): _by_rounded(), CatalogIndex, cut(), _cell_codes(), add(), _clip(), _compact(), _ending() (+20 more)
 
-### Community 55 - ".decode"
-Cohesion: 0.19
-Nodes (4): ProviderUnavailable, _text(), VinService, VinTests
+### Community 55 - "CatCarTests"
+Cohesion: 0.17
+Nodes (3): decode_state(), encode_url(), CatCarTests
 
 ### Community 56 - "Chat Texting Mobile UI"
 Cohesion: 0.22
@@ -588,481 +602,493 @@ Nodes (16): Chat Texting Mobile QA Screenshot, Assistant Message Bubble, Brand a
 Cohesion: 0.08
 Nodes (15): assert, calls, context, flush(), fs, html, ids, Node (+7 more)
 
-### Community 59 - "h"
-Cohesion: 0.15
-Nodes (50): describeError(), isAbort(), h(), price(), has(), adminOnly(), card(), emptyState() (+42 more)
+### Community 59 - "MessengerEndToEndTests"
+Cohesion: 0.08
+Nodes (6): _FakeGraphSession, MessengerEndToEndTests, handled(), final(), _no_job(), _Served
 
-### Community 60 - "Settings"
-Cohesion: 0.03
-Nodes (50): main(), build_parser(), Settings, Counting, evaluate(), _fill(), _hide(), judge() (+42 more)
+### Community 60 - "Any"
+Cohesion: 0.10
+Nodes (17): _redact(), asked_question(), build_parser(), _car(), _cell(), _line(), _loads(), _logged() (+9 more)
 
-### Community 61 - "PartsCatalogService"
-Cohesion: 0.22
-Nodes (3): parts_alternatives(), _brand_norm(), PartsCatalogService
+### Community 61 - "td"
+Cohesion: 0.11
+Nodes (25): Ze, so(), td(), be(), c(), Ce(), ct(), d() (+17 more)
 
 ### Community 62 - "Chat UI JS Tests"
 Cohesion: 0.12
-Nodes (11): assert, calls, ctx, doc, fixture, fs, html, ids (+3 more)
+Nodes (10): assert, calls, ctx, doc, fixture, fs, html, responder() (+2 more)
 
 ### Community 63 - "site_chat_widget_test.mjs"
 Cohesion: 0.04
 Nodes (40): answer(), ask(), calls, carBar, carChange, counter, dialog, document (+32 more)
 
-### Community 64 - "t"
-Cohesion: 0.18
-Nodes (44): setCsrf(), uid(), fieldMessage(), t(), busy(), button(), confirmDialog(), expireToast() (+36 more)
+### Community 64 - "card"
+Cohesion: 0.10
+Nodes (64): ApiError, describeError(), detailOf(), isAbort(), readJson(), refreshCsrf(), request(), sessionEnded() (+56 more)
 
-### Community 65 - "parts_crawler/__main__.py"
-Cohesion: 0.07
-Nodes (34): _float(), _int(), load_settings(), _names(), cmd_import_fapi(), cmd_import_fueleconomy(), cmd_import_har(), cmd_import_vpic() (+26 more)
+### Community 65 - "ToolError"
+Cohesion: 0.11
+Nodes (3): _settled(), _strings_of(), ToolError
 
 ### Community 66 - "Automotive Desktop UI"
 Cohesion: 0.23
 Nodes (13): Automotive UI Desktop Screenshot, Archived Source Badge, Ask the Catalog (Free-text Question), Configuration Refinement Card, Evidence-first Disclaimer Pattern, Georgian-language Interface, Header: Autocatalog Brand (Vehicle · Parts · Evidence), Hero: Find the Part. Check Compatibility. (+5 more)
 
-### Community 67 - "Conversational Parts Lookup Desktop Screenshot"
-Cohesion: 0.13
-Nodes (21): Conversational Parts Lookup Desktop Screenshot, Auto Catalog Header (cars, parts, fitment) with local service label, Assistant Reply: catalog candidates, fitment needs verification, Bilingual Georgian / English UI Labels, Parts Assistant Chat Panel, Conservative Stock and Fitment Confirmation Pattern, Direct Search & Vehicle Details Disclosure, Fitment Unknown Badge (+13 more)
+### Community 67 - "Automotive catalog UI page (index.html)"
+Cohesion: 0.08
+Nodes (33): Automotive catalog UI page (index.html), Parts assistant chat panel, Part code search panel, Source and evidence panel, Fitment, cross-reference and oil panel, Vehicle parts (warehouse) panel, VIN and configuration forms, Conversational Parts Lookup Desktop Screenshot (+25 more)
 
-### Community 68 - "AssistantTurn"
-Cohesion: 0.10
-Nodes (4): AssistantTurn, _block(), _dump(), token_counts()
-
-### Community 69 - "_n"
-Cohesion: 0.10
-Nodes (9): En, mo, zn, dc(), Fa(), In, _n, Oa() (+1 more)
+### Community 69 - "bot_switched_text"
+Cohesion: 0.16
+Nodes (3): bot_switched_text(), CommandTests, FakeEngine
 
 ### Community 70 - "chat.js"
 Cohesion: 0.07
 Nodes (45): announce(), carBar, carChange, carName, choicesOf(), clearPill(), close(), counter (+37 more)
 
-### Community 71 - "dialogue.py"
-Cohesion: 0.03
-Nodes (50): _sentences(), query_patterns(), check_turn(), _same(), _bmw_at(), _class_at(), _clean(), code_question() (+42 more)
+### Community 71 - "Page"
+Cohesion: 0.07
+Nodes (7): LandingPageTests, site_data(), OtherPageTests, Page, PageRules, same_origin(), strings_in()
 
-### Community 72 - "FetcherTests"
-Cohesion: 0.13
-Nodes (6): Clock, FakeResponse, FakeSession, fetcher(), FetcherTests, get()
+### Community 72 - "parse"
+Cohesion: 0.07
+Nodes (36): _attachments(), _aware(), _change(), _code(), _customer(), CustomerMessage, _echo(), _id() (+28 more)
 
-### Community 73 - ".parseObject"
-Cohesion: 0.03
-Nodes (28): Cf, go, Hl, hs, a(), c(), h(), If (+20 more)
+### Community 73 - "clean_service"
+Cohesion: 0.21
+Nodes (4): clean_service(), CleanServiceTests, SchemaTests, walk()
 
-### Community 74 - "FakeStore"
-Cohesion: 0.13
-Nodes (5): evaluate(), print_summary(), Clock, FakeStore, RunTests
+### Community 74 - "meta_ads.py"
+Cohesion: 0.07
+Nodes (25): _actions(), ad_accounts(), ad_results(), best_ads(), daily_spend(), garage_ads(), _insight_window(), _int() (+17 more)
 
 ### Community 75 - "AutomotiveResearchTests"
 Cohesion: 0.11
 Nodes (11): AutomotiveResearch, _get(), _plain(), sanitize_vehicle(), _url(), AutomotiveResearchTests, Budget, MemoryCache (+3 more)
 
-### Community 76 - "assistant_tools.py"
-Cohesion: 0.11
-Nodes (11): cache_control(), system_blocks(), _field(), Listed, _schema(), _settled(), _strings(), supplier_query() (+3 more)
+### Community 76 - "site_repository.py"
+Cohesion: 0.16
+Nodes (4): _assignments(), Conflict, LastAdmin, SiteDatabaseNotConfigured
 
-### Community 77 - "Toolbox"
-Cohesion: 0.09
-Nodes (12): _matches(), _number(), Output, plain(), _row_id(), _source_lines(), _strings_of(), Table (+4 more)
+### Community 77 - "LoggedTurn"
+Cohesion: 0.16
+Nodes (7): ask(), _car_name(), card_summary(), _failure(), judge(), LoggedTurn, _text()
 
-### Community 78 - ".one"
-Cohesion: 0.15
-Nodes (4): car(), Search, tool_results(), ToolTests
+### Community 78 - ".lookup"
+Cohesion: 0.26
+Nodes (4): details(), MotoriumTests, response(), source()
 
-### Community 79 - "pair"
-Cohesion: 0.21
-Nodes (5): clean(), brand(), CleanTests, pair(), load_then_edit()
+### Community 79 - "ChatLogger"
+Cohesion: 0.06
+Nodes (9): ChatLogger, chat(), chat_report(), sync_health(), trade_report(), ChatReportTests, counts(), Reports (+1 more)
 
 ### Community 80 - "Initial Warehouse Schema"
 Cohesion: 0.42
 Nodes (8): warehouse_product_versions, warehouse_product_versions_product_time_idx, warehouse_products, warehouse_products_active_idx, warehouse_products_last_seen_run_idx, warehouse_products_product_code_idx, warehouse_schema_migrations, warehouse_sync_runs
 
-### Community 81 - "CrawledPage"
-Cohesion: 0.06
-Nodes (39): clean(), CrossRef, Fitment, Link, normalize_brand(), ParseResult, Part, PartRef (+31 more)
+### Community 81 - "says"
+Cohesion: 0.12
+Nodes (5): car(), Repository, row(), Search, ToolTests
 
 ### Community 82 - "Dependabot Config"
 Cohesion: 0.25
 Nodes (7): interval, updates, directory, open-pull-requests-limit, package-ecosystem, schedule, version
 
-### Community 83 - "PublicChatTests"
-Cohesion: 0.11
-Nodes (4): PublicChat, Catalogs, Engine, PublicChatTests
+### Community 83 - "PublicChat"
+Cohesion: 0.07
+Nodes (9): ConversationError, PublicChat, DailyBudget, Catalogs, Engine, FakeStore, OlderStore, PublicChatTests (+1 more)
 
-### Community 85 - "AIOrchestrationTests"
-Cohesion: 0.26
-Nodes (3): AIOrchestrationTests, intent(), response()
+### Community 84 - ".fb"
+Cohesion: 0.06
+Nodes (11): AccessTests, activity_routes(), ad(), AdsTests, comment(), CommentActionTests, CommentListTests, concrete() (+3 more)
+
+### Community 85 - "PublicSourceError"
+Cohesion: 0.03
+Nodes (51): by_body(), by_engine(), engine_code(), engine_family(), engine_matches(), engine_option(), engine_options(), words() (+43 more)
 
 ### Community 86 - "0009_parts_catalog.up.sql"
-Cohesion: 0.05
-Nodes (48): automotive_knowledge.accepted_facts, automotive_knowledge.candidate_jobs, automotive_knowledge.claim_job(), automotive_knowledge.daily_quota, automotive_knowledge.enqueue(), automotive_knowledge.provision(), automotive_knowledge.source_policies, automotive_knowledge.validation_audits (+40 more)
+Cohesion: 0.25
+Nodes (13): crawl_queue_claim, crawl_queue_status, part_cross_refs_other, part_fitments_vehicle, parts_catalog.crawl_queue, parts_catalog.crawl_runs, parts_catalog.part_cross_refs, parts_catalog.part_fitments (+5 more)
 
-### Community 87 - "_r"
-Cohesion: 0.12
-Nodes (4): lc(), nm, _r, To()
+### Community 87 - "mount"
+Cohesion: 0.10
+Nodes (42): setCsrf(), append(), apply(), BOOLEAN, ICONS, mount(), STATUS, price() (+34 more)
 
-### Community 88 - "store.py"
-Cohesion: 0.05
-Nodes (27): Settings, fetch_sample(), import_fapi(), import_fueleconomy(), _number(), _project(), read_rows(), vehicle() (+19 more)
+### Community 88 - "_n"
+Cohesion: 0.09
+Nodes (16): mo, zn, dc(), Fa(), hc(), c(), m(), N() (+8 more)
 
-### Community 89 - "requirements"
-Cohesion: 0.17
-Nodes (12): Added checks of the final walk, Assistant chat: live walks of both screens (2026-11-10), Automated checks, Checked in the page after every reply, Cost, Final walk: conversations and seconds to the final reply, First walk: seconds, for comparison, Found in the engine's answers, not changed here (+4 more)
+### Community 89 - "parts_crawler/__main__.py"
+Cohesion: 0.07
+Nodes (38): _float(), _int(), load_settings(), _names(), import_ymm(), cmd_import_fapi(), cmd_import_fueleconomy(), cmd_import_har() (+30 more)
 
-### Community 92 - "token_digest"
+### Community 92 - ".login"
 Cohesion: 0.15
 Nodes (4): new_token(), public_user(), token_digest(), TokenAndCookieTests
 
-### Community 95 - "test_automotive_evidence.py"
+### Community 93 - "BufferGeometryUtils.js"
+Cohesion: 0.04
+Nodes (15): computeMikkTSpaceTangents(), computeMorphedAttributes(), deepCloneAttribute(), deinterleaveAttribute(), deinterleaveGeometry(), mergeVertices(), remapAttribute(), Ed (+7 more)
+
+### Community 94 - ".from_rows"
+Cohesion: 0.04
+Nodes (16): Row, found(), guide_rows(), add(), GuideTests, ids(), matched(), NumberTests (+8 more)
+
+### Community 95 - "ToolError"
 Cohesion: 0.14
-Nodes (7): applies_to(), evaluate_compatibility(), flatten_record(), _same(), verified_record(), parse_import(), EvidenceTests
+Nodes (6): CarNumbersTests, FakeCarNumbers, FakeResearch, ResearchTests, ShopInfoTests, toolbox()
 
-### Community 97 - "br"
-Cohesion: 0.07
-Nodes (15): br, Gf, kf, mr, nh, Ud, Wd, wr (+7 more)
+### Community 120 - "FakeEvent"
+Cohesion: 0.16
+Nodes (5): FakeEvent, kebab(), scrollTo(), Target, write()
 
-### Community 120 - "KnowledgePostgresTests"
-Cohesion: 0.17
-Nodes (10): check_verdicts(), _compact(), dataset(), capacity(), KnowledgePostgresTests, payload(), receipt(), verdict() (+2 more)
+### Community 122 - "Any"
+Cohesion: 0.11
+Nodes (15): _add(), BadDelivery, classify(), _clean(), Delivery, _entry_time(), event_key(), _id_of() (+7 more)
 
-### Community 121 - "SiteContentTests"
-Cohesion: 0.14
-Nodes (4): SiteContent, Clock, SiteContentTests, slow_load()
-
-### Community 125 - "ot"
+### Community 125 - "le"
 Cohesion: 0.03
-Nodes (17): Ap, bp, dd, Dd, _e(), fp, gr(), ie (+9 more)
+Nodes (18): Ap, bp, dd, Dd, _e(), fp, gr(), ie (+10 more)
 
-### Community 126 - "mt"
-Cohesion: 0.17
-Nodes (8): Ct(), jd, mt(), rp, Ve(), Wi(), zs(), t()
+### Community 126 - ".assert_refused"
+Cohesion: 0.10
+Nodes (8): AccessTests, ago(), captured_logs(), ChatTests, ConnectionTests, FacebookCase, NotConfiguredTests, SwitchTests
 
 ### Community 127 - "Element"
 Cohesion: 0.08
 Nodes (3): build(), compound(), Element
 
-### Community 128 - "wt"
+### Community 128 - "FakeStore"
+Cohesion: 0.07
+Nodes (3): actor_name(), FakeGraph, FakeStore
+
+### Community 129 - "FeatureDatabase"
+Cohesion: 0.09
+Nodes (7): sniff(), AdsDatabaseTests, FakeResponse, FakeSession, FeatureDatabase, ImageFetcherTests, picture()
+
+### Community 130 - "Settings"
+Cohesion: 0.16
+Nodes (5): WarehouseClientTests, WarehouseClient, AuthenticationError, SourceChangedError, SourceProtocolError
+
+### Community 132 - "context_of"
+Cohesion: 0.09
+Nodes (20): clamp_turn(), ConversationTurn, ApiTests, context_of(), answer(), answer(), answer(), factory() (+12 more)
+
+### Community 133 - "GraphError"
 Cohesion: 0.02
-Nodes (23): as, bl, bn, Ci, co(), df(), dr(), El (+15 more)
-
-### Community 130 - "._connect"
-Cohesion: 0.14
-Nodes (8): InvalidJudgement, _plain(), ResearchJudge, KnowledgeRepository, main(), run_once(), sanitized(), WorkerTests
-
-### Community 133 - "build_admin_router"
-Cohesion: 0.15
-Nodes (30): _address(), _admin(), build_admin_router(), audit(), changed(), create_service(), create_user(), delete_media() (+22 more)
+Nodes (56): main(), check_public(), _connect_refused(), _context(), main(), _print_connect(), status_lines(), _time() (+48 more)
 
 ### Community 134 - "V"
 Cohesion: 0.02
-Nodes (25): Al, Cl, Di(), dl, Er, Fn, Ge, ho (+17 more)
+Nodes (23): Al, Cl, dl, Er, Fn, Ge, ho, kn (+15 more)
 
-### Community 136 - "SearchResultTests"
-Cohesion: 0.11
-Nodes (4): found(), ids(), SearchResultTests, WordMatchingTests
+### Community 135 - "test_parts_crawler_http.py"
+Cohesion: 0.05
+Nodes (25): ChallengeDetected, CircuitOpen, Disallowed, FetchError, HostState, Interrupted, is_challenge(), PermanentFetchError (+17 more)
 
-### Community 137 - ".from_rows"
-Cohesion: 0.16
-Nodes (4): GuideTests, StockTests, GuideTests, line_of()
+### Community 136 - "Settings"
+Cohesion: 0.02
+Nodes (64): create_app(), conversation_turn(), check_research(), ChatService, engine_name(), Settings, check_turn(), Counting (+56 more)
+
+### Community 137 - "json_ready"
+Cohesion: 0.30
+Nodes (10): json_ready(), ads(), ads_daily(), comments(), page_stats(), posts(), _comment_view(), _reading() (+2 more)
 
 ### Community 139 - "scene.js"
-Cohesion: 0.06
-Nodes (31): createContactShadow(), createEnvironment(), createMaterials(), createRoom(), disposeMaterials(), disposeRoom(), emitter(), ENV (+23 more)
+Cohesion: 0.10
+Nodes (30): createContactShadow(), createEnvironment(), createMaterials(), createRoom(), disposeMaterials(), disposeRoom(), emitter(), ENV (+22 more)
 
 ### Community 141 - "nd"
-Cohesion: 0.14
-Nodes (40): He, nd(), b(), be(), ce(), ct(), D(), $e() (+32 more)
+Cohesion: 0.13
+Nodes (41): He, ef(), nd(), b(), be(), ce(), ct(), D() (+33 more)
 
-### Community 142 - "Et"
-Cohesion: 0.03
-Nodes (5): Bt, Et, $h, $s(), um
+### Community 142 - "test_meta_store_database.py"
+Cohesion: 0.06
+Nodes (12): _b64(), new_key_hex(), TokenCipher, TokenCipherError, _unb64(), bot_state(), forgotten_key(), forgotten_since() (+4 more)
 
-### Community 143 - "ConversationTurn"
-Cohesion: 0.08
-Nodes (6): conversation_tools(), ConversationTurn, read(), run(), read(), PartInput
-
-### Community 144 - "WarehouseClient"
-Cohesion: 0.17
-Nodes (5): WarehouseClientTests, WarehouseClient, AuthenticationError, SourceProtocolError, _fetch_and_parse()
-
-### Community 147 - "Parts catalog crawler"
+### Community 143 - "ed"
 Cohesion: 0.12
-Nodes (16): parts_catalog(), API, Bulk imports, CatCar, Every vehicle automatically, Expected size and duration, Log, Parts catalog crawler (+8 more)
+Nodes (12): ci, Dr, go, Lr, of(), Pr, qn, ed() (+4 more)
 
-### Community 148 - "NumberTests"
+### Community 144 - ".call"
 Cohesion: 0.11
-Nodes (6): _compact(), _id_key(), _unpack(), matched(), NumberTests, catalogue()
+Nodes (6): AccountTests, AdminCase, ContentTests, hero(), RoleTests, ServiceTests
 
-### Community 149 - "CatalogStore"
+### Community 146 - "grounding.py"
 Cohesion: 0.09
-Nodes (9): index_for(), _names_stamp(), catalogue_index(), load(), CatalogStore, SharedIndexTests, read(), FileTests (+1 more)
+Nodes (15): _claims(), digit_tokens(), facts_text(), language_ok(), names_part_brand(), _norm(), numbers(), part_brand() (+7 more)
 
-### Community 151 - "Yt"
-Cohesion: 0.12
-Nodes (7): dh, fh, fm, oh, us, ym, Yt
+### Community 147 - "GraphClient"
+Cohesion: 0.04
+Nodes (27): appsecret_proof(), _encode(), _fields(), GraphClient, _never_sent(), _new_session(), _NoCookies, _number() (+19 more)
+
+### Community 148 - "Any"
+Cohesion: 0.24
+Nodes (8): _clean_field(), _clean_text(), Field, _filled(), _i18n(), _localize(), pick(), _text()
+
+### Community 149 - "store.py"
+Cohesion: 0.05
+Nodes (27): Settings, fetch_sample(), import_fapi(), import_fueleconomy(), _number(), _project(), read_rows(), vehicle() (+19 more)
+
+### Community 151 - "0013_meta_messenger.up.sql"
+Cohesion: 0.11
+Nodes (25): garage.messenger_messages, garage.messenger_replies, garage.messenger_threads, garage.meta_ad_accounts, garage.meta_ad_daily, garage.meta_ads, garage.meta_comments, garage.meta_images (+17 more)
 
 ### Community 152 - "timeline.js"
 Cohesion: 0.09
-Nodes (35): BEAT_STARTS, blur(), cameraAngles(), cameraAt(), cameraTrackSteps(), catmull(), centreOnAxis(), clamp() (+27 more)
+Nodes (36): BEAT_STARTS, blur(), CAMERA, cameraAngles(), cameraAt(), cameraTrackSteps(), catmull(), centreOnAxis() (+28 more)
 
 ### Community 153 - "X"
+Cohesion: 0.02
+Nodes (14): Af, Cf, cs, $d, Fh, ls, nf, ql (+6 more)
+
+### Community 154 - "SignInRouteTests"
+Cohesion: 0.07
+Nodes (10): HardeningTests, NoSearch, QuietChat, ResponseHeaderTests, session_of(), SignInRouteTests, StaffGateTests, _stream() (+2 more)
+
+### Community 157 - "wt"
 Cohesion: 0.03
-Nodes (11): cs, $d, Fh, ls, nf, sm, ui, Vn (+3 more)
+Nodes (19): as, bl, bn, Ci, co(), df(), dr(), el() (+11 more)
 
-### Community 154 - "PublicSourceError"
-Cohesion: 0.10
-Nodes (16): model_matches(), _ambiguous(), _covers_year(), FuchsClient, _make_matches(), _model_covers_year(), _model_matches(), JsFilterClient (+8 more)
-
-### Community 157 - "Assets"
-Cohesion: 0.11
-Nodes (3): Assets, AssetsTests, FakeTime
+### Community 159 - "test_messenger_worker.py"
+Cohesion: 0.04
+Nodes (26): _reap(), _purge(), purge_comments(), build_context(), utc_now(), MetaDatabase, _TooLarge, create_receiver_app() (+18 more)
 
 ### Community 160 - "boot"
 Cohesion: 0.13
 Nodes (34): boot(), acquireContext(), apply(), choose(), consider(), emit(), engage(), enterScroll() (+26 more)
 
-### Community 161 - "td"
-Cohesion: 0.11
-Nodes (27): Ze, so(), td(), be(), c(), Ce(), ct(), d() (+19 more)
+### Community 161 - "dt"
+Cohesion: 0.04
+Nodes (11): dh, dt, fh, fm, Jh, oh, Oh, on() (+3 more)
 
-### Community 164 - ".login"
-Cohesion: 0.17
-Nodes (3): AuthError, SiteAuthTests, fail()
-
-### Community 165 - "search_trace"
-Cohesion: 0.16
-Nodes (6): explain(), search_trace(), searched_rows(), _searcher(), MissTests, stock_row()
-
-### Community 167 - "it"
-Cohesion: 0.07
-Nodes (5): ep, it, mh, np, Vi
-
-### Community 168 - "Y"
+### Community 162 - ".connection"
 Cohesion: 0.05
-Nodes (5): _f, J(), Mf, Y, Zf
+Nodes (12): main(), browse(), catalog(), connect(), Handler, json_default(), run_query(), AnalyticsIntegrationTests (+4 more)
 
-### Community 173 - "response"
-Cohesion: 0.22
-Nodes (3): finish(), response(), tool()
+### Community 163 - ".error"
+Cohesion: 0.02
+Nodes (31): PageEcho, _body(), _Burst, _Chat, command_of(), _comment_outcome(), _connect_detail(), _error_code() (+23 more)
 
-### Community 174 - "product"
-Cohesion: 0.15
-Nodes (10): done(), FinishCheckTests, judge(), handles(), walk(), KeptBackTests, product(), offer() (+2 more)
+### Community 164 - "._salvage"
+Cohesion: 0.06
+Nodes (19): _asked(), AssistantTurn, bad(), _bare(), _block(), _brief(), _dump(), _fold() (+11 more)
 
-### Community 175 - "Settings"
+### Community 165 - "delivery"
 Cohesion: 0.16
-Nodes (7): SyncProgressTests, _html(), ReliabilityTests, _settings(), SyncEndToEndTests, Settings, sync()
+Nodes (6): delivery(), digest(), entry(), message(), PayloadTests, sign()
 
-### Community 176 - "run_row"
-Cohesion: 0.13
-Nodes (12): asked_text(), asks(), card_row(), check_turn(), next_move(), question_of(), run_row(), run_scenario() (+4 more)
+### Community 169 - "RecordingBuckets"
+Cohesion: 0.06
+Nodes (6): CatalogRouteTests, ChatRouteTests, LegacyInventory, RecordingBuckets, SiteAppCase, StaticVin
 
-### Community 177 - ".from_rows"
-Cohesion: 0.08
+### Community 170 - "ConversationStore"
+Cohesion: 0.06
+Nodes (9): ConversationStore, cancelled(), progress(), _shown(), StoredAIConversationTests, finish(), ChatLogTests, Engine (+1 more)
+
+### Community 172 - "J"
+Cohesion: 0.04
+Nodes (14): o(), J(), Jl, lc(), Mf, nm, _r, To() (+6 more)
+
+### Community 173 - "integrity.py"
+Cohesion: 0.29
+Nodes (3): VersionIntegrityTests, verify_version_integrity_tag(), version_integrity_tag()
+
+### Community 174 - "draw"
+Cohesion: 0.14
+Nodes (5): draw(), _quotas(), _styles(), SampleTests, small_catalogue()
+
+### Community 176 - "Models"
+Cohesion: 0.15
+Nodes (4): Models, _request(), Messages, ModelsTests
+
+### Community 177 - "CatalogSearchTests"
+Cohesion: 0.09
 Nodes (6): inventory_overview(), _ranked(), CatalogSearchTests, names(), row(), InventoryOverviewTests
 
-### Community 178 - "FakeConnection"
-Cohesion: 0.11
-Nodes (3): ConfigureSiteTests, FakeConnection, Result
-
-### Community 179 - ".constructor"
-Cohesion: 0.12
-Nodes (22): U(), Re(), W(), od, ar(), cr(), fo(), fr() (+14 more)
+### Community 179 - "test_assistant_research.py"
+Cohesion: 0.07
+Nodes (19): ApiBackend, cache_key(), clean_question(), OpenRouterBackend, question_text(), ResearchError, ApiBackendTests, check() (+11 more)
 
 ### Community 180 - "build_site_assets.py"
-Cohesion: 0.13
-Nodes (20): _bounds(), brand_dir(), build_fonts(), build_icons(), build_logo(), BuildError, check(), _defs() (+12 more)
-
-### Community 183 - "site_chat.py"
-Cohesion: 0.15
-Nodes (9): build_public_chat(), _car(), card_codes(), _choice(), _note(), plain(), _reason(), _takes_choice() (+1 more)
-
-### Community 184 - "test_assistant.py"
 Cohesion: 0.12
-Nodes (5): clamp_turn(), conversation_turn(), ApiTests, Repository, Vin
+Nodes (30): _bounds(), brand_dir(), brand_file(), build_art(), build_fonts(), build_icons(), build_logo(), build_photos() (+22 more)
 
-### Community 186 - ".client"
-Cohesion: 0.29
-Nodes (6): ChooserResolutionTests, coupe(), mercedes(), gle(), detail(), item()
+### Community 183 - "BillingFallbackTests"
+Cohesion: 0.09
+Nodes (10): factory(), BillingFallbackClient, openrouter_client(), events(), read(), BillingFallbackTests, factory(), refused() (+2 more)
+
+### Community 184 - "VehicleInventoryTests"
+Cohesion: 0.21
+Nodes (4): evidence(), product(), VehicleInventoryTests, page()
+
+### Community 185 - "._step"
+Cohesion: 0.05
+Nodes (30): har_pages(), import_har(), RawStore, year_range(), article_rows(), Catalog, CatCarAdapter, read() (+22 more)
+
+### Community 186 - "client_key"
+Cohesion: 0.22
+Nodes (5): client_key(), hardened(), _harden(), _loopback(), _respond()
 
 ### Community 187 - "LoginThrottle"
 Cohesion: 0.17
 Nodes (3): LoginThrottle, Clock, LoginThrottleTests
 
-### Community 189 - "Qi"
-Cohesion: 0.10
-Nodes (4): Qi, Rn, Le(), xe()
-
-### Community 190 - "chat_contract.py"
-Cohesion: 0.14
-Nodes (13): answer(), _distinct(), group(), groups(), _identifier(), _legacy(), _line(), _numbered() (+5 more)
-
-### Community 191 - "Page"
-Cohesion: 0.10
-Nodes (7): AssetError, Chrome, _magick(), _node_check(), Page, render_posters(), serve_site()
-
-### Community 192 - "service.py"
-Cohesion: 0.10
-Nodes (11): failure_code(), SourceChangedError, ParsedPage, SyncCounters, WarehouseProduct, WarehouseRepository, _check_page(), _log_progress() (+3 more)
-
-### Community 193 - "mountView"
-Cohesion: 0.26
-Nodes (19): statusIcon(), inputKind(), pick(), blank(), mountView(), buildField(), buildList(), choose() (+11 more)
-
-### Community 195 - "L"
-Cohesion: 0.04
-Nodes (11): bf, L(), nc, Od(), Pn, Qa(), rm, x() (+3 more)
-
-### Community 196 - "BufferGeometryUtils.js"
-Cohesion: 0.12
-Nodes (8): computeMikkTSpaceTangents(), computeMorphedAttributes(), deepCloneAttribute(), deinterleaveAttribute(), deinterleaveGeometry(), mergeVertices(), remapAttribute(), Ed
-
-### Community 197 - "assistant_eval.py"
-Cohesion: 0.03
-Nodes (47): show(), first_word(), _check_expectation(), draw(), earlier_rows(), earlier_sample(), fill(), in_stock() (+39 more)
-
-### Community 198 - "cost"
-Cohesion: 0.09
-Nodes (7): cost(), Models, _request(), row_view(), Asker, Messages, ModelsTests
-
-### Community 199 - "trade_report"
-Cohesion: 0.15
-Nodes (4): sync_health(), trade_report(), Reports, SyncAndTradeTests
-
-### Community 200 - "SpeedTests"
+### Community 190 - "TokenBuckets"
 Cohesion: 0.16
-Nodes (3): row(), SpeedTests, Stream
+Nodes (4): TokenBuckets, Clock, RateLimitTests, TokenBucketTests
+
+### Community 192 - "_Receiver"
+Cohesion: 0.10
+Nodes (8): _client_of(), _empty(), _Guard, _health(), Inbox, _read_capped(), _Receiver, render_pages()
+
+### Community 193 - "services.js"
+Cohesion: 0.08
+Nodes (70): api, statusIcon(), autoGrow(), CONTROL, countChars(), countWords(), fieldMessage(), inputKind() (+62 more)
+
+### Community 194 - "vendor_site_assets.py"
+Cohesion: 0.07
+Nodes (28): AssetError, _check_csp(), _check_import_graph(), _check_manifests(), _fetch(), _haze_mask(), _magick(), main() (+20 more)
+
+### Community 195 - "showFailure"
+Cohesion: 0.31
+Nodes (10): addSteps(), callLink(), chip(), failureText(), nextSteps(), restore(), retryChip(), searchChip() (+2 more)
+
+### Community 196 - "FakeGraph"
+Cohesion: 0.15
+Nodes (3): Call, _error(), FakeGraph
+
+### Community 197 - "0011_vehicle_detail.up.sql"
+Cohesion: 0.27
+Nodes (9): parts_catalog.vehicles, vehicles_lookup, parts_catalog.import_checkpoints, parts_catalog.vehicle_names, parts_catalog.wmi, vehicle_names_lookup, vehicle_names_make, vehicles_engine_code (+1 more)
+
+### Community 198 - "test_meta_comments.py"
+Cohesion: 0.14
+Nodes (8): CommentEvent, CommentRetry, list_comments(), CommentsDatabaseTests, event(), FakeEngine, outcome(), view()
+
+### Community 200 - "public_turn"
+Cohesion: 0.11
+Nodes (10): public_turn(), shown(), card(), engine_turn(), keys_in(), QuestionTests, labelled(), shown() (+2 more)
 
 ### Community 201 - "assistant_chat_walk.mjs"
 Cohesion: 0.10
-Nodes (21): answerFromFixtures(), delay(), expectations(), FIXTURES, GAP_MS, lastSend, LEVELS, main() (+13 more)
+Nodes (20): answerFromFixtures(), delay(), expectations(), FIXTURES, GAP_MS, lastSend, LEVELS, ONLY_SCREENS (+12 more)
 
-### Community 202 - "staff_turn"
-Cohesion: 0.12
-Nodes (6): public_card(), card(), shown(), staff_turn(), StockNumberTests, WhitelistTests
+### Community 202 - "shop_info"
+Cohesion: 0.26
+Nodes (5): shop_info(), _text_of(), FakeSite, filled_snapshot(), ShopInfoTests
 
-### Community 204 - "public_turn"
-Cohesion: 0.19
-Nodes (6): public_turn(), shown(), engine_turn(), keys_in(), QuestionTests, labelled()
+### Community 203 - "Qi"
+Cohesion: 0.10
+Nodes (4): Qi, Rn, Le(), xe()
 
-### Community 206 - "nc"
-Cohesion: 0.22
-Nodes (19): T(), nc(), b(), D(), E(), f(), g(), L() (+11 more)
+### Community 204 - "AdminSwitchCycleTests"
+Cohesion: 0.06
+Nodes (4): AdminSwitchCycleTests, final(), FakeEngine, _Lines
 
-### Community 207 - "rules.py"
-Cohesion: 0.07
-Nodes (24): product_line(), sort_rows(), _tokens(), approvals_stated(), axle_verdict(), _check(), _key(), load_rules() (+16 more)
+### Community 206 - ".load"
+Cohesion: 0.28
+Nodes (4): ScenarioFileTests, slow_load(), load_then_edit(), slow_load()
 
-### Community 209 - "mount"
-Cohesion: 0.22
-Nodes (16): append(), apply(), BOOLEAN, clear(), icon(), ICONS, mount(), STATUS (+8 more)
+### Community 207 - "re"
+Cohesion: 0.03
+Nodes (52): _row(), category_for_query(), matches_category(), query_patterns(), codes_in_text(), add(), normalize_code(), NameInput (+44 more)
 
-### Community 211 - "Automotive intelligence MVP"
-Cohesion: 0.16
-Nodes (12): Anthropic API (language/tool orchestration), Automotive intelligence MVP, Authorized evidence import (CSV/JSON operator import), Compatibility statuses (VERIFIED / PROVISIONAL / CONFLICTED / UNKNOWN), Hard offer rules (always on), Migration 0006_automotive (private schema with RLS), Deterministic oil eligibility, Live federation acceptance run (+4 more)
+### Community 209 - ".constructor"
+Cohesion: 0.13
+Nodes (19): U(), ud, ar(), cr(), fo(), fr(), gn(), Hn() (+11 more)
 
-### Community 212 - "Automotive UI Mobile QA Screenshot"
-Cohesion: 0.19
-Nodes (13): Automotive UI Mobile QA Screenshot, Autocatalog Brand Header (vehicle · parts · evidence), Manufacturer, Model, Year, Engine Code Fields, Configuration Refinement Card, Truncated Field (likely Fuel), Hero: Find the Part, Check Compatibility, Identify Vehicle Button, Year Input (optional) (+5 more)
+### Community 212 - "assistant_research.py"
+Cohesion: 0.06
+Nodes (33): _blocked(), clean_findings(), _compact(), _count(), _excerpt(), _field(), _finding(), for_the_bot() (+25 more)
 
-### Community 215 - "send"
-Cohesion: 0.16
-Nodes (29): addMessage(), addPager(), addStarters(), addSystem(), addTyping(), answerGroup(), appendCards(), cardHolder() (+21 more)
+### Community 215 - "analytics Kimball-style star schema"
+Cohesion: 0.14
+Nodes (11): dim_date, dim_product (Type 1), fact_product_current, fact_product_observation, fact_sync_run, analytics Kimball-style star schema, ASVS V4 access control (scoped writer functions), Production database roles (migration owner, sync writer, backup/restore operator) (+3 more)
 
 ### Community 216 - "parts.js"
 Cohesion: 0.14
 Nodes (16): airBase, airFilter, airLid, along(), bank(), BANKS, carb, DIM (+8 more)
 
-### Community 217 - "Any"
+### Community 219 - ".turn"
 Cohesion: 0.11
-Nodes (8): _bounded(), handle_of(), own_number(), row_numbers(), same_part(), same_parts(), convert(), _trim_number()
+Nodes (14): BurstTests, CapTests, InboxTests, ms(), ok(), SwitchTests, chat_off(), newer() (+6 more)
 
-### Community 218 - "chat_report"
-Cohesion: 0.28
-Nodes (4): chat(), chat_report(), ChatReportTests, counts()
+### Community 220 - "CommentStore"
+Cohesion: 0.04
+Nodes (19): _adopt_chat(), _answer(), _block(), comment_link(), CommentStore, engine_text(), forget_customer(), handle_comment_event() (+11 more)
 
-### Community 219 - "build_stores"
+### Community 221 - "_c"
+Cohesion: 0.48
+Nodes (6): _c(), E(), m(), N(), R(), y()
+
+### Community 222 - "chat_contract.py"
 Cohesion: 0.13
-Nodes (6): build_stores(), close(), review_settings(), ReviewError, ApplicationTests, build()
+Nodes (13): answer(), _distinct(), group(), groups(), _identifier(), _legacy(), _line(), _numbered() (+5 more)
 
-### Community 220 - "suggestions"
-Cohesion: 0.19
+### Community 225 - "assistant_exam.py"
+Cohesion: 0.03
+Nodes (50): in_stock(), row_view(), _app(), Builder, work(), carriers(), check_fact(), clock_times() (+42 more)
+
+### Community 226 - "suggestions"
+Cohesion: 0.21
 Nodes (5): question(), suggestions(), What a visitor can and cannot see, OptionTests, split()
 
-### Community 221 - "parser.py"
-Cohesion: 0.15
-Nodes (5): ParseProductsPageTests, parse_products_page(), _ProductRowsParser, _row_hash(), _value_at()
+### Community 229 - "garage.meta_provision"
+Cohesion: 0.31
+Nodes (5): garage.meta_provision(), garage.meta_provision(), garage.meta_forgotten, garage.meta_provision(), meta_forgotten_at_idx
 
-### Community 223 - ".call"
-Cohesion: 0.09
-Nodes (8): AccountTests, AdminCase, ContentTests, hero(), MediaTests, RoleTests, ServiceTests, png()
-
-### Community 224 - "test_automotive_knowledge.py"
-Cohesion: 0.04
-Nodes (38): categories_for(), category_for_query(), matches_category(), knowledge_for(), KnowledgeService, add(), requested_categories(), LearningSearchCoordinator (+30 more)
-
-### Community 226 - "build_auth_router"
-Cohesion: 0.20
-Nodes (9): build_auth_router(), login(), logout(), password(), session(), _client(), cookie_name(), _error() (+1 more)
-
-### Community 227 - "Assistant chat: live walk of both screens (2026-11-10)"
-Cohesion: 0.18
-Nodes (8): Before it is reachable from the internet, Content, Garage 1886 site, Local setup, Roles, Security model, Settings, Verification
-
-### Community 228 - "ln"
+### Community 230 - "Connection"
 Cohesion: 0.11
-Nodes (7): Cp, hn, ke, ln, tp, Us, wf
+Nodes (4): MetaDatabaseNotConfigured, Connection, Cursor, RoleDatabase
 
-### Community 229 - "TokenBuckets"
-Cohesion: 0.22
-Nodes (3): TokenBuckets, RateLimitTests, TokenBucketTests
+### Community 231 - "ChatService"
+Cohesion: 0.27
+Nodes (5): tool_definitions(), ChatTests, handler(), response(), tool()
 
-### Community 230 - "scheduler.py"
-Cohesion: 0.08
-Nodes (20): ChallengeDetected, CircuitOpen, Disallowed, FetchError, HostState, Interrupted, is_challenge(), Page (+12 more)
+### Community 232 - "ResearchService"
+Cohesion: 0.09
+Nodes (11): _Job, numbers_of(), ResearchService, _result(), answer(), Backend, bad_request(), finding() (+3 more)
 
-### Community 231 - "FakeStore"
-Cohesion: 0.12
-Nodes (9): ConversationError, build_chat_router(), address(), create(), message(), service(), turn(), FakeStore (+1 more)
+### Community 233 - "assistant_bench.py"
+Cohesion: 0.05
+Nodes (12): Block, child_environment(), _limited(), _response(), Session, Slot, _start_child(), Step (+4 more)
 
-### Community 232 - "localized"
+### Community 234 - "warehouse_sync/config.py"
 Cohesion: 0.14
-Nodes (8): overview(), default_snapshot(), _localize(), localized(), missing_setup(), pick(), LocalizedTests, Repository
-
-### Community 233 - "one"
-Cohesion: 0.12
-Nodes (10): index(), account_refusal(), catalogue_line(), one(), one(), judge_case(), judge_turn(), refused_status() (+2 more)
+Nodes (17): ASVS V14 configuration (fail-closed, SHA-pinned CI), _configuration_error(), _database_url_is_production_safe(), _decode_hmac_key(), _load_environment(), load_maintenance_hmac_key(), load_migration_database_url(), _positive_float() (+9 more)
 
 ### Community 235 - "cd"
 Cohesion: 0.36
 Nodes (10): cd(), E(), f(), L(), m(), N(), O(), R() (+2 more)
 
-### Community 236 - "ro"
+### Community 237 - "nc"
 Cohesion: 0.24
-Nodes (7): kf(), n(), ro(), m(), N(), R(), u()
+Nodes (18): nc(), b(), D(), E(), f(), g(), L(), m() (+10 more)
 
-### Community 237 - "MediaCache"
-Cohesion: 0.21
-Nodes (3): MediaCache, Images, MediaCacheTests
+### Community 238 - "test_assistant.py"
+Cohesion: 0.06
+Nodes (37): typed_tokens(), ButtonTests, done(), FailureTests, finish(), FinishCheckTests, judge(), handles() (+29 more)
 
-### Community 240 - "Garage 1886 site: review and verification (2026-11-10)"
+### Community 239 - "Unified VIN read federation (/vehicles/search)"
+Cohesion: 0.05
+Nodes (46): Anthropic API (language/tool orchestration), Automotive intelligence MVP, Optional TecDoc-style catalog API (CATALOG_API_KEY), Deterministic dialogue (answered without model call), Ephemeral in-memory chat conversations, Authorized evidence import (CSV/JSON operator import), Compatibility statuses (VERIFIED / PROVISIONAL / CONFLICTED / UNKNOWN), Hard offer rules (always on) (+38 more)
+
+### Community 240 - ".decode"
 Cohesion: 0.22
-Nodes (9): Automated checks, Checked with simulated responses only, Content that is still empty, Garage 1886 site: review and verification (2026-11-10), Live checks in headless Chrome 151 (real server, real data), Not verified, Second batch of wall photos (later the same day), Security review (+1 more)
+Nodes (4): ProviderUnavailable, _text(), VinService, VinTests
 
-### Community 241 - "Unified VIN read federation (/vehicles/search)"
-Cohesion: 0.28
-Nodes (11): NHTSA vPIC VIN decoder, Oil-change flow (grade, capacity, engine family), Unified VIN read federation (/vehicles/search), Fuchs oil chooser connector, JS Asakashi (jsfilter.jp) VIN filter connector, OATS chooser API shape (search / equipment), Pakelo oil chooser connector (per-lookup page token), Public oil and filter connectors (+3 more)
-
-### Community 242 - "Oh"
+### Community 243 - "Any"
 Cohesion: 0.11
-Nodes (3): Oh, vi, Xh()
+Nodes (8): _bounded(), _number(), own_number(), row_numbers(), same_part(), same_parts(), convert(), _trim_number()
 
-### Community 243 - "FakeService"
-Cohesion: 0.15
-Nodes (4): FakeRepository, FakeService, part(), PartsCatalogServiceTests
+### Community 244 - "Pages"
+Cohesion: 0.26
+Nodes (4): _accepts_gzip(), _number(), Pages, _tel()
 
-### Community 246 - "CommandTests"
-Cohesion: 0.20
-Nodes (5): CommandTests, create(), Messages, row(), said()
+### Community 247 - "SiteAuthTests"
+Cohesion: 0.16
+Nodes (3): AuthError, SiteAuthTests, fail()
 
 ### Community 249 - "createLabels"
 Cohesion: 0.27
@@ -1072,69 +1098,41 @@ Nodes (8): createLabels(), clear(), pinStatic(), place(), reach(), sync(), track
 Cohesion: 0.28
 Nodes (17): cardRow(), icon(), number(), price(), text(), actionRow(), askButton(), callButton() (+9 more)
 
-### Community 251 - ".run_all"
-Cohesion: 0.20
-Nodes (6): check_catalogue(), found_by_turn(), grouped(), summarize_catalogue(), weakest(), CatalogueRunTests
+### Community 251 - "FakeService"
+Cohesion: 0.15
+Nodes (4): FakeRepository, FakeService, part(), PartsCatalogServiceTests
 
-### Community 252 - "Path"
-Cohesion: 0.30
-Nodes (10): brand_file(), build_art(), build_photos(), _burst(), _burst_masks(), _lettering(), magick(), _mask_webp() (+2 more)
+### Community 253 - "Store"
+Cohesion: 0.13
+Nodes (3): fast_scrypt(), CommandLineTests, Store
 
-### Community 253 - "json"
-Cohesion: 0.04
-Nodes (36): _json(), DatabaseNotConfigured, Motorium VIN part-code panel, Unified all-sources VIN search panel, merge_parts(), validate_vin(), vin_checksum(), Key-gated VIN-to-OE catalog API client (RapidAPI) (+28 more)
+### Community 257 - "Garage 1886 on Facebook"
+Cohesion: 0.11
+Nodes (19): A customer got no answer, A service keeps restarting or will not start, A token is broken or expiring, `#bot` commands, Commands and routes, Costs, Data, retention and deleting a customer's data, Garage 1886 on Facebook (+11 more)
 
-### Community 255 - "oats.py"
-Cohesion: 0.10
-Nodes (8): _number(), OatsCatalog, distance(), PakeloClient, PublicSourceError, ShellOilClient, equipment(), OatsTests
+### Community 260 - "pair"
+Cohesion: 0.26
+Nodes (4): clean(), brand(), CleanTests, pair()
 
-### Community 256 - "showFailure"
-Cohesion: 0.31
-Nodes (10): addSteps(), callLink(), chip(), failureText(), nextSteps(), restore(), retryChip(), searchChip() (+2 more)
+### Community 268 - "Parts catalog crawler"
+Cohesion: 0.12
+Nodes (16): parts_catalog(), API, Bulk imports, CatCar, Every vehicle automatically, Expected size and duration, Log, Parts catalog crawler (+8 more)
 
-### Community 258 - "Unified VIN source search QA (2026-11-09)"
-Cohesion: 0.18
-Nodes (10): ASGI transport test harness with event-loop heartbeat, Automotive API and interface QA (2026-11-08), Blocked browser checks (missing X server, sandbox crashpad), pip-audit vulnerable pins (lxml, pytest, python-dotenv, requests), Self-review scorecard (3.8/5), Unified VIN source search QA (2026-11-09), Warehouse preservation digest check, Selected-vehicle inventory matching (POST /inventory/vehicle) (+2 more)
-
-### Community 259 - "build_pages_router"
-Cohesion: 0.10
-Nodes (8): install_site(), _accepts_gzip(), build_pages_router(), asset(), _number(), Pages, _tel(), SiteContext
-
-### Community 260 - "rule_for"
-Cohesion: 0.21
-Nodes (4): _aliased(), Rule, rule_for(), RuleTests
-
-### Community 264 - "PublicHttp"
-Cohesion: 0.19
-Nodes (3): PublicHttp, retry_delay(), RetryMetadataTests
-
-### Community 266 - "run"
-Cohesion: 0.09
-Nodes (18): build_report(), _cell(), cost(), _dry_run(), _iso(), _line(), _minute(), _model_of() (+10 more)
-
-### Community 268 - "Clock"
-Cohesion: 0.22
-Nodes (3): DailyBudget, Clock, DailyBudgetTests
-
-### Community 271 - "analytics Kimball-style star schema"
-Cohesion: 0.14
-Nodes (11): dim_date, dim_product (Type 1), fact_product_current, fact_product_observation, fact_sync_run, analytics Kimball-style star schema, ASVS V4 access control (scoped writer functions), Production database roles (migration owner, sync writer, backup/restore operator) (+3 more)
+### Community 271 - "compose"
+Cohesion: 0.25
+Nodes (3): card(), compose(), ReplyTests
 
 ### Community 272 - "engine-harness.js"
 Cohesion: 0.33
 Nodes (4): hud, params, root, wanted
 
-### Community 273 - "Automotive API and interface QA (2026-11-08)"
-Cohesion: 0.33
-Nodes (4): Automotive /api/v1 endpoint surface, Per-process rate limits (60 API / 10 provider requests per minute), Motorium ai-assistant.php protocol, Product JSON-LD metadata (MPN, SKU, OEM)
+### Community 274 - "Ec"
+Cohesion: 0.67
+Nodes (3): Ec(), N(), u()
 
-### Community 275 - "SiteAppCase"
-Cohesion: 0.07
-Nodes (7): CatalogRouteTests, slow(), ForwardedAddressTests, LegacyInventory, RecordingBuckets, SiteAppCase, StaticVin
-
-### Community 276 - "Texting-style parts chat UI verification"
-Cohesion: 0.25
-Nodes (9): Backend-built replies, Deterministic dialogue (answered without model call), Ephemeral in-memory chat conversations, Optional reply rewording (AUTOMOTIVE_CHAT_REPHRASE), Messenger bubbles and quick-reply chips, Response model dropped note / quick_replies / act / language (fixed), Texting-style parts chat UI verification, Conversational parts assistant UI verification (+1 more)
+### Community 275 - "BenchTests"
+Cohesion: 0.09
+Nodes (5): claude_binary(), _Server, SubscriptionClient, BenchTests, Engine
 
 ### Community 277 - "pace.js"
 Cohesion: 0.22
@@ -1144,121 +1142,217 @@ Nodes (12): aborted(), afterFrame(), createPacer(), open(), pause(), drawing(), 
 Cohesion: 0.15
 Nodes (13): block, data, reducedMotion, galleryNav, launcher, loadChat(), loadSearch(), menu (+5 more)
 
-### Community 280 - "ed"
-Cohesion: 0.18
-Nodes (12): ci, Dr, $i, Lr, M(), Pr, ed(), b() (+4 more)
+### Community 280 - "MotoriumError"
+Cohesion: 0.15
+Nodes (4): _identity(), MotoriumClient, MotoriumError, _text()
 
-### Community 281 - "Any"
-Cohesion: 0.09
-Nodes (15): check_expectation(), offered(), code_keys(), detect_language(), _exchange(), live(), parse_row(), plain() (+7 more)
+### Community 281 - "site_auth.py"
+Cohesion: 0.03
+Nodes (48): _Body, build_auth_router(), login(), logout(), password(), session(), _client(), cookie_name() (+40 more)
 
-### Community 282 - "warehouse_sync/__main__.py"
-Cohesion: 0.16
-Nodes (7): VersionIntegrityTests, ConfigurationError, sign_unsigned_observations(), verify_version_integrity_tag(), version_integrity_tag(), main(), _parser()
+### Community 283 - "test_meta_receiver.py"
+Cohesion: 0.22
+Nodes (6): comment(), echo(), postback(), receipt(), ReceiverDatabaseTests, referral()
 
-### Community 283 - "_c"
-Cohesion: 0.48
-Nodes (6): _c(), E(), m(), N(), R(), y()
+### Community 284 - "meta_page_stats.py"
+Cohesion: 0.08
+Nodes (17): parse_comment(), _image_session(), _NoCookies, _number(), page_days(), parse_post(), _summary_count(), clip() (+9 more)
 
-### Community 284 - "Ec"
-Cohesion: 0.67
-Nodes (3): Ec(), N(), u()
+### Community 285 - ".client"
+Cohesion: 0.13
+Nodes (5): HandshakeTests, RateLimitTests, ReceiverCase, ResponseTests, SignatureTests
 
-### Community 287 - "site_content.py"
-Cohesion: 0.19
-Nodes (8): _clean_field(), clean_service(), _clean_text(), Field, _filled(), _i18n(), _text(), CleanServiceTests
+### Community 287 - "Features"
+Cohesion: 0.07
+Nodes (4): FakeConnection, FakeDatabase, FakeStore, Features
+
+### Community 288 - ".client"
+Cohesion: 0.29
+Nodes (6): ChooserResolutionTests, coupe(), mercedes(), gle(), detail(), item()
+
+### Community 289 - "0008_automotive_knowledge.up.sql"
+Cohesion: 0.29
+Nodes (10): automotive_knowledge.accepted_facts, automotive_knowledge.candidate_jobs, automotive_knowledge.claim_job(), automotive_knowledge.daily_quota, automotive_knowledge.enqueue(), automotive_knowledge.source_policies, automotive_knowledge.validation_audits, automotive_knowledge.vehicle_profiles (+2 more)
 
 ### Community 290 - "element"
-Cohesion: 0.27
-Nodes (14): api(), deleteConversation(), evidenceLink(), facts(), loadVehicleParts(), openAhead(), perform(), product() (+6 more)
-
-### Community 294 - "Eo"
-Cohesion: 0.47
-Nodes (4): Eo(), i(), t(), u()
-
-### Community 296 - "FakeEvent"
-Cohesion: 0.16
-Nodes (5): FakeEvent, kebab(), scrollTo(), Target, write()
-
-### Community 297 - "shown_as"
 Cohesion: 0.24
-Nodes (4): numbers_of(), shown_as(), shown(), ShownTests
+Nodes (17): chatMessage(), element(), evidenceLink(), explainRun(), facts(), fitLabel(), groundLines(), groundOf() (+9 more)
 
-### Community 299 - "test_site_guard.py"
-Cohesion: 0.02
-Nodes (52): _days(), _flag(), _seconds(), _site_settings(), configure_local(), local_admin_url(), LocalSetupError, _new_login() (+44 more)
+### Community 291 - "assistant_eval.py"
+Cohesion: 0.03
+Nodes (58): index(), first_word(), opening_of(), account_refusal(), asked_text(), asks(), card_row(), catalogue_line() (+50 more)
 
-### Community 303 - "ld"
+### Community 293 - "FailureTests"
+Cohesion: 0.14
+Nodes (11): cancelled(), failure(), build(), FailureTests, closing(), build(), ThreadTests, slow() (+3 more)
+
+### Community 296 - "Automotive UI Mobile QA Screenshot"
+Cohesion: 0.19
+Nodes (13): Automotive UI Mobile QA Screenshot, Autocatalog Brand Header (vehicle · parts · evidence), Manufacturer, Model, Year, Engine Code Fields, Configuration Refinement Card, Truncated Field (likely Fuel), Hero: Find the Part, Check Compatibility, Identify Vehicle Button, Year Input (optional) (+5 more)
+
+### Community 299 - "_sync_once"
+Cohesion: 0.12
+Nodes (11): failure_code(), ParsedPage, SyncCounters, WarehouseProduct, WarehouseRepository, _check_page(), _fetch_and_parse(), _log_progress() (+3 more)
+
+### Community 300 - "page"
+Cohesion: 0.14
+Nodes (5): split_application(), MannTests, NgkTests, page(), RockAutoTests
+
+### Community 301 - "split_text"
+Cohesion: 0.21
+Nodes (5): _cut(), _room(), split_text(), SplitTests, units()
+
+### Community 306 - "verify_password"
+Cohesion: 0.18
+Nodes (9): _b64(), hash_password(), _scrypt(), _unb64(), verify_password(), _b64(), PasswordHashTests, stored() (+1 more)
+
+### Community 308 - "ld"
 Cohesion: 0.36
 Nodes (13): ld(), c(), E(), L(), m(), N(), O(), R() (+5 more)
 
-### Community 304 - "Migration 0006_automotive (private schema with RLS)"
-Cohesion: 0.50
-Nodes (3): Local SQLite chat log, Ephemeral HMAC-keyed search snapshot, 30-day sanitized VIN decode cache
+### Community 311 - "CrawledPage"
+Cohesion: 0.06
+Nodes (35): Page, clean(), CrossRef, Fitment, Link, normalize_brand(), ParseResult, Part (+27 more)
 
-### Community 310 - "bounded"
-Cohesion: 0.25
-Nodes (3): bounded(), normalize_name(), RecordHelperTests
+### Community 315 - "MessengerSetupDatabaseTests"
+Cohesion: 0.07
+Nodes (9): _applied(), _apply_messenger_migration(), configure_messenger(), _new_login(), ConfigureWithFakesTests, FakeConnection, MessengerSetupDatabaseTests, Result (+1 more)
 
-### Community 311 - "test_assistant.py"
-Cohesion: 0.05
-Nodes (29): _letters(), prepare(), typed_tokens(), written_in(), _dump(), engine_name(), _redact(), codes_in_text() (+21 more)
+### Community 316 - "build_meta_activity_router"
+Cohesion: 0.06
+Nodes (20): set_hidden(), _ad_view(), build_meta_activity_router(), hide_comment(), image(), ready(), reply_to_comment(), _Connection (+12 more)
 
-### Community 313 - "confidence"
+### Community 319 - "CarNumbersTests"
+Cohesion: 0.19
+Nodes (6): CarNumbersTests, cross(), diagnosis(), part(), Repository, vehicle()
+
+### Community 322 - "0012_garage_site.up.sql"
 Cohesion: 0.29
-Nodes (3): confidence(), GroupAndCardTests, strings_in()
+Nodes (11): audit_log_occurred_idx, garage.audit_log, garage.media, garage.services, garage.site_sections, garage.staff_sessions, garage.staff_users, media_position_idx (+3 more)
 
-### Community 320 - "Runtime requirements pin list"
+### Community 329 - "parser.py"
+Cohesion: 0.15
+Nodes (5): ParseProductsPageTests, parse_products_page(), _ProductRowsParser, _row_hash(), _value_at()
+
+### Community 335 - "json"
+Cohesion: 0.03
+Nodes (27): _dump(), _json(), _text(), _days(), _flag(), _seconds(), _site_settings(), Catalog (+19 more)
+
+### Community 340 - "assistant_sources.py"
+Cohesion: 0.11
+Nodes (16): BadArguments, _empty_note(), _kinds_note(), make_norm(), _parse(), _Query, _quoted(), _terms() (+8 more)
+
+### Community 344 - "it"
+Cohesion: 0.03
+Nodes (29): Ct(), ep, $i, ii, it, jd, mh, mt() (+21 more)
+
+### Community 348 - "LocalSetupError"
+Cohesion: 0.08
+Nodes (21): configure_local(), local_admin_url(), LocalSetupError, _new_login(), _require_catalog(), _default_jitter(), _apply_site_migration(), _ask_password() (+13 more)
+
+### Community 350 - "Assistant chat: live walks of both screens (2026-11-10)"
+Cohesion: 0.17
+Nodes (12): Added checks of the final walk, Assistant chat: live walks of both screens (2026-11-10), Automated checks, Checked in the page after every reply, Cost, Final walk: conversations and seconds to the final reply, First walk: seconds, for comparison, Found in the engine's answers, not changed here (+4 more)
+
+### Community 351 - "Garage 1886 site: review and verification (2026-11-10)"
+Cohesion: 0.20
+Nodes (9): Automated checks, Checked with simulated responses only, Content that is still empty, Garage 1886 site: review and verification (2026-11-10), Live checks in headless Chrome 151 (real server, real data), Not verified, Second batch of wall photos (later the same day), Security review (+1 more)
+
+### Community 353 - "pg_roles"
+Cohesion: 0.32
+Nodes (5): automotive_knowledge.provision(), parts_catalog.provision(), parts_catalog.provision(), parts_catalog.provision(), garage.provision()
+
+### Community 355 - "ro"
+Cohesion: 0.24
+Nodes (7): kf(), n(), ro(), m(), N(), R(), u()
+
+### Community 358 - "build_stores"
+Cohesion: 0.14
+Nodes (6): build_stores(), close(), review_settings(), ReviewError, ApplicationTests, build()
+
+### Community 361 - "chat_review.py"
+Cohesion: 0.09
+Nodes (17): build_report(), cost(), _dry_run(), _iso(), LogRead, _model_of(), Outcome, plan() (+9 more)
+
+### Community 364 - "test_parts_crawler_catalogs.py"
+Cohesion: 0.06
+Nodes (13): retry_delay(), Wikidata, bounded(), normalize_name(), api_page(), AutoPartsTests, iter_vehicles(), FakeResponse (+5 more)
+
+### Community 365 - "read_log"
+Cohesion: 0.29
+Nodes (3): read_log(), _script(), SelectionTests
+
+### Community 366 - "Runtime requirements pin list"
 Cohesion: 0.29
 Nodes (7): Runtime requirements pin list, fastapi==0.155.0, httpx==0.28.1, psycopg[binary]==3.3.2, python-dotenv==1.2.1, requests==2.32.5, uvicorn==0.54.0
 
-### Community 321 - "Optional TecDoc-style catalog API (CATALOG_API_KEY)"
-Cohesion: 0.33
-Nodes (4): Optional TecDoc-style catalog API (CATALOG_API_KEY), Name-match fallback (NAME_MATCH_ONLY), 24-hour shared caches and prewarm, Stock source columns (store column_10 / TUZ 11 column_12)
-
-### Community 323 - "done"
-Cohesion: 0.13
-Nodes (13): ButtonTests, context_of(), LanguageTests, answer(), StoreTests, answer(), slow(), first() (+5 more)
-
-### Community 324 - "create_app"
-Cohesion: 0.06
-Nodes (4): create_app(), import_evidence(), oil(), oils()
-
-### Community 326 - "RoundedBoxGeometry.js"
-Cohesion: 0.24
-Nodes (5): rbox(), getUv(), RoundedBoxGeometry, _tempNormal, On
-
-### Community 327 - "AutoPartsTests"
-Cohesion: 0.33
-Nodes (3): AutoPartsTests, iter_vehicles(), stored()
-
-### Community 332 - ".constructor"
+### Community 371 - "CatalogStore"
 Cohesion: 0.12
-Nodes (15): r(), ct(), fs(), Ft(), he(), Me(), Pi(), ps() (+7 more)
+Nodes (4): CatalogStore, SharedIndexTests, CatalogStoreTests, FakeConnection
 
-### Community 333 - "Customer"
-Cohesion: 0.10
-Nodes (9): card_turns(), offer_summary(), review(), wrong_apart(), Customer, item(), ReviewTests, verdict() (+1 more)
+### Community 372 - "Owner setup, in order"
+Cohesion: 0.15
+Nodes (13): passed(), 10. First test, 11. Go live, 1. Create the Meta app GARAGE 1886, 2. Put the App Secret into `.env`, 3. Prepare the database and the keys, 4. Install and start the services, 5. Publish the app (Live) (+5 more)
 
-### Community 341 - "chat_review.py"
+### Community 373 - "r"
+Cohesion: 0.36
+Nodes (9): r(), ct(), fs(), Ft(), he(), Me(), Pi(), ps() (+1 more)
+
+### Community 374 - "merge_parts"
+Cohesion: 0.39
+Nodes (3): MergeTests, supplier(), warehouse()
+
+### Community 378 - "test_meta_page_stats.py"
+Cohesion: 0.06
+Nodes (29): cache_image(), _entries(), followers_series(), image(), image_key(), ImageFetcher, Insights, insights_status() (+21 more)
+
+### Community 383 - "assistant_tools.py"
+Cohesion: 0.12
+Nodes (10): cache_control(), system_blocks(), turn_context(), _field(), Listed, _schema(), _strings(), tool_definitions() (+2 more)
+
+### Community 389 - "Settings"
+Cohesion: 0.16
+Nodes (7): SyncProgressTests, _html(), ReliabilityTests, _settings(), SyncEndToEndTests, Settings, sync()
+
+### Community 394 - "Toolbox"
 Cohesion: 0.09
-Nodes (17): asked_question(), _car(), _loads(), _logged(), LogRead, main(), plan(), _positive() (+9 more)
+Nodes (11): _matches(), Output, plain(), _row_id(), _source_lines(), Table, _text(), Toolbox (+3 more)
 
-### Community 342 - "describe_schema"
-Cohesion: 0.33
-Nodes (4): describe_schema(), field(), SchemaTests, walk()
+### Community 395 - "confidence"
+Cohesion: 0.29
+Nodes (3): confidence(), GroupAndCardTests, strings_in()
 
-### Community 343 - "Sales and purchasing"
+### Community 398 - "On"
 Cohesion: 0.40
-Nodes (5): Example queries, How rows are recorded, Limits, Sales and purchasing, Setup
+Nodes (3): getUv(), RoundedBoxGeometry, _tempNormal
 
-### Community 344 - "catcar.py"
+### Community 399 - "CarNumbers"
+Cohesion: 0.19
+Nodes (5): CarNumbers, _id(), numbers_for(), add(), _rows()
+
+### Community 410 - "messenger_worker.py"
+Cohesion: 0.08
+Nodes (25): availability_text(), bot_failed_text(), bot_help_text(), bot_on_refused_text(), bot_status_text(), cap_notice(), card_line(), _cards() (+17 more)
+
+### Community 417 - "Eo"
+Cohesion: 0.47
+Nodes (4): Eo(), i(), t(), u()
+
+### Community 418 - "Claude billing fallback verification"
+Cohesion: 0.33
+Nodes (5): Claude billing fallback verification, Current GREEN evidence, Final self-evaluation, Live verification and present limitation, User journeys and RED evidence
+
+### Community 431 - "h"
+Cohesion: 0.15
+Nodes (42): h(), icon(), iconButton(), link(), textArea(), activityApi, adMoney(), describeAction() (+34 more)
+
+### Community 439 - "test_assistant_names.py"
 Cohesion: 0.04
-Nodes (30): har_pages(), import_har(), article_rows(), Catalog, CatCarAdapter, read(), clean_number(), decode_step() (+22 more)
+Nodes (30): show(), index_for(), _names_stamp(), catalogue_index(), Asker, load(), read_names(), one() (+22 more)
 
-### Community 349 - "automotive.part_numbers code index"
-Cohesion: 0.50
-Nodes (4): Conservative part-code normalization (retains '/'), Stock-independent content hash (migration 0007), Enrichment index worker (leases, SKIP LOCKED, checkpoints), automotive.part_numbers code index
+### Community 449 - ".__init__"
+Cohesion: 0.14
+Nodes (8): _code_identity(), detect_language(), small_talk(), value(), LanguageTests, SmallTalkTests, make(), run()
 
 ## Ambiguous Edges - Review These
 - `Automotive catalog UI page (index.html)` → `Truncated Lower Card (Below Fold)`  [AMBIGUOUS]
@@ -1268,22 +1362,22 @@ Nodes (4): Conservative part-code normalization (retains '/'), Stock-independent
 
 ## Knowledge Gaps
 - **50 isolated node(s):** `warehouse-sync`, `Source and evidence panel`, `VIN and configuration forms`, `Match Source (EXACT_CODE)`, `New Chat Button` (+45 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 3216 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **136 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 4243 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **155 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Automotive intelligence implementation progress` connect `Warehouse to PostgreSQL synchroniser README` to `create_app`, `API Request Models`, `Parts Assistant Mobile UI`, `test_assistant.py`, `Settings`, `json`?**
-  _High betweenness centrality (0.023) - this node is a cross-community bridge._
+- **Why does `Owner setup, in order` connect `Owner setup, in order` to `Garage 1886 on Facebook`?**
+  _High betweenness centrality (0.364) - this node is a cross-community bridge._
 - **What connects `warehouse-sync`, `Source and evidence panel`, `VIN and configuration forms` to the rest of the system?**
   _50 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `oats.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.08687943262411348 - nodes in this community are weakly interconnected._
-- **Why does `Automotive catalog UI page (index.html)` connect `Parts Assistant Mobile UI` to `Automotive Desktop UI`, `Conversational Parts Lookup Desktop Screenshot`, `automotive/static/app.js`, `replies.py`, `Warehouse to PostgreSQL synchroniser README`, `Automotive UI Mobile QA Screenshot`, `Chat Texting Desktop UI`, `Chat Texting Mobile UI`, `json`?**
-  _High betweenness centrality (0.023) - this node is a cross-community bridge._
+- **Should `assistant_extras.py` be split into smaller, more focused modules?**
+  _Cohesion score 0.0896551724137931 - nodes in this community are weakly interconnected._
+- **Why does `passed()` connect `Owner setup, in order` to `scene.js`?**
+  _High betweenness centrality (0.363) - this node is a cross-community bridge._
 - **Should `ConversationalChatTests` be split into smaller, more focused modules?**
-  _Cohesion score 0.11170212765957446 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06808419243986254 - nodes in this community are weakly interconnected._
 
 ### Low-confidence Hints
 _AMBIGUOUS edges — the extractor was unsure. Verify before acting on these._
