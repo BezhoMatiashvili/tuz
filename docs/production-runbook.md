@@ -13,7 +13,7 @@
 7. GitHub private repository-ში ჩართულია MFA, branch protection, required CI checks, required `production` environment approval, Dependabot, secret scanning და CodeQL.
 8. `$28` billing alert, sync/credential/90-minute miss/backup/dependency-scan alertები გადამოწმებულია test notification-ით.
 9. დასრულებულია authenticated external penetration test და [ASVS evidence matrix](asvs-l2-evidence.md).
-10. თუ საჯარო საიტი ([garage-site.md](garage-site.md)) განთავსდება: penetration test მოიცავს `/login`, `/admin`, `/api/site`, `/api/auth` და `/api/admin` ზედაპირს; აპლიკაცია მუშაობს HTTPS reverse proxy-ის უკან, sync worker-ისგან განცალკევებულ host-ზე, ცალკე `garage_site` და `automotive_runtime` login-ებით.
+10. თუ საჯარო საიტი ([garage-site.md](garage-site.md)) განთავსდება: penetration test მოიცავს `/login`, `/admin`, `/api/site`, `/api/auth` და `/api/admin` ზედაპირს; აპლიკაცია მუშაობს HTTPS reverse proxy-ის უკან, sync worker-ისგან განცალკევებულ host-ზე, ცალკე `garage_site` და `automotive_runtime` login-ებით. თუ Meta-ს webhook-ების მიმღებიც ([garage-messenger.md](garage-messenger.md)) production-ში განთავსდება, penetration test მის საჯარო მისამართებსაც მოიცავს: `/meta/webhook`, `/privacy`, `/privacy/en`, `/data-deletion` და `/data-deletion/en`. მფლობელმა 2026 წლის 11 ნოემბერს ამ მოთხოვნიდან გამონაკლისი დაუშვა მხოლოდ ლეპტოპზე, ngrok-ის უკან მომუშავე მიმღებისთვის; production-ზე ეს გამონაკლისი არ ვრცელდება.
 
 თუ რომელიმე პუნქტი დაუდასტურებელია, production deployment უნდა შეჩერდეს.
 

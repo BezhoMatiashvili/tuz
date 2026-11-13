@@ -924,3 +924,112 @@ to 0; the remaining soft misses are long name-matched replies.
   subscription's seven-day window is used (it resets 2026-11-12 07:00) and the bench read that
   as a refusal; only a refusal counts now. Overage is off, so at 100% every session on the
   account would stop until the reset: bench runs are kept small until then.
+
+### Follow-up — Garage 1886 on Facebook: Messenger bot with an admin switch, comment replies, page stats, ad results (2026-11-11)
+
+- **Asked for:** a Messenger chatbot for the Facebook page Garage, built like TNLU's on
+  Meta's Graph API, that an admin can turn on and off. Also TNLU's other features: ads and
+  "other stuff", except its MCP server.
+- **Decided by the owner, by approving the plan:**
+  - hosting on this laptop behind ngrok, with only a small receiver public;
+  - comment replies, page stats and posts;
+  - read-only results for Garage's own ads, with no ad editing or spending;
+  - the bot ships off;
+  - a waiver of the release gate's external penetration test for this laptop receiver only.
+- **Setup, switches, costs, troubleshooting, rollback and the security model:**
+  [docs/garage-messenger.md](docs/garage-messenger.md).
+
+**What was built** (new files except where noted):
+
+- **Receiver.** `automotive/meta_receiver.py` (`python -m automotive.meta_receiver`,
+  `127.0.0.1:8771`) is the only public process:
+  - it checks each delivery's `X-Hub-Signature-256`;
+  - it appends the items to `garage.meta_inbox` with a login that can only insert, then
+    sends `NOTIFY`;
+  - it serves the privacy and data-deletion pages in Georgian and English
+    (`automotive/templates/meta/`).
+- **Worker.** `automotive/messenger_worker.py` (`python -m automotive.messenger_worker`, no
+  port):
+  - it answers bursts after a 5 s quiet window, capped at 45 s;
+  - it reads the switches when it takes a burst and again before every Send API call;
+  - it handles shop echoes, `#bot` commands from admin chats, daily caps, the late-reply
+    apology, the fallback with the shop phone, and a self-pause when the AI account fails;
+  - it runs the jobs: subscription self-repair, names, comments, posts, page stats, ads,
+    token health and purge.
+- **Engine and messages.**
+  - `messenger_engine.py` runs the website's parts assistant with the public configuration
+    and keeps each chat's state in the database.
+  - `messenger_events.py` parses webhook items.
+  - `messenger_render.py` turns a turn into Messenger messages and quick replies.
+- **Meta connection.**
+  - `meta_config.py` reads the settings, apart from `config.Settings`.
+  - `meta_graph.py` is the Graph client, with `appsecret_proof`.
+  - `meta_crypto.py` seals tokens with AES-256-GCM, using the new dependency `cryptography`.
+  - `meta_db.py`, `meta_store.py` and `meta_context.py` hold the data access.
+  - `meta_connect.py` connects with a pasted Graph API Explorer token, runs the
+    zero-delivery probe and checks tokens.
+- **Features.** `meta_comments.py` (one private reply per comment), `meta_page_stats.py`,
+  `meta_ads.py` (read-only) and `meta_sync.py`.
+- **Setup and dashboard.**
+  - `messenger_setup.py` is the setup CLI.
+  - The dashboard is `/admin/facebook` with its API `/api/admin/facebook/*`
+    (`site_meta_admin.py` and `site_meta_activity.py`, mounted in `site.py`; views
+    `static/admin/js/views/facebook*.js`, with the tabs Status & switches, Connect, Chats,
+    Comments, Page and Ads).
+- **Database.** Migration `0013_meta_messenger` adds 16 tables in schema `garage`, with
+  row-level security by role membership and `garage.meta_provision()`. The new roles
+  `garage_webhook` and `garage_messenger` are in `ops/sql/provision_automotive_roles.sql`.
+- **Operations.** There are systemd user units `ops/systemd/garage-meta-receiver.service`,
+  `garage-messenger.service` and `garage-ngrok.service`. The tunnel has `Restart=always`
+  and no `BindsTo=`, to avoid TNLU's trap.
+- **Small edits** to `.env.example` (the Facebook block), `docs/garage-site.md` and
+  `docs/production-runbook.md`.
+
+**How it is verified.** Every test is $0: Meta, OpenRouter and Anthropic are replaced by
+fakes (a mocked session, a fake Graph server on loopback, a scripted model), and no
+customer is messaged. The build's runs:
+
+| Area | Tests | Result |
+|---|---|---|
+| Foundations, Graph client, connect, store, setup | 75 | OK |
+| Receiver | 42 | OK |
+| Events, engine, renderer | 76 | OK |
+| Worker | 61 | OK |
+| Comments, page stats, ads | 51 | OK |
+
+A later run, without the database, of all 15 Meta, Messenger and dashboard test modules:
+365 ran and OK, with 65 skipped (the database tests).
+
+- The database tests ran in throwaway `postgres:16.6-alpine` containers, never the
+  developer database. Each one applies the real migrations and acts under `SET ROLE`. They
+  show, among other things, that the receiver's role can insert and read nothing.
+- Ruff and Bandit are clean on the new modules.
+- The unit files pass `systemd-analyze --user verify`. Every sandbox line was tried in
+  throwaway user units on this laptop:
+  - `MemoryDenyWriteExecute` is left out of the Python units because it makes every new
+    thread fail with the uv-managed CPython;
+  - IP firewalling is left out because it is unavailable to user units.
+- **Still to come:** the lead's integration pass, the adversarial review, a full suite run,
+  and every live check.
+
+**Pending on the owner:**
+
+1. The steps in [docs/garage-messenger.md](docs/garage-messenger.md):
+   1. create the app GARAGE 1886;
+   2. put the App Secret into `.env`;
+   3. run `--setup`;
+   4. install the units;
+   5. publish the app;
+   6. connect with the 8 permissions;
+   7. the probe;
+   8. the receive check;
+   9. Auto reply off;
+   10. the first test, about $0.03 per answer;
+   11. go live.
+2. Restarting the app on port 8767 so that it reads the new keys.
+3. Confirming the shop facts on the public pages (`SHOP` in `automotive/meta_receiver.py`)
+   and in the dashboard's brand settings.
+4. Checking the four outbound links on the privacy page, and the deadline it promises for
+   deletion requests.
+5. Checking the OpenRouter balance.
+6. A native speaker's review of the new Georgian texts.

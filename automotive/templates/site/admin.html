@@ -14,7 +14,10 @@
 {# One request round for the whole module graph instead of a waterfall of imports. #}
 {% for module in ("strings", "dom", "format", "api", "ui", "forms", "charts", "views/overview",
                   "views/inventory", "views/content", "views/texts", "views/services",
-                  "views/gallery", "views/users", "views/audit", "views/account", "views/more") %}
+                  "views/gallery", "views/users", "views/audit", "views/account", "views/more",
+                  "views/facebook", "views/facebook-shared", "views/facebook-status",
+                  "views/facebook-connect", "views/facebook-chats", "views/facebook-activity",
+                  "views/facebook-comments", "views/facebook-page", "views/facebook-ads") %}
 <link rel="modulepreload" href="{{ asset('admin/js/' ~ module ~ '.js') }}">
 {% endfor %}
 <script type="module" src="{{ asset('admin/js/app.js') }}"></script>

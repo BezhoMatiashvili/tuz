@@ -1,0 +1,64 @@
+# systemd USER unit: the ngrok tunnel that lets Meta reach the Garage 1886 receiver
+# (docs/garage-messenger.md). It forwards https://glorified-stratus-budding.ngrok-free.dev to
+# 127.0.0.1:8771, the receiver's MESSENGER_RECEIVER_PORT: change both together. The ngrok
+# authtoken stays in ngrok's own configuration (~/.config/ngrok/ngrok.yml), never here.
+# Not installed by CI. Install it as the laptop user, never with sudo:
+#   install -m 0644 ops/systemd/garage-ngrok.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now garage-ngrok
+#
+# Restart=always and no BindsTo=: TNLU's laptop tunnel had BindsTo= its app and
+# Restart=on-failure, so it stopped with the app and stayed down after the app restarted (a
+# stop is not a failure). This tunnel restarts on its own and never follows the receiver's
+# restarts; while the receiver is down, ngrok answers Meta with an error and Meta retries.
+[Unit]
+Description=Garage 1886: ngrok tunnel to the Meta webhook receiver
+Documentation=file:///home/bezhomatiashvili/Desktop/tuz/docs/garage-messenger.md
+# Wants= (not BindsTo= or PartOf=): starting the tunnel also starts the receiver, but stopping
+# or restarting the receiver never stops the tunnel.
+Wants=garage-meta-receiver.service
+After=garage-meta-receiver.service
+# Never give up: a laptop that wakes without a network fails several starts in a row.
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+# --inspect=false: ngrok's inspector (127.0.0.1:4040, on by default) would keep the recent
+# deliveries, customer messages and the handshake's verify token included, readable by any
+# process on the laptop.
+ExecStart=/home/bezhomatiashvili/.local/bin/ngrok http 127.0.0.1:8771 --url=https://glorified-stratus-budding.ngrok-free.dev --log=stdout --inspect=false
+Restart=always
+RestartSec=5
+UMask=0077
+
+# Sandbox. ngrok writes no file (--log=stdout goes to the journal) and only reads its
+# configuration. Checked in a user unit on this laptop (systemd 259, ngrok 3.39.11): the
+# agent starts and reads its configuration under every line below. A live tunnel under it
+# was not tried, because a second agent would compete with the running one. If the tunnel
+# restarts in a loop after an ngrok update and the journal shows "operation not permitted",
+# delete the SystemCallFilter= line first. MemoryDenyWriteExecute is fine here (a static Go
+# binary with a non-executable stack); IPAddressDeny would be ignored in a user unit.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=default.target

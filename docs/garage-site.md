@@ -11,11 +11,23 @@ and a dashboard. One process serves everything; what a request may reach is deci
 | `/api/site/chat/*` | public | the parts assistant through a capped facade |
 | `/login` | public, never linked | staff sign-in |
 | `/admin`, `/api/admin/*` | employee, admin | dashboard |
+| `/admin/facebook`, `/api/admin/facebook/*` | admin | Facebook: the Messenger bot's switches, the page connection, chats, comments, page stats and ads ([garage-messenger.md](garage-messenger.md)) |
 | `/staff`, `/api/v1/*` | employee, admin | the staff workspace and its API (was `/`) |
 | `/api/v1/operator/*` | direct loopback callers | unchanged bearer-token routes |
 
 Any other `/api/...` address, and any address with `//`, `/./` or `/../` in it, is
 answered with 404 by the guard itself.
+
+Meta's webhooks reach a second, separate process, never this one. It is
+`automotive/meta_receiver.py` on `127.0.0.1:8771`, public only through the ngrok tunnel
+([garage-messenger.md](garage-messenger.md)). Any other method or path gets 404 there too.
+
+| Path | Who | What |
+|---|---|---|
+| `GET /meta/webhook` | Meta | webhook handshake; a wrong verify token gets 403 |
+| `POST /meta/webhook` | Meta, signed | webhook deliveries, appended to `garage.meta_inbox`; a bad or missing signature gets 401 |
+| `/privacy`, `/privacy/en`, `/data-deletion`, `/data-deletion/en` | public | the static pages Meta needs to publish the app (`GET`, `HEAD`) |
+| `/healthz` | public | `ok` |
 
 ## Local setup
 
@@ -218,6 +230,26 @@ text. They are not gallery photos and do not change when the gallery does.
 - **Backups:** the backup operator role can read `garage.staff_users`, which holds the
   scrypt password hashes (never passwords). Treat a backup of this database as holding
   credentials: keep it encrypted and off the web host, as the runbook already requires.
+- **Facebook receiver** ([garage-messenger.md](garage-messenger.md), "Security model").
+  This is the only part of the Facebook integration that faces the internet.
+  - **Where it runs:** its own process, `automotive/meta_receiver.py`, bound to
+    `127.0.0.1:8771` and reached through ngrok.
+  - **What it checks:** each delivery's `X-Hub-Signature-256` against the app secret, in
+    constant time. It then appends the items to `garage.meta_inbox`.
+  - **Its login** belongs to the role `garage_webhook` (migration 0013). That role may
+    insert four columns of that one table and read nothing, not even its own rows.
+  - **What its code uses:** the app secret, the verify token and that login. The page tokens
+    sit encrypted in the database, where that login cannot read them.
+  - **The limit:** on the laptop it runs as the same user as everything else and loads the
+    whole private `.env`. A takeover of the process could read the other secrets in that
+    file. The separation is by database role, not by process.
+  - **The rest:** the worker that answers customers has no port. The Facebook dashboard is
+    admin only, behind this application's own guard.
+  - **Pen-test waiver:** on 2026-11-11 the owner accepted a waiver of the release gate's
+    external penetration test for this receiver, running on the laptop behind ngrok, and
+    for nothing else. A production deployment of it adds `/meta/webhook`, `/privacy` and
+    `/data-deletion` to the test's scope ([production runbook](production-runbook.md),
+    item 10).
 
 ## Settings
 

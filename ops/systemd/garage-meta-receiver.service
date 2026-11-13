@@ -1,0 +1,65 @@
+# systemd USER unit: the Garage 1886 receiver for Meta's webhooks (docs/garage-messenger.md).
+# The only Garage process reachable from the internet. ngrok (garage-ngrok.service) forwards
+# Meta's deliveries to it on 127.0.0.1:8771. Its code uses the app secret, the verify token and
+# an append-only database login (role garage_webhook) that cannot read the stored tokens.
+# Like every process here it loads the whole private .env, and the file stays readable to it,
+# so the separation from the other secrets is by database role, not by process (see the
+# security model in the doc). Not installed by CI. Install it as the laptop user, never sudo:
+#   install -m 0644 ops/systemd/garage-meta-receiver.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now garage-meta-receiver
+[Unit]
+Description=Garage 1886: Meta webhook receiver (public through ngrok)
+Documentation=file:///home/bezhomatiashvili/Desktop/tuz/docs/garage-messenger.md
+# No network-online.target: the user manager has none. Restart= covers a start before the
+# network or the database is up.
+
+[Service]
+Type=exec
+WorkingDirectory=/home/bezhomatiashvili/Desktop/tuz
+# Settings come from the repository's private .env, which the process reads itself
+# (automotive/meta_config.py): META_APP_SECRET, META_WEBHOOK_VERIFY_TOKEN,
+# MESSENGER_RECEIVER_DATABASE_URL, MESSENGER_RECEIVER_PORT. No secret belongs in this file.
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/bezhomatiashvili/Desktop/tuz/.venv/bin/python -m automotive.meta_receiver
+Restart=always
+RestartSec=5
+# Exit status 2 means a setting is missing or malformed, and the journal names the variable.
+# Restarting cannot fix that: fix .env, then `systemctl --user restart garage-meta-receiver`.
+RestartPreventExitStatus=2
+# uvicorn lets open requests finish for up to 10 seconds (timeout_graceful_shutdown).
+TimeoutStopSec=20
+UMask=0077
+
+# Sandbox. Every line below was checked in a user unit on this laptop (systemd 259): the
+# modules import, the receiver answers on loopback, the database client runs, and the
+# repository is read-only to the process. The process writes no file; its log goes to the
+# journal. Two settings are deliberately absent:
+# - MemoryDenyWriteExecute: the uv-managed CPython has no PT_GNU_STACK header, so glibc maps
+#   thread stacks executable and every new thread fails ("can't start new thread"); each
+#   webhook would get 503.
+# - IPAddressDeny/IPAddressAllow: a user manager cannot attach the BPF firewall and only logs
+#   a warning, so the lines would promise a fence that is not there.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=default.target

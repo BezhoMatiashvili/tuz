@@ -11,6 +11,7 @@ import {
 import * as account from './views/account.js';
 import * as audit from './views/audit.js';
 import * as content from './views/content.js';
+import * as facebook from './views/facebook.js';
 import * as inventory from './views/inventory.js';
 import * as more from './views/more.js';
 import * as overview from './views/overview.js';
@@ -23,6 +24,10 @@ const ROUTES = [
     pattern: /^\/admin\/content(?:\/([a-z]+)(?:\/([A-Za-z0-9_-]+))?)?$/, view: content, nav: 'content',
     title: 'nav.content', admin: true, params: (match) => ({ tab: match[1] || '', rest: match[2] || '' }),
   },
+  {
+    pattern: /^\/admin\/facebook(?:\/([a-z]+)(?:\/([0-9]{1,30}))?)?$/, view: facebook, nav: 'facebook',
+    title: 'nav.facebook', admin: true, params: (match) => ({ tab: match[1] || '', rest: match[2] || '' }),
+  },
   { pattern: /^\/admin\/users$/, view: users, nav: 'users', title: 'nav.users', admin: true },
   { pattern: /^\/admin\/audit$/, view: audit, nav: 'audit', title: 'audit.title', admin: true },
   { pattern: /^\/admin\/account$/, view: account, nav: 'account', title: 'nav.account' },
@@ -30,9 +35,9 @@ const ROUTES = [
 ];
 // Where each sidebar entry lives on the phone tab bar.
 const TAB_OF = { overview: 'overview', inventory: 'inventory', content: 'content', users: 'more',
-  audit: 'more', account: 'more', more: 'more' };
+  audit: 'more', account: 'more', more: 'more', facebook: 'more' };
 const ICON_OF = { overview: 'overview', inventory: 'inventory', content: 'content', users: 'users',
-  audit: 'audit', account: 'account', more: 'more' };
+  audit: 'audit', account: 'account', more: 'more', facebook: 'spark' };
 
 const app = document.getElementById('app');
 let main = null;
@@ -72,8 +77,8 @@ function drawShell() {
   const user = getUser();
   const admin = isAdmin();
   const active = current && current.route ? current.route.nav : '';
-  const side = ['overview', 'inventory', admin && 'content', admin && 'users', admin && 'audit', 'account']
-    .filter(Boolean);
+  const side = ['overview', 'inventory', admin && 'content', admin && 'facebook', admin && 'users',
+    admin && 'audit', 'account'].filter(Boolean);
   const tabs = ['overview', 'inventory', admin && 'content', 'more'].filter(Boolean);
   const signOutButton = h('button', { type: 'button', class: 'sidebar__item sidebar__item--button' },
     icon('signout', 20), h('span', { text: t('nav.sign_out') }));

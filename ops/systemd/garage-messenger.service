@@ -1,0 +1,70 @@
+# systemd USER unit: the Garage 1886 Messenger worker (docs/garage-messenger.md). Local only,
+# no port. It answers the page's Messenger chats and comments with the parts assistant, sends
+# through Meta's Graph API, and runs the Facebook syncs. It holds the page token (decrypted in
+# memory only), the AI provider keys and two database logins: MESSENGER_DATABASE_URL (role
+# garage_messenger) and the application's runtime login for the catalogue. Not installed by
+# CI. Install it as the laptop user, never with sudo:
+#   install -m 0644 ops/systemd/garage-messenger.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now garage-messenger
+[Unit]
+Description=Garage 1886: Messenger bot worker (replies, comments, page stats, ads)
+Documentation=file:///home/bezhomatiashvili/Desktop/tuz/docs/garage-messenger.md
+# No network-online.target: the user manager has none. Restart= covers a start before the
+# network or the database is up.
+
+[Service]
+Type=exec
+WorkingDirectory=/home/bezhomatiashvili/Desktop/tuz
+# Settings come from the repository's private .env, which the process reads itself
+# (automotive/meta_config.py and automotive/config.py). No secret belongs in this file.
+Environment=PYTHONUNBUFFERED=1
+# The engine keeps its files (source cache, chat log, research cache) in MESSENGER_DATA_DIR,
+# data/messenger by default. Everything else is read-only to the process, so the folder is
+# made before the sandbox starts ("+" runs that one command outside it). If .env moves
+# MESSENGER_DATA_DIR, change this line and ReadWritePaths below to the same folder.
+ExecStartPre=+/usr/bin/mkdir -p -m 0700 /home/bezhomatiashvili/Desktop/tuz/data/messenger
+ExecStart=/home/bezhomatiashvili/Desktop/tuz/.venv/bin/python -m automotive.messenger_worker
+Restart=always
+RestartSec=10
+# Exit status 2 means a setting is missing or malformed, and the journal names the variable.
+# Restarting cannot fix that: fix .env, then `systemctl --user restart garage-messenger`.
+# Exit status 1 (database not reachable yet, engine not built) is retried.
+RestartPreventExitStatus=2
+# On SIGTERM the worker lets running turns finish for up to 70 seconds (DRAIN_SECONDS in
+# automotive/messenger_worker.py), then closes the engine.
+TimeoutStopSec=90
+UMask=0077
+
+# Sandbox. Every line below was checked in a user unit on this laptop (systemd 259): the
+# worker and engine modules import, SQLite works in the writable folder, the database client,
+# DNS and TLS work, and the rest of the file system is read-only. Two settings are
+# deliberately absent:
+# - MemoryDenyWriteExecute: the uv-managed CPython has no PT_GNU_STACK header, so glibc maps
+#   thread stacks executable and every new thread fails ("can't start new thread").
+# - IPAddressDeny/IPAddressAllow: a user manager cannot attach the BPF firewall and only logs
+#   a warning.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/bezhomatiashvili/Desktop/tuz/data/messenger
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=default.target

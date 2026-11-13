@@ -30,6 +30,11 @@ SITE_DOWN = (ROOT / "migrations/0012_garage_site.down.sql").read_text(encoding="
 ROLES_SQL = (ROOT / "ops/sql/provision_automotive_roles.sql").read_text(encoding="utf-8")
 OWNER = "warehouse_migration_owner"
 TABLES = ("staff_users", "staff_sessions", "site_sections", "services", "media", "audit_log")
+# Migration 0013 (Garage on Facebook) adds these to schema garage; tests/test_meta_* cover them.
+META_TABLES = ("meta_inbox", "meta_settings", "meta_page", "meta_tokens", "messenger_threads",
+               "messenger_messages", "messenger_replies", "meta_comments", "meta_page_daily",
+               "meta_images", "meta_posts", "meta_ad_accounts", "meta_ads", "meta_ad_daily",
+               "meta_sync_runs", "meta_job_requests", "meta_forgotten")
 # Shaped like a stored hash; these tests never verify a password.
 HASH = "scrypt$15$8$3$Zml4dHVyZS1zYWx0LTE2Yg$Zml4dHVyZS1kaWdlc3QtMzItYnl0ZXMtbG9uZy0wMDAw"
 HERO = {"title": {"ka": "სათაური", "en": "Headline"}, "subline": {"ka": "ქვე", "en": "Sub"}}
@@ -140,7 +145,7 @@ class GarageSiteDatabaseTests(unittest.TestCase):
             public_usage = connection.execute(
                 "SELECT has_schema_privilege('public', 'garage', 'USAGE')").fetchone()[0]
         self.assertEqual(recorded, MIGRATIONS)
-        self.assertEqual(tables, set(TABLES))
+        self.assertEqual(tables, set(TABLES) | set(META_TABLES))
         self.assertEqual(unprotected, [])  # row-level security on every table
         self.assertFalse(public_usage)
 

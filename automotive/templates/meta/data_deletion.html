@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+{% if lang == "ka" %}
+<title>მონაცემების წაშლა | {{ shop.name_ka }}</title>
+{% else %}
+<title>Delete your data | {{ shop.name_en }}</title>
+{% endif %}
+{# Same inline style as privacy.html: the page's Content-Security-Policy allows nothing else. #}
+<style>
+:root{--ink:#161617;--paper:#FAF9F6;--muted:#5D5B57;--line:#DEDBD5;--accent:#B01218}
+@media (prefers-color-scheme:dark){:root{--ink:#F2F0EC;--paper:#0E0E0F;--muted:#A9A7A2;--line:#333336;--accent:#FF8A80}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Georgian","Noto Sans",sans-serif}
+main{max-width:42rem;margin:0 auto;padding:24px 16px 48px}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px 16px;border-bottom:3px solid var(--accent);padding-bottom:12px;margin-bottom:24px}
+.brand{font-weight:700;letter-spacing:.08em}
+h1{font-size:1.6rem;line-height:1.25;margin:0 0 4px}
+h2{font-size:1.1rem;line-height:1.35;margin:28px 0 8px}
+p,li{overflow-wrap:break-word}
+ul,ol{padding-left:1.25rem}
+li{margin:6px 0}
+a{color:var(--accent)}
+.updated{color:var(--muted);margin:0}
+footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:.95rem}
+</style>
+</head>
+<body>
+<main>
+{% if lang == "ka" %}
+<header>
+  <span class="brand">{{ shop.name_en }}</span>
+  <a href="{{ switch }}" hreflang="en" lang="en">English</a>
+</header>
+<h1>მონაცემების წაშლა</h1>
+<p class="updated">ბოლო განახლება: {{ shop.updated_ka }}</p>
+<p>შეგიძლიათ ნებისმიერ დროს მოითხოვოთ, რომ წავშალოთ მონაცემები, რომლებიც თქვენ შესახებ Messenger-ის მიმოწერიდან და კომენტარებიდან შევინახეთ.</p>
+
+<h2>როგორ მოითხოვოთ</h2>
+<ol>
+  <li>მოგვწერეთ ჩვენს Facebook გვერდს „{{ shop.page_name }}“ Messenger-ით: „წაშალეთ ჩემი მონაცემები“. შეგიძლიათ დაგვირეკოთ კიდეც: <a href="tel:{{ shop.phone_link }}">{{ shop.phone }}</a>.</li>
+  <li>თუ რეკავთ, გვითხარით სახელი, რომელიც Facebook-ზე გიწერიათ, რომ თქვენი მიმოწერა ვიპოვოთ.</li>
+  <li>{{ shop.answer_days }} დღის ვადაში წავშლით ყველაფერს, რაც თქვენ შესახებ შევინახეთ, და დასრულებისას Messenger-ით ან ტელეფონით შეგატყობინებთ.</li>
+</ol>
+
+<h2>რას ვშლით</h2>
+<ul>
+  <li>თქვენს შეტყობინებებსა და ჩვენს პასუხებს;</li>
+  <li>ჩვენთან შენახულ თქვენს კომენტარებს;</li>
+  <li>თქვენს სახელსა და Meta-ს მიერ მინიჭებულ საიდენტიფიკაციო ნომერს;</li>
+  <li>ინფორმაციას, რომელი რეკლამიდან ან ბმულიდან დაგვიკავშირდით.</li>
+</ul>
+
+<h2>რა რჩება Facebook-ზე</h2>
+<p>მიმოწერა Messenger-შიც ინახება, რომელსაც Meta მართავს. თქვენი მხრიდან მისი წაშლა თავად Messenger-ში შეგიძლიათ. Facebook-ზე დატოვებული კომენტარი იქვე რჩება, სანამ თავად არ წაშლით.</p>
+<p>Facebook-ით ჩვენს აპლიკაციაში არასდროს შესულხართ, ამიტომ Facebook-ის პარამეტრებში წასაშლელი არაფერია.</p>
+<p>სრული ინფორმაცია: <a href="/privacy{{ suffix }}">კონფიდენციალურობის პოლიტიკა</a>.</p>
+
+<footer>{{ shop.name_ka }} · {{ shop.address_ka }} · <a href="tel:{{ shop.phone_link }}">{{ shop.phone }}</a></footer>
+{% else %}
+<header>
+  <span class="brand">{{ shop.name_en }}</span>
+  <a href="{{ switch }}" hreflang="ka" lang="ka">ქართული</a>
+</header>
+<h1>Delete your data</h1>
+<p class="updated">Last updated: {{ shop.updated_en }}</p>
+<p>You can ask us at any time to delete the data we keep about you from Messenger conversations and comments.</p>
+
+<h2>How to ask</h2>
+<ol>
+  <li>Write “delete my data” to our Facebook page “<span lang="ka">{{ shop.page_name }}</span>” on Messenger, or call us: <a href="tel:{{ shop.phone_link }}">{{ shop.phone }}</a>.</li>
+  <li>If you call, tell us the name on your Facebook profile, so we can find your conversation.</li>
+  <li>Within {{ shop.answer_days }} days we delete everything we keep about you, and tell you on Messenger or by phone when it is done.</li>
+</ol>
+
+<h2>What we delete</h2>
+<ul>
+  <li>Your messages and our replies;</li>
+  <li>your comments as we keep them;</li>
+  <li>your name and the ID number Meta assigned you for our page;</li>
+  <li>which of our ads or links you contacted us from.</li>
+</ul>
+
+<h2>What stays on Facebook</h2>
+<p>The conversation also stays in Messenger, which Meta runs; you can delete it on your side in Messenger itself. A comment you left on Facebook stays there until you delete it.</p>
+<p>You never signed in to an app of ours with Facebook, so there is nothing to remove in your Facebook settings.</p>
+<p>Full details: <a href="/privacy{{ suffix }}">Privacy policy</a>.</p>
+
+<footer>{{ shop.name_en }} · {{ shop.address_en }} · <a href="tel:{{ shop.phone_link }}">{{ shop.phone }}</a></footer>
+{% endif %}
+</main>
+</body>
+</html>

@@ -21,6 +21,8 @@ from automotive.site_catalog import Catalog, CatalogStore, build_catalog_router
 from automotive.site_chat import build_chat_router, build_public_chat
 from automotive.site_content import SiteContent
 from automotive.site_guard import DailyBudget, SiteGuard
+from automotive.site_meta_activity import build_meta_activity_router
+from automotive.site_meta_admin import build_meta_admin_router
 from automotive.site_pages import MediaCache, Pages, build_pages_router
 from automotive.site_repository import SiteDatabaseNotConfigured, SiteRepository
 
@@ -109,6 +111,8 @@ def install_site(app: FastAPI, settings: Any, *, repository: Any, vin_service: A
     app.include_router(build_admin_router(
         auth=auth, repository=site_repository, content=content, catalog_store=catalog_store,
         settings=settings, media_cache=media))
+    app.include_router(build_meta_admin_router(settings, **overrides.get("meta", {})))
+    app.include_router(build_meta_activity_router(settings, **overrides.get("meta_activity", {})))
 
     @app.exception_handler(SiteDatabaseNotConfigured)
     async def site_database_missing(request: Request,

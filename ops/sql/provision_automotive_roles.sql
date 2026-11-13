@@ -20,6 +20,15 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'garage_site') THEN
         CREATE ROLE garage_site NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
     END IF;
+    -- Garage on Facebook (migration 0013): garage_webhook is the public receiver's role (it may
+    -- only append verified webhook events), garage_messenger the local worker's. Attach each to
+    -- its own login only; never to the site, runtime, enrichment or crawler logins.
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'garage_webhook') THEN
+        CREATE ROLE garage_webhook NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'garage_messenger') THEN
+        CREATE ROLE garage_messenger NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+    END IF;
     IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'automotive') THEN
         GRANT USAGE ON SCHEMA automotive, warehouse TO automotive_runtime, automotive_enrichment;
         GRANT SELECT ON warehouse.warehouse_products TO automotive_runtime, automotive_enrichment;
@@ -38,6 +47,9 @@ BEGIN
     END IF;
     IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'garage') THEN
         PERFORM garage.provision();
+    END IF;
+    IF to_regprocedure('garage.meta_provision()') IS NOT NULL THEN
+        PERFORM garage.meta_provision();
     END IF;
 END $$;
 -- Evidence review is a migration/operator-owner capability. The enrichment role

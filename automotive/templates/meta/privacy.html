@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+{% if lang == "ka" %}
+<title>კონფიდენციალურობის პოლიტიკა | {{ shop.name_ka }}</title>
+{% else %}
+<title>Privacy policy | {{ shop.name_en }}</title>
+{% endif %}
+{# Inline only: the page's Content-Security-Policy allows inline styles and nothing else, and
+   there are no fonts, images or scripts to load. Georgian falls back to the phone's own font. #}
+<style>
+:root{--ink:#161617;--paper:#FAF9F6;--muted:#5D5B57;--line:#DEDBD5;--accent:#B01218}
+@media (prefers-color-scheme:dark){:root{--ink:#F2F0EC;--paper:#0E0E0F;--muted:#A9A7A2;--line:#333336;--accent:#FF8A80}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Georgian","Noto Sans",sans-serif}
+main{max-width:42rem;margin:0 auto;padding:24px 16px 48px}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px 16px;border-bottom:3px solid var(--accent);padding-bottom:12px;margin-bottom:24px}
+.brand{font-weight:700;letter-spacing:.08em}
+h1{font-size:1.6rem;line-height:1.25;margin:0 0 4px}
+h2{font-size:1.1rem;line-height:1.35;margin:28px 0 8px}
+p,li{overflow-wrap:break-word}
+ul,ol{padding-left:1.25rem}
+li{margin:6px 0}
+a{color:var(--accent)}
+.updated{color:var(--muted);margin:0}
+footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:.95rem}
+</style>
+</head>
+<body>
+<main>
+{% if lang == "ka" %}
+<header>
+  <span class="brand">{{ shop.name_en }}</span>
+  <a href="{{ switch }}" hreflang="en" lang="en">English</a>
+</header>
+<h1>კონფიდენციალურობის პოლიტიკა</h1>
+<p class="updated">ბოლო განახლება: {{ shop.updated_ka }}</p>
+
+<h2>ვინ ვართ</h2>
+<p>{{ shop.name_ka }} ({{ shop.name_en }}) არის ავტოსერვისი და ავტონაწილების მაღაზია. მისამართი: {{ shop.address_ka }}. ტელეფონი: <a href="tel:{{ shop.phone_link }}">{{ shop.phone }}</a>.</p>
+<p>ეს პოლიტიკა განმარტავს, როგორ ვამუშავებთ თქვენს მონაცემებს, როცა ჩვენს Facebook გვერდს „{{ shop.page_name }}“ Messenger-ით წერთ ან მის პოსტებზე კომენტარს ტოვებთ.</p>
+
+<h2>რა მონაცემებს ვიღებთ</h2>
+<ul>
+  <li>შეტყობინებებს, რომლებსაც ჩვენს გვერდს Messenger-ით უგზავნით, მათ შორის ფოტოებს, ხმოვან შეტყობინებებსა და სხვა ფაილებს;</li>
+  <li>კომენტარებს, რომლებსაც ჩვენი გვერდის პოსტებსა და რეკლამებზე ტოვებთ;</li>
+  <li>თქვენს სახელს, როგორც ის Facebook-ზე ჩანს, და Meta-ს მიერ მინიჭებულ საიდენტიფიკაციო ნომერს (page-scoped ID), რომელიც მხოლოდ ჩვენს გვერდზე მოქმედებს;</li>
+  <li>ინფორმაციას, რომელი რეკლამიდან ან ბმულიდან დაგვიკავშირდით;</li>
+  <li>პასუხებს, რომლებსაც ჩვენ გიგზავნით.</li>
+</ul>
+
+<h2>რისთვის ვიყენებთ</h2>
+<ul>
+  <li>თქვენს კითხვებზე პასუხის გასაცემად — ნაწილებზე, მომსახურებაზე, ფასებსა და მარაგზე;</li>
+  <li>მიმოწერის შესანახად, რომ ჩვენმა თანამშრომლებმა ის ნახონ და საუბარი გააგრძელონ;</li>
+  <li>რეკლამების შედეგების შესაფასებლად (მაგალითად, რამდენი საუბარი დაიწყო თითოეული რეკლამიდან).</li>
+</ul>
+<p>თქვენს მონაცემებს არავის ვყიდით და სარეკლამო პროფილის შესაქმნელად არ ვიყენებთ.</p>
+
+<h2>ავტომატური პასუხები</h2>
+<p>ზოგიერთ პასუხს ავტომატურად წერს ჩვენი ასისტენტი — ხელოვნური ინტელექტის პროგრამა. მას შეიძლება შეცდომა მოუვიდეს. ჩვენი თანამშრომლები მიმოწერას ხედავენ და ნებისმიერ დროს შეუძლიათ საუბარში ჩართვა. შეგიძლიათ დაგვირეკოთ კიდეც: <a href="tel:{{ shop.phone_link }}">{{ shop.phone }}</a>.</p>
+
+<h2>ვინ ამუშავებს მონაცემებს ჩვენ გარდა</h2>
+<ul>
+  <li><strong>Meta Platforms</strong> — Facebook-ისა და Messenger-ის მფლობელი კომპანია, რომლის მეშვეობითაც თქვენს შეტყობინებებს ვიღებთ. მონაცემებს ის საკუთარი <a href="https://www.facebook.com/privacy/policy/">კონფიდენციალურობის პოლიტიკით</a> ამუშავებს.</li>
+  <li><strong>OpenRouter</strong> და <strong>Anthropic</strong> (აშშ) — ხელოვნური ინტელექტის სერვისი, რომელიც ავტომატურ პასუხებს წერს. პასუხის დასაწერად ისინი მიმოწერის ტექსტს იღებენ და საკუთარი წესებით ამუშავებენ (<a href="https://openrouter.ai/privacy">OpenRouter</a>, <a href="https://www.anthropic.com/legal/privacy">Anthropic</a>).</li>
+</ul>
+<p>სხვას თქვენს მონაცემებს არ გადავცემთ, თუ ამას კანონი არ მოითხოვს.</p>
+
+<h2>სად და რამდენ ხანს ვინახავთ</h2>
+<p>მიმოწერას ვინახავთ ჩვენს საკუთარ მონაცემთა ბაზაში, საქართველოში, {{ shop.retention_days }} დღის განმავლობაში, შემდეგ კი ვშლით. შემოსული შეტყობინებების ტექნიკურ ასლებს {{ shop.inbox_days }} დღეში ვშლით.</p>
+
+<h2>თქვენი უფლებები</h2>
+<p>შეგიძლიათ გაიგოთ, რა მონაცემები გვაქვს თქვენ შესახებ, მოითხოვოთ მათი გასწორება ან წაშლა. ამისთვის მოგვწერეთ Messenger-ში ან დაგვირეკეთ: <a href="tel:{{ shop.phone_link }}">{{ shop.phone }}</a>. წაშლისთვის საკმარისია მოგვწეროთ: „წაშალეთ ჩემი მონაცემები“. მოთხოვნას {{ shop.answer_days }} დღის ვადაში შევასრულებთ და შედეგს შეგატყობინებთ. დაწვრილებით: <a href="/data-deletion{{ suffix }}">მონაცემების წაშლა</a>.</p>
+<p>თუ ფიქრობთ, რომ თქვენს მონაცემებს არასწორად ვამუშავებთ, შეგიძლიათ მიმართოთ საქართველოს პერსონალურ მონაცემთა დაცვის სამსახურს.</p>
+
+<h2>ცვლილებები</h2>
+<p>თუ ამ პოლიტიკას შევცვლით, ამ გვერდს განვაახლებთ და ზემოთ მითითებულ თარიღსაც შევცვლით.</p>
+
+<footer>{{ shop.name_ka }} · {{ shop.address_ka }} · <a href="tel:{{ shop.phone_link }}">{{ shop.phone }}</a></footer>
+{% else %}
+<header>
+  <span class="brand">{{ shop.name_en }}</span>
+  <a href="{{ switch }}" hreflang="ka" lang="ka">ქართული</a>
+</header>
+<h1>Privacy policy</h1>
+<p class="updated">Last updated: {{ shop.updated_en }}</p>
+
+<h2>Who we are</h2>
+<p>{{ shop.name_en }} (<span lang="ka">{{ shop.name_ka }}</span>) is a car service and car parts shop at {{ shop.address_en }}. Phone: <a href="tel:{{ shop.phone_link }}">{{ shop.phone }}</a>.</p>
+<p>This policy explains how we handle your data when you write to our Facebook page “<span lang="ka">{{ shop.page_name }}</span>” on Messenger or comment on its posts.</p>
+
+<h2>What we collect</h2>
+<ul>
+  <li>The messages you send to our page on Messenger, including photos, voice messages and other files;</li>
+  <li>comments you leave on our page’s posts and ads;</li>
+  <li>your name as Facebook shows it, and the ID number Meta assigns you for our page only (page-scoped ID);</li>
+  <li>which of our ads or links you contacted us from;</li>
+  <li>the replies we send you.</li>
+</ul>
+
+<h2>Why we use it</h2>
+<ul>
+  <li>To answer your questions about parts, services, prices and stock;</li>
+  <li>to keep the conversation, so our staff can see it and continue it;</li>
+  <li>to see how our ads perform (for example, how many conversations each ad started).</li>
+</ul>
+<p>We do not sell your data and do not use it to build an advertising profile.</p>
+
+<h2>Automatic replies</h2>
+<p>Some replies are written automatically by our assistant, an artificial intelligence program. It can make mistakes. Our staff see the conversations and can step in at any time. You can also call us: <a href="tel:{{ shop.phone_link }}">{{ shop.phone }}</a>.</p>
+
+<h2>Who else processes your data</h2>
+<ul>
+  <li><strong>Meta Platforms</strong>, the company behind Facebook and Messenger, through which your messages reach us. It processes data under its own <a href="https://www.facebook.com/privacy/policy/">privacy policy</a>.</li>
+  <li><strong>OpenRouter</strong> and <strong>Anthropic</strong> (USA), the artificial intelligence service that writes the automatic replies. They receive the text of the conversation to write a reply and handle it under their own terms (<a href="https://openrouter.ai/privacy">OpenRouter</a>, <a href="https://www.anthropic.com/legal/privacy">Anthropic</a>).</li>
+</ul>
+<p>We pass your data to no one else unless the law requires it.</p>
+
+<h2>Where and how long we keep it</h2>
+<p>We keep conversations in our own database in Georgia for {{ shop.retention_days }} days, then delete them. Technical copies of incoming messages are deleted within {{ shop.inbox_days }} days.</p>
+
+<h2>Your rights</h2>
+<p>You can ask what data we hold about you, and ask us to correct or delete it. Write to us on Messenger or call <a href="tel:{{ shop.phone_link }}">{{ shop.phone }}</a>. To have your data deleted, it is enough to write “delete my data”. We act on a request within {{ shop.answer_days }} days and tell you when it is done. Details: <a href="/data-deletion{{ suffix }}">Delete your data</a>.</p>
+<p>If you think we handle your data wrongly, you can turn to the Personal Data Protection Service of Georgia.</p>
+
+<h2>Changes</h2>
+<p>If we change this policy, we update this page and the date at the top.</p>
+
+<footer>{{ shop.name_en }} · {{ shop.address_en }} · <a href="tel:{{ shop.phone_link }}">{{ shop.phone }}</a></footer>
+{% endif %}
+</main>
+</body>
+</html>
