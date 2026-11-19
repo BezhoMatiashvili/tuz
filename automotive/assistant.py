@@ -44,6 +44,7 @@ from automotive.assistant_tools import (
     LANGUAGES,
     OUTCOMES,
     REASONED,
+    STAFF_INTENTS,
     WORD,
     Toolbox,
     ToolError,
@@ -55,6 +56,7 @@ from automotive.assistant_tools import (
     typed_tokens,
 )
 from automotive.codes import codes_in_text
+from automotive.live_alerts import clean_phone
 from automotive.model_client import out_of_credit
 from automotive.rules import Rules
 
@@ -62,6 +64,11 @@ LOGGER = logging.getLogger(__name__)
 MAX_OUTPUT_TOKENS = 2400
 MESSAGE_LIMIT = 2000
 REPLY_LIMIT = 600
+# finish.staff: what the shop's staff are told (see ``_staff``); nothing for them by default.
+NO_STAFF = {"intent": "none", "note": "", "phone": "", "missing": []}
+STAFF_NOTE_LIMIT = 160
+STAFF_WORD_LIMIT = 80
+STAFF_MISSING_LIMIT = 6
 LABEL_LIMIT = 40
 NOTES_LIMIT = 800
 MAX_CORRECTIONS = 2
@@ -636,22 +643,110 @@ class AssistantTurn:
         overloaded reply, a reply that stalls while it is streamed and one that breaks
         off with an error after it began: one fresh attempt per turn. A reply that was
         waited for in one piece and never came is not asked for again: its time is gone.
-        A request the provider refused (4xx) is not repeated here either."""
+        A transient rate limit gets one retry when its requested wait fits this turn.
+        Other refused requests, including spend caps, are not repeated. The retried request
+        goes through the same checks, so its own failure is recorded and never retried."""
+        while True:
+            try:
+                return self._request(client, arguments)
+            except anthropic.RateLimitError as exc:
+                if out_of_credit(exc) or self.retried:
+                    self._retry_record(429, "rate_limit", None, exhausted=True)
+                    raise
+                delay = self._rate_limit_wait(exc)
+                if delay is None:
+                    self._retry_record(429, "rate_limit", None, exhausted=True)
+                    raise
+                if not self._retry_sleep(delay, "rate_limit", 429):
+                    raise
+            except anthropic.APIError as exc:
+                # An error event inside a stream arrives on a response that began with 200.
+                broke_off = isinstance(exc, anthropic.APIStatusError) and exc.status_code < 400
+                if not (broke_off or isinstance(
+                        exc, anthropic.APIConnectionError | anthropic.InternalServerError)):
+                    raise
+                waited = isinstance(exc, anthropic.APITimeoutError) and not callable(
+                    getattr(client.messages, "stream", None))
+                status = exc.status_code if isinstance(exc, anthropic.APIStatusError) else None
+                if waited:
+                    raise
+                if self.retried:
+                    self._retry_record(status, "connection_or_server", None, exhausted=True)
+                    raise
+                if self._remaining() < MIN_REQUEST_SECONDS + 1:
+                    self._retry_record(status, "connection_or_server", 0.4, exhausted=True)
+                    raise
+                if not self._retry_sleep(0.4, "connection_or_server", status):
+                    raise
+
+    @staticmethod
+    def _rate_limit_wait(exc: anthropic.RateLimitError) -> float | None:
+        """The provider's Retry-After delay, or one second when it sent no header.
+
+        An invalid header is not guessed at. HTTP-date values use UTC, as required by
+        the HTTP date format. The response and its message never enter diagnostics.
+        """
+        import math
+        from datetime import UTC, datetime
+        from email.utils import parsedate_to_datetime
+
+        response = getattr(exc, "response", None)
+        headers = getattr(response, "headers", None)
+        raw = headers.get("retry-after") if headers is not None else None
+        if raw is None:
+            return 1.0
+        value = str(raw).strip()
         try:
-            return self._request(client, arguments)
-        except anthropic.APIError as exc:
-            # An error event inside a stream arrives on a response that began with 200.
-            broke_off = isinstance(exc, anthropic.APIStatusError) and exc.status_code < 400
-            if not (broke_off or isinstance(
-                    exc, anthropic.APIConnectionError | anthropic.InternalServerError)):
-                raise
-            waited = isinstance(exc, anthropic.APITimeoutError) and not callable(
-                getattr(client.messages, "stream", None))
-            if waited or self.retried or self._remaining() < MIN_REQUEST_SECONDS + 1:
-                raise
-            self.retried = True
-            time.sleep(0.4)
-            return self._request(client, arguments)
+            delay = float(value)
+        except ValueError:
+            try:
+                retry_at = parsedate_to_datetime(value)
+                if retry_at.tzinfo is None:
+                    retry_at = retry_at.replace(tzinfo=UTC)
+                delay = (retry_at - datetime.now(UTC)).total_seconds()
+            except (TypeError, ValueError, OverflowError):
+                return None
+        if not math.isfinite(delay) or delay < 0:
+            return None
+        return delay
+
+    def _retry_record(self, status: int | None, cause: str, wait_seconds: float | None,
+                      *, exhausted: bool) -> None:
+        self.diagnostics.setdefault("retries", []).append({
+            "status": status, "cause": cause,
+            "wait_seconds": round(wait_seconds, 3) if wait_seconds is not None else None,
+            "exhausted": exhausted,
+        })
+
+    def _retry_sleep(self, delay: float, cause: str, status: int | None) -> bool:
+        """Wait the full delay interruptibly, leaving time for another provider request."""
+        if self.cancelled():
+            self._retry_record(status, cause, delay, exhausted=True)
+            raise RuntimeError("The turn was cancelled before a retry.")
+        if delay + MIN_REQUEST_SECONDS > self._remaining():
+            self._retry_record(status, cause, delay, exhausted=True)
+            return False
+        self.retried = True
+        deadline = time.monotonic() + delay
+        while True:
+            if self.cancelled():
+                self._retry_record(status, cause, delay, exhausted=True)
+                raise RuntimeError("The turn was cancelled before a retry.")
+            if self._remaining() < MIN_REQUEST_SECONDS:
+                self._retry_record(status, cause, delay, exhausted=True)
+                raise TimeoutError("The turn has no time left for a retry.")
+            left = deadline - time.monotonic()
+            if left <= 0:
+                break
+            time.sleep(min(left, 0.1))
+        if self.cancelled():
+            self._retry_record(status, cause, delay, exhausted=True)
+            raise RuntimeError("The turn was cancelled before a retry.")
+        if self._remaining() < MIN_REQUEST_SECONDS:
+            self._retry_record(status, cause, delay, exhausted=True)
+            raise TimeoutError("The turn has no time left for a retry.")
+        self._retry_record(status, cause, delay, exhausted=False)
+        return True
 
     def _request(self, client: Any, arguments: dict) -> tuple[Any, dict]:
         """The response and when each of its blocks began. A client that can stream is read
@@ -826,12 +921,23 @@ class AssistantTurn:
             question={"text": self.question["text"], "options": _brief(options)}
             if self.question else None,
             tapped=tapped, suggestions=_brief(self._suggestions()), vin=vin,
-            staff_form=staff_form,
+            staff_form=staff_form, phone=_text(self.memory.get("phone"), 10),
             typed_numbers=self.toolbox.typed_numbers(
                 typed_tokens(self.message),
                 codes_in_text(self.message.replace("[VIN]", " "), limit=8)),
+            earlier_typed_numbers=self._earlier_numbers(),
             rows=self.toolbox.table(
                 [product for product in dict.fromkeys(known) if product][:KNOWN_ROWS]))
+
+    def _earlier_numbers(self) -> dict | None:
+        """The rows of part numbers the customer typed in earlier messages of this chat: in a
+        chat the shop's staff answered by hand, no turn of the engine looked them up."""
+        earlier = " ".join(str(turn.get("user") or "") for turn in
+                           (self.memory.get("transcript") or [])[-TRANSCRIPT_TURNS:]
+                           if isinstance(turn, dict)).replace("[VIN]", " ")
+        now = set(typed_tokens(self.message))
+        tokens = [token for token in typed_tokens(earlier) if token not in now]
+        return self.toolbox.typed_numbers(tokens, [], quiet=True) if tokens else None
 
     def _suggestions(self) -> list[dict]:
         return [option for option in _options(self.memory.get("suggestions"))
@@ -947,7 +1053,7 @@ class AssistantTurn:
         if not isinstance(raw, dict):
             bad("finish needs an object with every field of its schema.",
                 "Send language, car_label, products, question, options, suggestions, "
-                "reply, notes and outcome.")
+                "reply, notes, outcome and staff.")
             return errors, None
         reply = _text(raw.get("reply"))
         question, options = _asked(raw)
@@ -1037,6 +1143,7 @@ class AssistantTurn:
                 + "; ".join(f"{item['handle']}: {item['reason']}" for item in removed) + ").",
                 "Choose other rows, or say that nothing suitable was found and give "
                 "suggestions.")
+        staff = self._staff(raw.get("staff"), bad)
         if errors:
             return errors, None
         return [], {
@@ -1045,7 +1152,45 @@ class AssistantTurn:
             "held": [item["product"] for item in held],
             "question": {"text": question, "options": options} if question else None,
             "suggestions": suggestions[:MAX_SUGGESTIONS],
-            "notes": _text(raw.get("notes"), NOTES_LIMIT), "outcome": raw["outcome"]}
+            "notes": _text(raw.get("notes"), NOTES_LIMIT), "outcome": raw["outcome"],
+            "staff": staff}
+
+    def _staff(self, value: Any, bad: Any) -> dict:
+        """``finish.staff``: what the shop's staff are told about this turn (dashboard > Live
+        chats). The model decides what the customer means: that they want to come in (visit),
+        want work done (service), which parts it could not offer, which of their words is a phone
+        number. Code only checks the shape and that the phone stands in the customer's own
+        messages (``live_alerts.clean_phone``), and calls nobody for the staff chat: only a
+        visitor's conversation (audience public) reaches the staff this way. An absent object
+        (an older caller) means nothing for the staff."""
+        none = dict(NO_STAFF)
+        if value is None:
+            return none
+        if not isinstance(value, dict):
+            bad("staff must be an object with intent, note, phone and missing.",
+                "Send staff as {intent, note, phone, missing}: intent none and the rest empty "
+                "when there is nothing for the staff.")
+            return none
+        intent = value.get("intent")
+        if intent not in STAFF_INTENTS:
+            bad("staff.intent must be one of " + ", ".join(STAFF_INTENTS) + ".",
+                "Say visit when the customer wants to come to the shop, service when they want "
+                "work done, otherwise none.")
+            return none
+        if self.audience != "public":
+            return none
+        said = [self.message, *self.unanswered, *(
+            turn.get("user") for turn in self.memory.get("transcript") or []
+            if isinstance(turn, dict))]
+        missing = value.get("missing")
+        names = [_text(name, STAFF_WORD_LIMIT)
+                 for name in (missing if isinstance(missing, list) else [])]
+        phone = clean_phone(value.get("phone"), said)
+        # A number the model offered that is not in the customer's words is dropped. The next
+        # turn is then not told that one was asked for or given, so it may ask again.
+        self.phone_rejected = bool(_text(value.get("phone"), 40)) and not phone
+        return {"intent": intent, "note": _text(value.get("note"), STAFF_NOTE_LIMIT),
+                "phone": phone, "missing": [name for name in names if name][:STAFF_MISSING_LIMIT]}
 
     def _products_of(self, named: list[dict], car_label: str,
                      bad: Any) -> tuple[list[dict], list[dict]]:
@@ -1208,7 +1353,9 @@ class AssistantTurn:
             "suggestions": suggestions[:MAX_SUGGESTIONS],
             "notes": _text(raw.get("notes"), NOTES_LIMIT) or _text(self.memory.get("notes"),
                                                                     NOTES_LIMIT),
-            "outcome": outcome}
+            "outcome": outcome,
+            # An answer that failed a cosmetic check still tells the staff what they must know.
+            "staff": self._staff(raw.get("staff"), lambda *_: None)}
 
     # -- the response --------------------------------------------------------------------------
 
@@ -1297,6 +1444,8 @@ class AssistantTurn:
             asked=asked["text"] if asked else None, buttons=labels,
             offered=[{"product": item["product"], "confidence": item["confidence"],
                       "group": item["group"]} for item in decision["products"]],
+            # The intent only: the phone and the note stay out of what the website log keeps.
+            staff_intent=(decision.get("staff") or NO_STAFF)["intent"],
             elapsed_ms=round((time.monotonic() - self.started) * 1000))
         failed = status not in {"OK", "CLARIFICATION"}
         response = {
@@ -1320,6 +1469,8 @@ class AssistantTurn:
                             for option in suggestions],
             "groups": groups, "car_label": decision["car_label"], "outcome": outcome,
             "memory": memory,
+            # For the Live chats page (``live_alerts.turn_alerts``); the widget never sees it.
+            "staff": decision.get("staff") or dict(NO_STAFF),
         }
         return json.loads(self.redact(_dump(response)))
 
@@ -1355,7 +1506,22 @@ class AssistantTurn:
             "sourced": sorted(self._sourced(decision["car_label"]))[:SOURCED_LIMIT],
             "transcript": transcript[-TRANSCRIPT_TURNS:],
             "vin_key": self.memory.get("vin_key"), "vin_facts": self.memory.get("vin_facts"),
+            "phone": self._phone_state(decision),
         }
+
+    def _phone_state(self, decision: dict) -> str:
+        """'on_file' once the customer gave a phone number, 'asked' once the reply asked for
+        one, else '': the next turn neither asks twice nor forgets that it already did."""
+        staff = decision.get("staff") or NO_STAFF
+        kept = self.memory.get("phone")
+        state = kept if kept in ("asked", "on_file") else ""
+        if staff["phone"]:
+            return "on_file"
+        if getattr(self, "phone_rejected", False) and state != "on_file":
+            return ""  # what the customer typed was not taken: the next turn may ask again
+        if staff["intent"] != "none" and state != "on_file":
+            return "asked"
+        return state
 
     def _failure(self, status: str, texts: dict | None = None) -> dict:
         """An honest reply when no answer could be made: what happened is in ``status``

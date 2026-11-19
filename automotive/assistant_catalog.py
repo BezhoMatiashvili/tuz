@@ -60,6 +60,14 @@ SHORTENED = 4  # the shortest shortened word a longer search word still finds
 MAX_JOIN = 6  # adjacent catalogue tokens one typed word may span
 CROSS_SHOWN = 8
 MIN_NUMBER = 4  # shorter numbers are not looked up
+# A maker's revision index: the last one or two letters after the digits of a long number
+# (VAG `1EA698151D`, `1K0698151A`); the rest of the number stays the same part's.
+_REVISION = re.compile(r"([0-9A-Z]*\d)([A-Z]{1,2})")
+_REVISION_TAIL = re.compile(r"[A-Z]{0,2}")
+REVISION_BASE = 8
+# A brake pad's FMSI number written with its plate number (`D1107-8212`): the D-number alone
+# is how the pad is known, so it finds the row too, after rows that carry it exactly.
+_FMSI_PLATE = re.compile(r"(D\d{3,4})-\d{3,5}[A-Z]?", re.I)
 NEAR_ROWS = 10  # rows of a result found under a spelling one letter away
 # A short word of the names goes with a letter that part numbers end in when a tenth of its
 # rows' numbers end in it, five times as often as in the whole catalogue.
@@ -427,6 +435,9 @@ def _cell_codes(pieces: Sequence[str], brand: frozenset[str] = frozenset(),
                 add(words[0])
         if len(group) > 1:
             stems.extend((keys[index], written) for index in group)
+        plate = _FMSI_PLATE.fullmatch(written.strip())
+        if plate:
+            stems.append((normalize_code(plate.group(1)), written))
     for key, written in stems:
         add(written, key, whole=False)
     if as_typed and len(groups) > 1:
@@ -931,7 +942,13 @@ class CatalogIndex:
         in_stock = base & self._stocked
         pool = in_stock if in_stock_only else base
         hits = pool & vehicle if partition else pool
-        scoring = [rows for name in names[:3] for _, _, rows in matched[name]]
+        # A Georgian part word matches every word that begins with it; among rows that match
+        # as many terms, those that have the word itself come first: `ზეთი` (oil) before
+        # `ზეთის ფილტრი` (oil filter), so the part asked for is not cut off by its relatives.
+        whole = [self._georgian_rows(words[0].key, True)
+                 for _, words, _ in matched["part_terms"]
+                 if len(words) == 1 and words[0].georgian and not words[0].prefix]
+        scoring = [rows for name in names[:3] for _, _, rows in matched[name]] + whole
         shown = self._best(hits, limit, scoring)
         if len(pool) <= limit:  # everything fits: the rows without a vehicle match follow
             shown += self._best(pool - hits, limit, scoring)
@@ -982,6 +999,29 @@ class CatalogIndex:
             "note": _note(len(base), len(pool), len(hits), len(shown), len(rest), limit,
                           partition, part is not None, vehicle is not None),
         }
+
+    def out_of_stock_matches(self, *, make_terms: Sequence[str] = (),
+                             vehicle_terms: Sequence[str] = (), part_terms: Sequence[str] = (),
+                             exclude_terms: Sequence[str] = (),
+                             limit: int = MAX_LIMIT) -> list[Row]:
+        """Exact matching rows without stock, filtered before the bounded selection.
+
+        Unlike search's optional vehicle partition, every supplied positive group is a
+        filter. This supplies bridge rows for number lookups even when stocked rows fill
+        the visible search result; it makes no claim that another row fits the car.
+        """
+        groups = (("make_terms", make_terms), ("vehicle_terms", vehicle_terms),
+                  ("part_terms", part_terms), ("exclude_terms", exclude_terms))
+        matched = {name: [self._term_rows(words) for _, words in self._terms(name, terms)]
+                   for name, terms in groups}
+        positive = [set().union(*matched[name]) for name, _ in groups[:3] if matched[name]]
+        if not positive:
+            return []
+        candidates = set.intersection(*positive) - self._stocked
+        candidates.difference_update(set().union(*matched["exclude_terms"]))
+        return [self._rows[position] for position in self._best(
+            candidates, max(1, min(int(limit), MAX_LIMIT)),
+            [rows for name, _ in groups[:3] for rows in matched[name]])]
 
     def _variants(self, terms: Sequence[_Term]) -> set[int]:
         """Rows that match one of the terms once a word of it is replaced by a catalogue
@@ -1039,6 +1079,33 @@ class CatalogIndex:
         return found
 
     # -- numbers -----------------------------------------------------------------------
+
+    def revisions(self, number: str, limit: int = 8) -> list[tuple[str, str]]:
+        """(row id, the number as indexed) of rows that carry the same maker number in
+        another revision: the number with its last one or two letters taken off, alone or
+        followed by other letters (`1EA698151D` finds `1EA698151B`). A number that ends in
+        a digit has no revision here. In stock first. Never an exact hit: callers report
+        these apart, and a revision is evidence for the model to weigh, not proof."""
+        key = normalize_code(number)
+        match = _REVISION.fullmatch(key)
+        if match is None or len(match.group(1)) < REVISION_BASE:
+            return []
+        base = match.group(1)
+        keys = getattr(self, "_number_keys", None)
+        if keys is None:
+            keys = self._number_keys = sorted({*self._numbers, *self._partial})
+        found: dict[int, str] = {}
+        for at in range(bisect_left(keys, base), len(keys)):
+            other = keys[at]
+            if not other.startswith(base):
+                break
+            if other != key and _REVISION_TAIL.fullmatch(other[len(base):]):
+                for position in (*_unpack(self._numbers.get(other)),
+                                 *_unpack(self._partial.get(other))):
+                    found.setdefault(position, other)
+        ordered = sorted(found, key=lambda position: (self._rank[position],
+                                                      self._order[position]))[:limit]
+        return [(str(self._rows[position].id), found[position]) for position in ordered]
 
     def by_codes(self, numbers: Sequence[str],
                  limit_per_number: int = 20) -> dict[str, list[dict]]:

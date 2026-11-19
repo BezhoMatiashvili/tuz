@@ -42,6 +42,9 @@ REASONED = ("spec", "check")
 DEPENDS = "depends"
 JUDGEMENTS = (*CONFIDENCES, DEPENDS)
 OUTCOMES = ("offered", "asked", "nothing_found", "sold_out", "chat", "handoff")
+# What finish.staff.intent may say: the customer wants to come to the shop, wants work done, or
+# neither. The shop's staff watch the Live chats page and are alarmed by the first two.
+STAFF_INTENTS = ("none", "visit", "service")
 LANGUAGES = ("ka", "en", "ru")
 READ_TOOLS = ("search_catalog", "lookup_codes", "equivalents", "supplier_parts", "oil_guide",
               "car_numbers", "research", "shop_info")
@@ -262,6 +265,13 @@ def tool_definitions(ttl: str = "") -> list[dict]:
             "reply": _field("string", "reply"),
             "notes": _field("string", "notes"),
             "outcome": _field("string", "outcome", enum=list(OUTCOMES)),
+            # Last: it depends on the reply (a phone number is asked for in it) and the outcome.
+            "staff": {**_schema({
+                "intent": _field("string", "staff_intent", enum=list(STAFF_INTENTS)),
+                "note": _field("string", "staff_note"),
+                "phone": _field("string", "staff_phone"),
+                "missing": _strings("staff_missing"),
+            }), "description": prompt.FIELD_DESCRIPTIONS["staff"]},
         }),
     }
     definitions = []
@@ -484,15 +494,19 @@ class Toolbox:
             return None
         return self.render(Output({"rows": Table(rows)}, extra_columns))[0]
 
-    def typed_numbers(self, tokens: list[str], grouped: list[str]) -> dict | None:
+    def typed_numbers(self, tokens: list[str], grouped: list[str],
+                      quiet: bool = False) -> dict | None:
         """Exact index hits for tokens of the customer's message. Tokens without rows are
-        named too; numbers assembled from spaced groups only when they hit."""
+        named too (not when ``quiet``); numbers assembled from spaced groups only when they
+        hit. A token without rows that ends in a maker's revision letters also brings the
+        rows that carry the same number in another revision, apart from the exact hits."""
         candidates = list({plain(token): token for token in (*grouped, *tokens)
                            if len(plain(token)) >= 5}.values())[:MAX_TERMS]
         if not candidates:
             return None
         hits = self.index.by_codes(candidates, limit_per_number=8)
-        found, missing = [], []
+        found, missing, revised = [], [], []
+        revisions = getattr(self.index, "revisions", None)
         for token in candidates:
             matches = _matches(hits, token)
             rows = self._rows(_row_id(item) for item in matches)
@@ -500,12 +514,20 @@ class Toolbox:
                 found.append({"typed": token, "rows": Table(rows)})
             elif token in tokens:
                 missing.append(token)
-        if not found and not missing:
+                other = revisions(token) if callable(revisions) else []
+                rows = self._rows(row_id for row_id, _ in other)
+                if rows:
+                    revised.append({"typed": token,
+                                    "carried_as": list(dict.fromkeys(n for _, n in other)),
+                                    "rows": Table(rows)})
+        if not found and not revised and (quiet or not missing):
             return None
         data: dict = {}
         if found:
             data["found"] = found
-        if missing:
+        if revised:
+            data["other_revisions"] = revised
+        if missing and not quiet:
             data["without_rows"] = missing
         return self.render(Output(data))[0]
 
@@ -598,16 +620,25 @@ class Toolbox:
         rows = self._rows(item[position] for item in found.get("rows") or [])
         near = self._rows(item[position] for item in found.get("similar_spelling_rows") or [])
         unmade = self._without_make(groups, args, [*rows, *near])
-        hidden = self._hidden(groups, limit) if args.get("in_stock_only") is True else []
         visible = [*rows, *near, *unmade]
-        elsewhere = self._elsewhere([*visible, *hidden])
+        hidden = self._hidden(groups, visible)
+        original_hidden = self._hidden_first_page(groups, limit) \
+            if args.get("in_stock_only") is True else []
+        # New bridges fill spare candidate slots. They must not evict the stocked
+        # alternatives the original search already reached when the cap is full.
+        existing = self._elsewhere([*visible, *original_hidden])
+        additional = self._elsewhere([*visible, *hidden]) \
+            if hidden and len(existing) < ELSEWHERE_ROWS else []
+        elsewhere = list({str(row.id): row for row in [*existing, *additional]}.values())[
+            :ELSEWHERE_ROWS]
         behind: list[Any] = []
         if hidden and elsewhere:
-            # The hidden rows that explain a twin: the out-of-stock rows that name the car.
-            marks = same_parts([*elsewhere, *hidden])
-            twins = set(marks[:len(elsewhere)]) - {""}
-            behind = [row for row, mark in zip(hidden, marks[len(elsewhere):], strict=True)
-                      if mark in twins]
+            # One direct bridge per extra candidate keeps the explanation bounded too.
+            # A transitive same_part group alone is not a bridge to this candidate.
+            for other in elsewhere:
+                bridge = next((row for row in hidden if same_part(row, other)), None)
+                if bridge is not None and bridge not in behind:
+                    behind.append(bridge)
         letters = same_parts([*visible, *elsewhere, *behind])
         end = len(visible) + len(elsewhere)
         listed = Table(rows, [[letter] for letter in letters[:len(rows)]])
@@ -639,21 +670,34 @@ class Toolbox:
                 behind, [[letter] for letter in letters[end:]])
         return Output(data, ("same_part",))
 
-    def _hidden(self, groups: dict, limit: int) -> list[Any]:
-        """The out-of-stock rows that match the car words and the part, which in_stock_only
-        hid: an in-stock row that is the same part by its numbers, filed under another car,
-        is reached only through them."""
+    def _hidden_first_page(self, groups: dict, limit: int) -> list[Any]:
+        """The bridges the original stock-only search already reached, before expansion."""
         if not groups["vehicle_terms"]:
             return []
+        found = self.index.search(**groups, in_stock_only=False, limit=limit)
+        columns = list(found.get("columns") or ROW_COLUMNS)
+        position = columns.index("id") if "id" in columns else 0
+        matched = int(found.get("matched_vehicle") or 0)
+        rows = self._rows(item[position] for item in (found.get("rows") or [])[:matched])
+        return [row for row in rows if not ((row.store or 0) > 0 or (row.warehouse or 0) > 0)]
+
+    def _hidden(self, groups: dict, shown: list[Any]) -> list[Any]:
+        """Unavailable matching rows omitted by stock filtering or the visible row limit.
+        Select without stocked rows first, so they cannot crowd out a number bridge.
+        The separate missing-make search follows the same terms as _without_make.
+        """
+        if not groups["vehicle_terms"]:
+            return []
+        inside = {str(row.id) for row in shown}
         try:
-            loose = self.index.search(**groups, in_stock_only=False, limit=limit)
+            found = self.index.out_of_stock_matches(**groups, limit=SEARCH_LIMIT)
+            if groups["make_terms"] and groups["part_terms"]:
+                found += self.index.out_of_stock_matches(
+                    **{**groups, "make_terms": []}, limit=SEARCH_LIMIT)
         except SearchError:
             return []
-        columns = list(loose.get("columns") or ROW_COLUMNS)
-        position = columns.index("id") if "id" in columns else 0
-        matched = int(loose.get("matched_vehicle") or 0)
-        found = self._rows(item[position] for item in (loose.get("rows") or [])[:matched])
-        return [row for row in found if not ((row.store or 0) > 0 or (row.warehouse or 0) > 0)]
+        return list({str(row.id): row for row in found if str(row.id) not in inside
+                     and not ((row.store or 0) > 0 or (row.warehouse or 0) > 0)}.values())
 
     def _without_make(self, groups: dict, args: dict, shown: list[Any]) -> list[Any]:
         """Rows that match the car words and the part but write no make word: the make terms

@@ -144,6 +144,31 @@ def matched(result: list[dict]) -> list[tuple[str, str, str]]:
     return [(hit["row"][0], hit["matched"], hit["field"]) for hit in result]
 
 
+class UnstockedMatchingTests(unittest.TestCase):
+    def test_stock_and_other_cars_do_not_consume_the_bridge_limit(self):
+        rows = [row(str(number), AIR, "HONDA CIVIC", "JS", store="1")
+                for number in range(1, 71)]
+        rows += [row("71", AIR, "HONDA CIVIC", "JS"),
+                 row("72", AIR, "HONDA ACCORD", "JS"),
+                 row("73", AIR + " REAR", "HONDA CIVIC", "JS"),
+                 row("74", AIR, "CIVIC", "JS"),
+                 row("75", PUMP, "HONDA CIVIC", "JS")]
+        index = CatalogIndex.from_rows(rows)
+        args = {"make_terms": ["HONDA"], "vehicle_terms": ["CIVIC"],
+                "part_terms": [AIR], "exclude_terms": ["REAR"]}
+        self.assertEqual([item.id for item in index.out_of_stock_matches(**args, limit=1)],
+                         ["71"])
+        self.assertEqual([item.id for item in index.out_of_stock_matches(
+            **{**args, "make_terms": []}, limit=60)], ["71", "74"])
+        self.assertEqual(index.out_of_stock_matches(), [])
+
+    def test_unstocked_candidate_selection_stays_bounded(self):
+        index = CatalogIndex.from_rows(
+            [row(str(number), AIR, "HONDA CIVIC", "JS") for number in range(1, 101)])
+        self.assertEqual(len(index.out_of_stock_matches(vehicle_terms=["CIVIC"], limit=1000)),
+                         60)
+
+
 class WordMatchingTests(unittest.TestCase):
     def test_a_name_is_found_in_either_word_order(self):
         for term in ("ფილტრი ჰაერის", "ჰაერის ფილტრი", "ჰაერის  ფილტრ"):
@@ -320,6 +345,44 @@ class SearchResultTests(unittest.TestCase):
                               part_terms=["ხუნდ"])
         self.assertEqual(ids(result), ["15897", "28278", "7425", "3199", "30790", "40002",
                                        "40003", "40001", "40004"])
+
+    def test_a_maker_number_finds_its_other_revisions_never_other_numbers(self):
+        index = CatalogIndex.from_rows([
+            row("201", PAD_FRONT, "VAG WV", "SATO", "PN0001", "CX0001/D0001/7QX445566B",
+                store="1"),
+            row("202", PAD_FRONT, "VAG", "TRW", "GDB0001", "7QX445566", store="0"),
+            row("203", PAD_FRONT, "VAG", "ATE", "13.0000-1111.2", "7QX445567B"),
+            row("204", PAD_FRONT, "TOYOTA", "SATO", "PN1111", "11111-22222")])
+        self.assertEqual(index.revisions("7QX445566D"),
+                         [("201", "7QX445566B"), ("202", "7QX445566")])
+        self.assertEqual(index.revisions("7QX445566B"), [("202", "7QX445566")])
+        self.assertEqual(index.revisions("11111-22223"), [])  # ends in a digit: no revision
+        self.assertEqual(index.revisions("7QX4D"), [])  # too short to carry a revision
+
+    def test_an_fmsi_number_finds_the_rows_that_write_it_with_its_plate(self):
+        index = CatalogIndex.from_rows([
+            row("301", PAD_FRONT, "VW GOLF V", "SATO", "PN0003", "GDB0003/D0003-0003",
+                store="1"),
+            row("302", PAD_FRONT, "VW", "TRW", "GDB0003", "D0003", store="1"),
+            row("303", PAD_FRONT, "VW", "ATE", "13.0000-3333.2", "D00031-0003")])
+        hits = index.by_codes(["D0003"])["D0003"]
+        self.assertEqual([(hit["row"][0], hit["matched"]) for hit in hits],
+                         [("302", "D0003"), ("301", "D0003-0003")])
+        hits = index.by_codes(["D0003-0003"])["D0003-0003"]
+        self.assertEqual([hit["row"][0] for hit in hits], ["301"])
+
+    def test_a_part_word_ranks_its_own_rows_before_rows_of_a_longer_word(self):
+        # `ზეთი` (oil) also matches `ზეთის` (of oil): among rows matching as many terms, the
+        # oil itself comes before the oil filters, whatever their ids.
+        index = CatalogIndex.from_rows([
+            row("101", "ზეთის ფილტრი", "BMW E90", "MANN", store="2"),
+            row("102", "ფილტრი ზეთის", "BMW F30", "FILTRON", store="2"),
+            row("103", "ზეთის ფილტრი", "BMW", "HENGST", store="2"),
+            row("65812", "ზეთი BMW TWIN POWER TURBO 5W30 LL01 1L", "UNIVERSAL", "BMW",
+                store="2")])
+        result = index.search(vehicle_terms=["BMW"], part_terms=["ზეთი"], limit=2)
+        self.assertEqual(ids(result)[0], "65812")
+        self.assertEqual(result["matched_vehicle"], 4)
 
     def test_a_large_result_returns_vehicle_matches_and_counts_the_other_texts(self):
         result = INDEX.search(make_terms=["MB"], vehicle_terms=["W212"], part_terms=["ხუნდ"],

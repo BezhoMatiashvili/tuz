@@ -402,6 +402,34 @@ class TurnTests(unittest.TestCase):
         self.assertEqual(typed_tokens("5W-30 W212 2015 [VIN] 31835AA030"),
                          ["5W-30", "31835AA030"])
 
+    def test_other_revisions_and_earlier_numbers_bring_their_rows(self):
+        rows = [*ROWS, row("p7", "30040000", FRONT, "VAG WV", "SATO", "PN0001",
+                           "CX0001/7QX445566B", "185", "2", "0")]
+        script = Script(done())
+        run(service(script, rows=rows), "გაქვთ 7QX445566D?")
+        typed = context_of(script.requests[0])["typed_numbers"]
+        self.assertEqual(typed["without_rows"], ["7QX445566D"])
+        self.assertNotIn("found", typed)
+        revised = typed["other_revisions"]
+        self.assertEqual([(item["typed"], item["carried_as"]) for item in revised],
+                         [("7QX445566D", ["7QX445566B"])])
+        self.assertEqual([item[4] for item in revised[0]["rows"]], ["PN0001"])
+
+        # Numbers of the staff-handled messages before: rows only, a miss is not repeated,
+        # and a number the new message types again is answered in typed_numbers alone.
+        memory = {"transcript": [{"user": "PN1521 ან XYZ99999 გაქვთ? [VIN]",
+                                  "assistant": "ახლავე გადავამოწმებ"}]}
+        script = Script(done())
+        run(service(script), "რა ღირს?", dialogue={"memory": memory})
+        earlier = context_of(script.requests[0])["earlier_typed_numbers"]
+        self.assertEqual([item["typed"] for item in earlier["found"]], ["PN1521"])
+        self.assertNotIn("without_rows", earlier)
+        script = Script(done())
+        run(service(script), "PN1521 რა ღირს?", dialogue={"memory": memory})
+        sent = context_of(script.requests[0])
+        self.assertNotIn("earlier_typed_numbers", sent)
+        self.assertEqual([item["typed"] for item in sent["typed_numbers"]["found"]], ["PN1521"])
+
     def test_plain_text_is_nudged_once_then_delivered(self):
         script = Script(says({"type": "text", "text": "მოგესალმებით!"}, stop="end_turn"),
                         done(reply="მოგესალმებით!"))
@@ -709,6 +737,16 @@ class ToolTests(unittest.TestCase):
         run(chat, kwargs.pop("message", "ხუნდები"), **kwargs)
         return tool_results(script.requests[1])[0]
 
+    def test_an_fmsi_number_looked_up_finds_the_pads_that_write_it_with_a_plate(self):
+        sibling = row("p8", "30050000", FRONT, "VW GOLF V PASSAT", "SATO", "PN0002",
+                      "GDB0002/D9999-8000", "90", "2", "0")
+        content, is_error = self.one("lookup_codes", {"numbers": ["D9999"], "vehicle_hint": ""},
+                                     settings={"rows": [*ROWS, sibling]})
+        self.assertFalse(is_error)
+        found = content["numbers"][0]
+        self.assertEqual([(item[4], item[-1]) for item in found["rows"]],
+                         [("PN0002", "cross number")])
+
     def test_tools_are_strict_and_the_last_one_is_a_cache_breakpoint(self):
         tools = tool_definitions()
         self.assertEqual([tool["name"] for tool in tools], [
@@ -857,6 +895,87 @@ class ToolTests(unittest.TestCase):
         self.assertNotIn("out_of_stock_rows_with_a_twin_in_stock", content)
         self.assertEqual([item[4] for item in content["in_stock_under_other_cars"]],
                          ["10-04-410"])
+
+    def test_stocked_rows_do_not_hide_an_unstocked_bridge_to_an_equivalent(self):
+        name = "ზეთის ფილტრი"
+        for count in (1, 30, 65):
+            for in_stock_only in (True, False):
+                for bridge_vehicle in ("HONDA CIVIC", "CIVIC"):
+                    with self.subTest(count=count, in_stock_only=in_stock_only,
+                                      bridge_vehicle=bridge_vehicle):
+                        rows = [row(str(number), str(number), name, "HONDA CIVIC", "JS",
+                                    f"DIRECT{number:04d}", store="1")
+                                for number in range(1, count + 1)]
+                        rows += [
+                            row("bridge", "501", name, bridge_vehicle, "JS", "C809J",
+                                "15400-RTA-003/15400-PLM-A02", store="0"),
+                            row("twin", "502", name, "HONDA ACCORD", "ASHIKA", "ACCORD01",
+                                "C809J/15400-RTA-003", store="2"),
+                            # One shared cross-number does not make a transitive twin.
+                            row("unrelated", "503", name, "HONDA JAZZ", "ASHIKA", "JAZZ001",
+                                "15400-RTA-003", store="2"),
+                            # Excluded positions must not seed equivalents either.
+                            row("rear", "504", name + " REAR", "HONDA CIVIC", "JS",
+                                "REAR001", "REAR002/REAR003", store="0"),
+                            row("rear-twin", "505", name, "HONDA ACCORD", "JS", "REAR004",
+                                "REAR002/REAR003", store="2"),
+                        ]
+                        args = {**search(["HONDA"], ["CIVIC"], [name], ["REAR"]),
+                                "in_stock_only": in_stock_only, "limit": min(count, 30)}
+                        content, is_error = self.one("search_catalog", args,
+                                                     settings={"rows": rows})
+                        self.assertFalse(is_error)
+                        self.assertLessEqual(len(content["rows"]), args["limit"])
+                        self.assertEqual([item[4] for item in
+                                          content.get("in_stock_under_other_cars", [])],
+                                         ["ACCORD01"])
+                        explanations = [*content.get("rows_without_the_make_word", []),
+                                        *content.get("out_of_stock_rows_with_a_twin_in_stock", [])]
+                        self.assertIn("C809J", [item[4] for item in explanations])
+                        self.assertNotIn("REAR001", [item[4] for item in explanations])
+                        # Discovery supplies candidates and their source rows; it does not
+                        # make a fitment decision or assign offer confidence.
+                        self.assertNotIn("confidence", content["columns"])
+
+    def test_hidden_bridge_discovery_keeps_extra_rows_bounded(self):
+        name = "ზეთის ფილტრი"
+        rows = [row("direct", "1", name, "HONDA CIVIC", "JS", "DIRECT001", store="1")]
+        for number in range(15):
+            rows.extend([
+                row(f"bridge{number}", f"5{number}", name, "HONDA CIVIC", "JS",
+                    f"SOURCE{number:03d}", f"CROSS{number:03d}/OTHER{number:03d}", store="0"),
+                row(f"twin{number}", f"6{number}", name, "HONDA ACCORD", "ASHIKA",
+                    f"TWIN{number:03d}", f"CROSS{number:03d}/OTHER{number:03d}", store="1"),
+            ])
+        args = {**search(["HONDA"], ["CIVIC"], [name]), "in_stock_only": True, "limit": 1}
+        content, is_error = self.one("search_catalog", args, settings={"rows": rows})
+        self.assertFalse(is_error)
+        self.assertEqual(len(content["rows"]), 1)
+        self.assertEqual(len(content["in_stock_under_other_cars"]), 10)
+        self.assertEqual(len(content["out_of_stock_rows_with_a_twin_in_stock"]), 10)
+
+    def test_new_hidden_bridges_do_not_displace_existing_stocked_candidates(self):
+        name = "ზეთის ფილტრი"
+        rows = [
+            row("0", "0", name, "HONDA CIVIC", "JS", "BASE001",
+                "CROSS001/CROSS002", store="0"),
+            row("900", "900", name, "HONDA ACCORD", "JS", "ORIGINAL001",
+                "CROSS001/CROSS002", store="1"),
+        ]
+        for number in range(1, 12):
+            numbers = f"X{number:04d}/Y{number:04d}/Z{number:04d}"
+            rows.extend([
+                row(str(number), str(number), name, "HONDA CIVIC", "JS",
+                    f"SOURCE{number:03d}", numbers, store="0"),
+                row(f"80{number}", f"80{number}", name, "HONDA ACCORD", "JS",
+                    f"TWIN{number:03d}", numbers, store="1"),
+            ])
+        args = {**search([], ["CIVIC"], [name]), "limit": 1}
+        content, is_error = self.one("search_catalog", args, settings={"rows": rows})
+        self.assertFalse(is_error)
+        extra = content["in_stock_under_other_cars"]
+        self.assertEqual(len(extra), 10)
+        self.assertIn("ORIGINAL001", [item[4] for item in extra])
 
     def test_lookup_codes_reads_rows_and_tolerates_missing_crawled_data(self):
         content, is_error = self.one("lookup_codes", {"numbers": ["gdb-3429", "E1", "ZZ9999"],
@@ -1459,7 +1578,8 @@ class ButtonTests(unittest.TestCase):
                          ["უკანა ხუნდები", "დისკები"])
         schema = tool_definitions()[-1]["input_schema"]["properties"]
         self.assertEqual(list(schema), ["language", "car_label", "products", "question",
-                                        "options", "suggestions", "reply", "notes", "outcome"])
+                                        "options", "suggestions", "reply", "notes", "outcome",
+                                        "staff"])
         self.assertEqual((schema["question"]["type"], schema["options"]["items"],
                           schema["suggestions"]["items"]),
                          ("string", {"type": "string"}, {"type": "string"}))
@@ -1932,6 +2052,86 @@ class LimitTests(unittest.TestCase):
 
 
 class FailureTests(unittest.TestCase):
+    @staticmethod
+    def rate_limit(*, headers=None, body=None):
+        response = httpx.Response(429, headers=headers or {}, request=REQUEST)
+        return anthropic.RateLimitError("rate limited", response=response, body=body)
+
+    def test_rate_limit_retry_after_parses_seconds_dates_and_default(self):
+        from email.utils import formatdate
+
+        from automotive.assistant import AssistantTurn
+
+        self.assertEqual(AssistantTurn._rate_limit_wait(self.rate_limit()), 1.0)
+        seconds = self.rate_limit(headers={"Retry-After": "2.5"})
+        self.assertEqual(AssistantTurn._rate_limit_wait(seconds), 2.5)
+        date = self.rate_limit(headers={"Retry-After": formatdate(time.time() + 5, usegmt=True)})
+        self.assertGreaterEqual(AssistantTurn._rate_limit_wait(date), 4.0)
+        self.assertLessEqual(AssistantTurn._rate_limit_wait(date), 5.0)
+        invalid = self.rate_limit(headers={"Retry-After": "tomorrow"})
+        self.assertIsNone(AssistantTurn._rate_limit_wait(invalid))
+
+    def test_a_transient_rate_limit_waits_then_retries_once(self):
+        limited = self.rate_limit(headers={"Retry-After": "0.05"})
+        script = Script(limited, done())
+        real_sleep, waits = time.sleep, []
+
+        def record_sleep(seconds):
+            waits.append(seconds)
+            real_sleep(seconds)
+
+        with patch("automotive.assistant.time.sleep", side_effect=record_sleep):
+            result = run(service(script), "გამარჯობა")
+        self.assertEqual((result["status"], len(script.requests)), ("OK", 2))
+        self.assertGreaterEqual(sum(waits), 0.045)
+        self.assertEqual(result["diagnostics"]["retries"], [{
+            "status": 429, "cause": "rate_limit", "wait_seconds": 0.05,
+            "exhausted": False}])
+
+    def test_rate_limit_wait_is_never_shortened_to_fit_the_turn(self):
+        script = Script(self.rate_limit(headers={"Retry-After": "120"}))
+        result = run(service(script), "გამარჯობა")
+        self.assertEqual((result["status"], len(script.requests)),
+                         ("PROVIDER_RATE_LIMITED", 1))
+        self.assertEqual(result["diagnostics"]["retries"], [{
+            "status": 429, "cause": "rate_limit", "wait_seconds": 120.0,
+            "exhausted": True}])
+
+    def test_spend_cap_rate_limit_is_not_retried(self):
+        error = self.rate_limit(body={"error": {"type": "rate_limit_error", "details": {
+            "error_code": "enforced_spend_limit_reached"}}})
+        script = Script(error)
+        result = run(service(script), "გამარჯობა")
+        self.assertEqual((result["status"], len(script.requests)), ("PROVIDER_BILLING", 1))
+        self.assertEqual(result["diagnostics"]["retries"], [{
+            "status": 429, "cause": "rate_limit", "wait_seconds": None,
+            "exhausted": True}])
+
+    def test_rate_limit_retry_shares_the_connection_retry_cap(self):
+        limited = self.rate_limit(headers={"Retry-After": "0"})
+        script = Script(anthropic.APIConnectionError(request=REQUEST), limited, done())
+        real_sleep = time.sleep
+        with patch("automotive.assistant.time.sleep", side_effect=real_sleep):
+            result = run(service(script), "გამარჯობა")
+        self.assertEqual((result["status"], len(script.requests)),
+                         ("PROVIDER_RATE_LIMITED", 2))
+        retries = result["diagnostics"]["retries"]
+        self.assertEqual(retries[0]["cause"], "connection_or_server")
+        self.assertEqual(retries[1], {"status": 429, "cause": "rate_limit",
+                                      "wait_seconds": None, "exhausted": True})
+
+    def test_cancellation_during_rate_limit_handling_stops_without_retry(self):
+        calls = 0
+
+        def cancelled():
+            nonlocal calls
+            calls += 1
+            return calls >= 4
+
+        script = Script(self.rate_limit(headers={"Retry-After": "10"}), done())
+        result = run(service(script), "გამარჯობა", cancelled=cancelled)
+        self.assertEqual((result["status"], len(script.requests)), ("CANCELLED", 1))
+
     def test_provider_failures_apologise_in_the_conversations_language(self):
         denied = httpx.Response(401, request=REQUEST)
         cases = [
@@ -1940,8 +2140,10 @@ class FailureTests(unittest.TestCase):
             (anthropic.PermissionDeniedError(
                 "private", response=httpx.Response(403, request=REQUEST), body=None),
              "ACCESS_DENIED"),
+            # Retry-After 0: the one retry runs at once and is refused again.
             (anthropic.RateLimitError(
-                "private", response=httpx.Response(429, request=REQUEST), body=None),
+                "private", response=httpx.Response(
+                    429, headers={"Retry-After": "0"}, request=REQUEST), body=None),
              "PROVIDER_RATE_LIMITED"),
             (anthropic.APITimeoutError(REQUEST), "TIMEOUT"),
             (anthropic.APIStatusError(
@@ -1965,7 +2167,8 @@ class FailureTests(unittest.TestCase):
             with self.subTest(status=status):
                 with self.assertLogs("automotive.assistant", level="ERROR") \
                         if status in account else contextlib.nullcontext() as logged:
-                    result = run(service(Script(error)), "нужны колодки", dialogue={
+                    # A provider that keeps refusing; only a retried error uses the second.
+                    result = run(service(Script(error, error)), "нужны колодки", dialogue={
                         "memory": {"language": "ru", "question": asked,
                                    "notes": "Camry 2015"}})
                 self.assertEqual((result["status"], result["act"]), (status, "help"))
