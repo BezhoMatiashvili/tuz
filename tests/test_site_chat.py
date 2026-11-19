@@ -872,6 +872,25 @@ class PublicChatTests(unittest.TestCase):
         self.wall.advance(86_400)
         chat.submit(A, mine, "pads", "ka")
 
+    def test_the_64s_of_one_ipv6_48_share_a_wider_daily_allowance(self):
+        chat = PublicChat(self.store, Catalogs(), self.daily, per_address_daily=3,
+                          inflight=100, inflight_per_address=100, clock=self.clock,
+                          wall=self.wall)
+        accepted = 0
+        for index in range(4):
+            address = f"2001:db8:1:{index:x}::/64"
+            conversation = chat.create(address)["conversation_id"]
+            for _ in range(3):
+                try:
+                    chat.submit(address, conversation, "pads", "ka")
+                    accepted += 1
+                except ConversationError as exc:
+                    self.assertEqual(exc.code, "CHAT_DAILY_LIMIT")
+        self.assertEqual(accepted, 2 * 3)  # a /48 may send twice what one address may
+        self.assertEqual(self.daily.used, 6)
+        other = "2001:db8:2:1::/64"  # another /48 still gets through
+        chat.submit(other, chat.create(other)["conversation_id"], "pads", "ka")
+
     def test_the_whole_site_budget_stops_everyone_until_the_next_day(self):
         chat = PublicChat(self.store, Catalogs(), DailyBudget(2, clock=self.wall),
                           inflight=100, inflight_per_address=100, clock=self.clock,

@@ -4,6 +4,7 @@
 import { api, getUser, isAdmin, setSession } from './api.js';
 import { hideTip } from './charts.js';
 import { h, icon, mount } from './dom.js';
+import * as watch from './live-watch.js';
 import { getLang, onLangChange, otherLang, setLang, t } from './strings.js';
 import {
   adminOnly, busy, card, confirmDialog, emptyState, errorState, pageHead, toastError,
@@ -13,6 +14,7 @@ import * as audit from './views/audit.js';
 import * as content from './views/content.js';
 import * as facebook from './views/facebook.js';
 import * as inventory from './views/inventory.js';
+import * as live from './views/live.js';
 import * as more from './views/more.js';
 import * as overview from './views/overview.js';
 import * as users from './views/users.js';
@@ -20,6 +22,11 @@ import * as users from './views/users.js';
 const ROUTES = [
   { pattern: /^\/admin$/, view: overview, nav: 'overview', title: 'nav.overview' },
   { pattern: /^\/admin\/inventory$/, view: inventory, nav: 'inventory', title: 'nav.inventory' },
+  {
+    // Both roles: the alarms are for whoever is at the counter. /admin/live/<m-psid|w-visitor>.
+    pattern: /^\/admin\/live(?:\/([mw]-[A-Za-z0-9]{1,40}))?$/, view: live, nav: 'live',
+    title: 'live.title', params: (match) => ({ rest: match[1] || '' }),
+  },
   {
     pattern: /^\/admin\/content(?:\/([a-z]+)(?:\/([A-Za-z0-9_-]+))?)?$/, view: content, nav: 'content',
     title: 'nav.content', admin: true, params: (match) => ({ tab: match[1] || '', rest: match[2] || '' }),
@@ -34,10 +41,10 @@ const ROUTES = [
   { pattern: /^\/admin\/more$/, view: more, nav: 'more', title: 'nav.more' },
 ];
 // Where each sidebar entry lives on the phone tab bar.
-const TAB_OF = { overview: 'overview', inventory: 'inventory', content: 'content', users: 'more',
-  audit: 'more', account: 'more', more: 'more', facebook: 'more' };
-const ICON_OF = { overview: 'overview', inventory: 'inventory', content: 'content', users: 'users',
-  audit: 'audit', account: 'account', more: 'more', facebook: 'spark' };
+const TAB_OF = { overview: 'overview', live: 'live', inventory: 'inventory', content: 'content',
+  users: 'more', audit: 'more', account: 'more', more: 'more', facebook: 'more' };
+const ICON_OF = { overview: 'overview', live: 'bell', inventory: 'inventory', content: 'content',
+  users: 'users', audit: 'audit', account: 'account', more: 'more', facebook: 'spark' };
 
 const app = document.getElementById('app');
 let main = null;
@@ -66,20 +73,43 @@ function match(pathname) {
 
 // -- shell -----------------------------------------------------------------------------
 
+/** The count of alarms on the Live item: drawn again by paintBadges when it moves, and read
+ * from the watcher whenever the shell is redrawn (a language change), so it never goes missing. */
+function fillBadge(node, count) {
+  node.hidden = count < 1;
+  node.replaceChildren(
+    h('span', { 'aria-hidden': 'true', text: count > 99 ? '99+' : String(count) }),
+    h('span', { class: 'visually-hidden', text: t('live.badge', { count }) }));
+}
+
+function paintBadges() {
+  const count = watch.badge();
+  for (const node of document.querySelectorAll('[data-badge]')) {
+    fillBadge(node, count);
+  }
+}
+
+function badgeNode() {
+  const node = h('span', { class: 'nav-badge', dataset: { badge: '' } });
+  fillBadge(node, watch.badge());
+  return node;
+}
+
 function navLink(name, active, compact) {
   return h('a', {
     class: compact ? 'tabbar__item' : 'sidebar__item', href: name === 'overview' ? '/admin' : `/admin/${name}`,
     dataset: { link: '' }, 'aria-current': active ? 'page' : null,
-  }, icon(ICON_OF[name], compact ? 22 : 20), h('span', { text: t(`nav.${name}`) }));
+  }, icon(ICON_OF[name], compact ? 22 : 20), h('span', { text: t(`nav.${name}`) }),
+  name === 'live' ? badgeNode() : null);
 }
 
 function drawShell() {
   const user = getUser();
   const admin = isAdmin();
   const active = current && current.route ? current.route.nav : '';
-  const side = ['overview', 'inventory', admin && 'content', admin && 'facebook', admin && 'users',
-    admin && 'audit', 'account'].filter(Boolean);
-  const tabs = ['overview', 'inventory', admin && 'content', 'more'].filter(Boolean);
+  const side = ['overview', 'live', 'inventory', admin && 'content', admin && 'facebook',
+    admin && 'users', admin && 'audit', 'account'].filter(Boolean);
+  const tabs = ['overview', 'live', 'inventory', admin && 'content', 'more'].filter(Boolean);
   const signOutButton = h('button', { type: 'button', class: 'sidebar__item sidebar__item--button' },
     icon('signout', 20), h('span', { text: t('nav.sign_out') }));
   signOutButton.addEventListener('click', () => signOut(signOutButton));
@@ -145,7 +175,8 @@ const ctx = {
 
 function setTitle(route) {
   const name = route ? t(route.title) : t('notfound.title');
-  document.title = `${name} | Garage 1886`;
+  const alarms = watch.badge(); // "(2) " in the tab's title while something needs a person
+  document.title = `${alarms > 0 ? `(${alarms}) ` : ''}${name} | Garage 1886`;
 }
 
 function render(moveFocus) {
@@ -276,6 +307,7 @@ async function signOut(trigger) {
   const restore = trigger instanceof HTMLButtonElement ? busy(trigger, t('nav.signing_out')) : () => {};
   try {
     await api.logout();
+    watch.stop();
     window.location.assign('/login');
   } catch (error) {
     guard = kept;
@@ -314,6 +346,17 @@ async function start() {
   window.history.replaceState({ position }, '', window.location.href);
   buildShell();
   render(false);
+  // Alarms are counted and heard on every page, so the one poller starts with the shell.
+  let shown = -1;
+  watch.subscribe(() => {
+    const count = watch.badge();
+    if (count !== shown) {
+      shown = count;
+      paintBadges();
+      setTitle(current ? current.route : null);
+    }
+  });
+  watch.start();
   window.addEventListener('popstate', onPopState);
   document.addEventListener('click', onClick);
   window.addEventListener('beforeunload', (event) => {

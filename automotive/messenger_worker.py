@@ -56,6 +56,7 @@ from zoneinfo import ZoneInfo
 
 from psycopg import sql
 
+from automotive.live_store import LiveStore
 from automotive.messenger_events import (
     CommentEvent,
     CustomerMessage,
@@ -509,12 +510,18 @@ class MessengerWorker:
                  ignore_app_ids: Sequence[str] = (),
                  cost: Callable[[Mapping[str, Any]], float | None] | None = None,
                  jobs: Mapping[str, Callable[[MetaContext], Any]] | None = None,
-                 record_shop_reply: Callable[..., dict] | None = None) -> None:
+                 record_shop_reply: Callable[..., dict] | None = None,
+                 live: Any = None) -> None:
         settings = ctx.settings
         self.ctx = ctx
         self.store = ctx.store
         self.graph = ctx.graph
         self.engine = engine
+        # The Live chats alarms (migration 0015), on the worker's own login. A store without a
+        # database (a test's double) records none.
+        database = getattr(self.store, "db", None)
+        self.live = live if live is not None else (
+            LiveStore(database, self.store) if database is not None else None)
         self.quiet_seconds = float(settings.quiet_seconds if quiet_seconds is None
                                    else quiet_seconds)
         self.max_wait_seconds = float(settings.max_wait_seconds if max_wait_seconds is None
@@ -1190,6 +1197,7 @@ class MessengerWorker:
                                          cancel=self._cancel_event(psid))
         finally:
             done.set()
+        self._raise_alerts(psid, result)
         # The engine ran: a non-empty status makes the reply count as a turn for the caps.
         reply.engine_status = str(result.engine_status or result.error_code
                                   or str(result.status).upper() or "RAN")[:40]
@@ -1234,6 +1242,21 @@ class MessengerWorker:
                 "engine_timeout" if result.status == "timeout" else "engine_failed")
             return answered, {}
         return unsent, channel
+
+    def _raise_alerts(self, psid: str, result: Any) -> None:
+        """Record what the turn means for the staff (dashboard > Live chats): a part not found, a
+        visit or service request, a handoff, a phone number. Called right after the engine and
+        before anything is sent, so a reply that cannot be delivered still alarms. Never raises
+        and never logs a message or a number."""
+        turn = getattr(result, "alerts", None)
+        if self.live is None or not turn:
+            return
+        try:
+            if self.live.usable():
+                self.live.record_turn("messenger", psid, turn)
+        except Exception as error:
+            LOGGER.warning("live_alert_failed psid=%s error=%s", mask_psid(psid),
+                           _error_code(error))
 
     def _settle(self, psid: str, saving: tuple[dict, dict] | None, state: dict,
                 channel: dict) -> None:

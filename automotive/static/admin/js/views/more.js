@@ -1,6 +1,7 @@
 // More: the phone menu behind the fourth tab. Everything the sidebar offers on desktop.
 
 import { h, icon, mount } from '../dom.js';
+import * as watch from '../live-watch.js';
 import { t } from '../strings.js';
 import { pageHead } from '../ui.js';
 
@@ -22,9 +23,20 @@ export function mountView(root, ctx) {
     const language = row('globe', t('nav.language_switch'),
       { 'aria-label': t('nav.language_switch_label'), lang: ctx.otherLang() }, null);
     language.firstChild.addEventListener('click', ctx.toggleLanguage);
+    // The alarm sound of the Live chats page: this browser's own choice, on every page.
+    const loud = watch.isSoundOn();
+    const sound = row(loud ? 'speaker' : 'speaker-off', t('live.sound'),
+      { 'aria-pressed': String(loud) }, null);
+    sound.firstChild.appendChild(h('span', {
+      class: 'menu__trail menu__state', text: t(loud ? 'live.state.on' : 'live.state.off'),
+    }));
+    sound.firstChild.addEventListener('click', () => {
+      watch.setSound(!watch.isSoundOn());
+      draw();
+    });
     mount(root,
       pageHead(t('more.title')),
-      h('div', { class: 'stack stack--narrow' },
+      h('div', { class: 'grid grid--2 settings-grid' },
         h('div', { class: 'card who' },
           h('span', { class: 'who__mark', 'aria-hidden': 'true' }),
           h('div', {},
@@ -37,7 +49,7 @@ export function mountView(root, ctx) {
           row('account', t('nav.account'), { href: '/admin/account', dataset: { link: '' } }),
           row('external', t('nav.view_site'),
             { href: '/', target: '_blank', rel: 'noopener noreferrer' }, null))),
-        h('div', { class: 'card menu' }, h('ul', {}, language, signOut))));
+        h('div', { class: 'card menu' }, h('ul', {}, sound, language, signOut))));
   }
 
   draw();

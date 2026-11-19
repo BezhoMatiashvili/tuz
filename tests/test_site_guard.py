@@ -31,6 +31,7 @@ from automotive.site_guard import (
     CSP,
     LIMITS,
     LOOKUPS,
+    WIDE,
     DailyBudget,
     SiteGuard,
     TokenBuckets,
@@ -86,6 +87,10 @@ class RecordingBuckets(TokenBuckets):
 
     def allow(self, key: tuple, burst: float, per_minute: float) -> bool:
         self.keys.append(key)
+        return True
+
+    def allow_all(self, buckets: list[tuple[tuple, float, float]]) -> bool:
+        self.keys.append(buckets[0][0])  # the client's own key, before any wider one
         return True
 
 
@@ -620,8 +625,41 @@ class TokenBucketTests(unittest.TestCase):
         self.assertLessEqual(len(buckets._buckets), 3)
         self.assertTrue(buckets.allow(self.key, 1, 1))  # forgotten, so served again
 
+    def test_a_full_table_forgets_a_refilled_bucket_before_one_still_owed(self):
+        # A bucket that has refilled says nothing a new one would not. One still owed tokens
+        # is the only memory of a client being limited, so it is the last to go.
+        buckets = TokenBuckets(maximum=3, clock=self.clock)
+        self.assertEqual([buckets.allow(self.key, 1, 0.01) for _ in range(2)], [True, False])
+        for index in range(2):
+            self.assertTrue(buckets.allow(("login", f"198.51.100.{index}"), 1, 60))
+        self.clock.advance(2)  # the two newer buckets are full again, the oldest is not
+        self.assertTrue(buckets.allow(("login", "198.51.100.200"), 1, 60))
+        self.assertLessEqual(len(buckets._buckets), 3)
+        self.assertFalse(buckets.allow(self.key, 1, 0.01))  # still remembered
+
+    def test_allow_all_takes_from_every_bucket_or_from_none(self):
+        buckets = TokenBuckets(clock=self.clock)
+        narrow, wide = ("vin", "203.0.113.7"), ("vin", "*")
+        self.assertTrue(buckets.allow(wide, 1, 1))  # the wide bucket is now empty
+        self.assertFalse(buckets.allow_all([(narrow, 1, 1), (wide, 1, 1)]))
+        self.assertTrue(buckets.allow(narrow, 1, 1))  # the refusal took nothing from it
+        self.assertFalse(buckets.allow(narrow, 1, 1))
+
 
 class DailyBudgetTests(unittest.TestCase):
+    def test_an_hourly_pace_keeps_one_burst_from_spending_the_day(self):
+        clock = Clock(86_400 * 20_000 + 3_600 * 5)
+        budget = DailyBudget(10, per_hour=3, clock=clock)
+        self.assertEqual([budget.take() for _ in range(4)], [True] * 3 + [False])
+        budget.refund()
+        self.assertTrue(budget.take())  # a refund within the hour gives its share back
+        for _ in range(2):
+            clock.advance(3_600)
+            self.assertEqual([budget.take() for _ in range(4)], [True] * 3 + [False])
+        clock.advance(3_600)
+        self.assertEqual([budget.take() for _ in range(2)], [True, False])  # the day is spent
+        self.assertEqual(budget.used, 10)
+
     def test_allowance_is_per_utc_day(self):
         clock = Clock(86_400 * 20_000 + 86_000)  # 400 s before midnight UTC
         budget = DailyBudget(2, clock=clock)
@@ -1120,6 +1158,53 @@ class RateLimitTests(SiteAppCase):
                          429)
         self.assertEqual((await elsewhere.post("/api/site/vin", json={"vin": VIN})).status_code,
                          200)
+
+
+class RotationTests(SiteAppCase):
+    """Changing addresses must not multiply an allowance (docs/garage-site.md, "Rate limits")."""
+
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        self.settings = replace(self.settings, trusted_proxies=("10.0.0.0/8",))
+        self.clock = Clock()  # never advanced: every request below arrives at once
+        self.use(TokenBuckets(clock=self.clock))
+
+    def use(self, buckets: TokenBuckets) -> None:
+        self.serve(buckets=buckets)
+        self.proxy = self.connect(peer=("10.1.2.3", 4444))
+
+    async def decode(self, address: str) -> int:
+        response = await self.proxy.post("/api/site/vin", json={"vin": VIN},
+                                         headers={"X-Forwarded-For": address})
+        return response.status_code
+
+    async def test_the_64s_of_one_ipv6_48_share_a_wider_allowance(self):
+        burst = LIMITS["vin"][0]
+        sixty_fours = [f"2001:db8:1:{index:x}::7" for index in range(WIDE + 2)]
+        codes = [await self.decode(address) for address in sixty_fours for _ in range(burst)]
+        self.assertEqual(codes.count(200), WIDE * burst)
+        self.assertEqual(set(codes[WIDE * burst:]), {429})
+        self.assertEqual(await self.decode("2001:db8:2::7"), 200)  # another /48 is untouched
+        self.assertEqual(await self.decode("203.0.113.7"), 200)
+
+    async def test_cycling_more_64s_than_the_table_holds_still_meets_the_48(self):
+        # The /64 buckets churn through a table of 50, but every request touches the /48's,
+        # which therefore stays and keeps counting.
+        self.use(TokenBuckets(maximum=50, clock=self.clock))
+        codes = [await self.decode(f"2001:db8:1:{index:x}::7") for index in range(200)]
+        self.assertEqual(codes.count(200), WIDE * LIMITS["vin"][0])
+
+    async def test_a_flood_of_sign_ins_from_many_addresses_never_locks_out_another(self):
+        # No bucket is shared by the whole site, so addresses taking turns cannot use one up
+        # and keep staff from signing in (the LoginThrottle docstring).
+        for index in range(200):
+            await self.proxy.post(
+                "/api/auth/login", json={"username": "boss", "password": "wrong-password-1"},
+                headers={**ORIGIN, "X-Forwarded-For": f"198.51.{index // 200}.{index % 200 + 1}"})
+        response = await self.proxy.post(
+            "/api/auth/login", json={"username": "boss", "password": PASSWORD},
+            headers={**ORIGIN, "X-Forwarded-For": "203.0.113.77"})
+        self.assertEqual(response.status_code, 200, response.text)
 
 
 class HardeningTests(SiteAppCase):

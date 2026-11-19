@@ -12,7 +12,7 @@
 
 import { h, mount } from '../dom.js';
 import { t } from '../strings.js';
-import { pageHead } from '../ui.js';
+import { pageHead, revealCurrentTab } from '../ui.js';
 import * as ads from './facebook-ads.js';
 import * as chats from './facebook-chats.js';
 import * as comments from './facebook-comments.js';
@@ -37,6 +37,7 @@ export function mountView(root, ctx, params) {
       class: 'subtabs__tab', href: `/admin/facebook/${name}`, dataset: { link: '' },
       'aria-current': name === tab ? 'page' : null,
     }, t(`fb.tab.${name}`))));
+    revealCurrentTab(tabs);
   }
 
   function show(next) {

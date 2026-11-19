@@ -219,6 +219,22 @@ export function segmented({ label, options, value, onChange, name = uid('seg') }
 
 // -- page furniture --------------------------------------------------------------------
 
+/**
+ * A phone shows only the first few sub-tabs of a sideways-scrolling strip: scroll the strip
+ * (never the page) so the current tab sits in the middle of it.
+ */
+export function revealCurrentTab(strip) {
+  const current = strip.querySelector('[aria-current="page"]');
+  if (!current || strip.scrollWidth <= strip.clientWidth) {
+    return;
+  }
+  const box = strip.getBoundingClientRect();
+  const tab = current.getBoundingClientRect();
+  if (tab.left < box.left || tab.right > box.right) {
+    strip.scrollLeft += tab.left - box.left - (box.width - tab.width) / 2;
+  }
+}
+
 export function pageHead(title, ...actions) {
   return h('header', { class: 'page-head' },
     h('h1', { class: 'page-head__title', tabindex: '-1', text: title }),
@@ -370,6 +386,17 @@ export function openDialog({ title, build, wide, opener: trigger, fallback, keep
     let result = null;
     let locked = false;
     const dialog = h('dialog', { class: ['dialog', wide && 'dialog--wide'], 'aria-labelledby': titleId });
+    const viewport = window.visualViewport;
+    // Mobile keyboards shrink and slide the visual viewport without changing 100dvh.
+    // Keep the whole dialog scrollable inside that area; release placement while zoomed.
+    const fit = () => {
+      const phone = window.matchMedia('(max-width: 1023.98px)').matches;
+      const place = phone && viewport && Math.abs(viewport.scale - 1) < 0.01;
+      dialog.style.maxHeight = place ? `${Math.max(0, viewport.height - 32)}px` : '';
+      dialog.style.top = place ? `${viewport.offsetTop}px` : '';
+      dialog.style.bottom = place
+        ? `${Math.max(0, window.innerHeight - viewport.offsetTop - viewport.height)}px` : '';
+    };
     const close = (value = null) => {
       result = value;
       dialog.close();
@@ -397,6 +424,9 @@ export function openDialog({ title, build, wide, opener: trigger, fallback, keep
       }
     });
     dialog.addEventListener('close', () => {
+      viewport?.removeEventListener('resize', fit);
+      viewport?.removeEventListener('scroll', fit);
+      window.removeEventListener('resize', fit);
       dialog.remove();
       // Back to the control that opened it; if a redraw removed that control, to the
       // caller's stand-in, and failing that to the page heading. Never to nowhere.
@@ -409,6 +439,10 @@ export function openDialog({ title, build, wide, opener: trigger, fallback, keep
     });
     document.body.appendChild(dialog);
     dialog.showModal();
+    viewport?.addEventListener('resize', fit);
+    viewport?.addEventListener('scroll', fit);
+    window.addEventListener('resize', fit);
+    fit();
   });
 }
 

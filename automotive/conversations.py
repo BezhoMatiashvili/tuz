@@ -67,8 +67,12 @@ class ConversationStore:
     def __init__(self, chat_service: Any, search_service: Any, *,
                  ttl_seconds: float = 1800, turn_seconds: float = 30,
                  maximum: int = 20, clock: Any = time.monotonic,
-                 chat_log: Any = None, audience: str = "staff") -> None:
+                 chat_log: Any = None, audience: str = "staff", live: Any = None) -> None:
         self.chat_log = chat_log
+        # The Live chats recorder (``live_web.LiveRecorder``) of the website's visitors: what
+        # they and the bot say, the alarms of a turn, and staff's switch for one visitor.
+        # Every call to it is best-effort; None for every other conversation.
+        self.live = live
         # Who reads the replies. The assistant engine gives a "public" conversation no
         # stock numbers of the shop.
         self.audience = audience
@@ -380,6 +384,21 @@ class ConversationStore:
     def _submit_assistant(self, identifier: str, safe_message: str, incoming_vin: str | None,
                           vehicle: dict | None, language: str, choice: int | None,
                           typed_vin: bool = False) -> dict:
+        """A visitor's message for the assistant engine. When staff have switched the assistant
+        off for this visitor (Live chats), the turn is a fixed message and no model is called;
+        otherwise the turn starts as ``_start_assistant_turn`` says, and the message is shown to
+        staff the moment it is accepted."""
+        canned = self._live_muted(identifier, language)
+        if canned is not None:
+            return self._canned_turn(identifier, safe_message, language, canned)
+        started = self._start_assistant_turn(identifier, safe_message, incoming_vin, vehicle,
+                                             language, choice, typed_vin)
+        self._live_customer(identifier, safe_message, started.get("language") or language)
+        return started
+
+    def _start_assistant_turn(self, identifier: str, safe_message: str,
+                              incoming_vin: str | None, vehicle: dict | None, language: str,
+                              choice: int | None, typed_vin: bool = False) -> dict:
         """Start a turn of the assistant engine: the same VIN handling, superseding and
         turn bookkeeping as above, and nothing that reads the message. The model tells
         small talk from an answer, names the car and the part and sets the language.
@@ -595,10 +614,94 @@ class ConversationStore:
             with self._lock:
                 self._outstanding -= 1
                 # Snapshot under the lock; the write itself is queued outside it.
-                logged = copy.deepcopy(turn["payload"]) if self.chat_log else None
+                logged = (copy.deepcopy(turn["payload"])
+                          if self.chat_log or self.live else None)
                 status = turn["status"] if turn["status"] != "RUNNING" else "CANCELLED"
             if logged is not None:
-                self._log_turn(identifier, turn, message, vin, status, logged)
+                if self.chat_log:
+                    self._log_turn(identifier, turn, message, vin, status, logged)
+                if self.live and status != "CANCELLED":
+                    self._live_turn(identifier, turn["language"], message, logged)
+
+    # -- Live chats (the website's visitors; ``live`` is None everywhere else) -----------------
+
+    def _live_muted(self, identifier: str, language: str) -> str | None:
+        """The fixed message a visitor reads while staff have the assistant switched off for
+        them, else None. The recorder answers from a short cache and fails open."""
+        if self.live is None:
+            return None
+        try:
+            return self.live.muted_reply(identifier, self._known_language(identifier, language))
+        except Exception:
+            LOGGER.debug("live_muted_check_skipped")
+            return None
+
+    def _known_language(self, identifier: str, language: str) -> str:
+        """The language a reply to this visitor is in: the one asked for, else the one their
+        conversation's last answer used (the widget always asks for 'auto'), else Georgian."""
+        if language in {"ka", "en"}:
+            return language
+        with self._lock:
+            return self._conversation(identifier).get("language") or "ka"
+
+    def _live_customer(self, identifier: str, message: str, language: str) -> None:
+        if self.live is None:
+            return
+        try:
+            self.live.customer(identifier, message, language)
+        except Exception:
+            LOGGER.debug("live_customer_skipped")
+
+    def _live_turn(self, identifier: str, language: str, message: str, payload: dict) -> None:
+        try:
+            self.live.turn(identifier, message, payload, language)
+        except Exception:
+            LOGGER.debug("live_turn_skipped")
+
+    def _canned_turn(self, identifier: str, message: str, language: str, answer: str) -> dict:
+        """A turn that is finished the moment it starts: no model is called, the visitor reads
+        ``answer``. It is read through ``get`` like any turn. The message goes into the
+        conversation's history unanswered, as a message that replaced a running turn does, so
+        the assistant reads it if staff switch it on again. Not counted as an engine turn
+        (``canned``: the budgets give it back)."""
+        with self._lock:
+            conversation = self._conversation(identifier)
+            if language not in {"ka", "en"}:
+                language = conversation.get("language") or "ka"
+            conversation["language"] = language
+            running = [t for t in conversation["turns"].values() if t["status"] == "RUNNING"]
+            for previous in running:
+                # A turn this message overtakes: it can no longer publish, and its question stays
+                # in the history unanswered, as ``_start_assistant_turn`` leaves it, so the
+                # assistant reads both if it is switched on again.
+                previous["cancel"].set()
+                if previous.get("message"):
+                    conversation["history"].append({"question": previous["message"],
+                                                    "answer": "", "shown": []})
+            if running:
+                conversation["turns"].clear()
+            conversation["history"].append({"question": message[:4000], "answer": "",
+                                            "shown": []})
+            turn_id = secrets.token_urlsafe(24)
+            while len(conversation["turns"]) >= 12:
+                conversation["turns"].pop(next(iter(conversation["turns"])))
+            conversation["turns"][turn_id] = {
+                "status": "COMPLETE", "cancel": Event(), "language": language,
+                "message": message, "vehicle_revision": conversation["vehicle_revision"],
+                "started": self.clock(), "started_at": time.time(),
+                "deadline": self.clock() + self.turn_seconds,
+                "payload": {"status": "COMPLETE", "engine_status": "OK", "answer": answer,
+                            "progress": [], "cards": [], "supplier_only": [], "results": [],
+                            "warnings": [], "vehicle": dict(conversation["vehicle"]),
+                            "vehicle_revision": conversation["vehicle_revision"],
+                            "language": language, "outcome": "chat"}}
+        self._live_customer(identifier, message, language)
+        try:
+            self.live.canned(identifier, answer, language)
+        except Exception:
+            LOGGER.debug("live_canned_skipped")
+        return {"conversation_id": identifier, "turn_id": turn_id, "status": "RUNNING",
+                "language": language, "canned": True}
 
     def _log_turn(self, identifier: str, turn: dict, message: str, vin: str | None,
                   status: str, payload: dict) -> None:

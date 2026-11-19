@@ -11,6 +11,7 @@ and a dashboard. One process serves everything; what a request may reach is deci
 | `/api/site/chat/*` | public | the parts assistant through a capped facade |
 | `/login` | public, never linked | staff sign-in |
 | `/admin`, `/api/admin/*` | employee, admin | dashboard |
+| `/admin/live`, `/api/admin/live/*` | employee, admin | Live chats: customer messages of Messenger and the website chat, alarms, one customer's bot switch (below) |
 | `/admin/facebook`, `/api/admin/facebook/*` | admin | Facebook: the Messenger bot's switches, the page connection, chats, comments, page stats and ads ([garage-messenger.md](garage-messenger.md)) |
 | `/staff`, `/api/v1/*` | employee, admin | the staff workspace and its API (was `/`) |
 | `/api/v1/operator/*` | direct loopback callers | unchanged bearer-token routes |
@@ -65,6 +66,8 @@ defaults; sign-in answers `SITE_AUTH_NOT_CONFIGURED`.
 | Overview: item counts, stock by location, brands, categories, makes, prices, sync health | yes | yes |
 | Stock value, inferred sales and purchases, best sellers, chat volume | no | yes |
 | Inventory lookup (code, price, store and warehouse quantities) | yes | yes |
+| Live chats: customer messages, alarms, one customer's bot switch | yes | yes |
+| Facebook section: the connection, the switches for everyone, the admin-account flag, deleting a customer's data, costs | no | yes |
 | Staff workspace `/staff` and `/api/v1/*` | yes | yes |
 | Texts, services, gallery | no | yes |
 | Accounts, audit log | no | yes |
@@ -76,6 +79,73 @@ API would refuse anyway.
 An employee does see each item's price and quantities, because counter work needs them,
 so they could add up a stock value by hand. What the role withholds is the ready-made
 money reports, not the price list.
+
+## Live chats and alarms
+
+Dashboard > **Live chats** (`/admin/live`) is for whoever is at the counter, employee or admin.
+Code: `site_live.py` (routes), `live_store.py` (SQL), `live_alerts.py` (what a turn means),
+`live_web.py` (the website chat's recorder), migration `0015_live_chats`.
+
+- **Messages in real time.** What Messenger customers and website visitors wrote, with what the
+  bot answered. The page asks `GET /api/admin/live/pulse` every 3 seconds (10 while its tab is
+  hidden), so a message shows within about 3 seconds. Messenger text is read from the Messenger
+  tables (`garage.messenger_*`); the website chat is written by `LiveRecorder` into
+  `garage.live_web_chats` / `live_web_messages` and kept as long as the website chat log (30
+  days). A website visitor is named by `sha256(conversation id)[:32]`, the key the chat log
+  already uses; the conversation id itself is a bearer secret and is never stored.
+- **Alarms** (`garage.live_alerts`: one open row per chat and kind; a repeat merges into it, up to
+  ten earlier notes are kept). Anyone may mark one done (who and when are stored) or reopen it.
+
+  | Alarm | Raised when |
+  |---|---|
+  | Part not found | the turn's outcome is `nothing_found`, or `sold_out` with no card that is not out of stock, or the model lists parts it could not offer in an answer that offered others (`finish.staff.missing`: an oil change with the oil found and the filter not) |
+  | Wants to visit / wants to book service | the model sets `finish.staff.intent` to `visit` or `service`; it asks once for a phone number, and the number the customer types is added to the same alarm and sounds it again |
+  | Bot needs a human | the model chose outcome `handoff`; a website turn ended failed or timed out; a phone number arrived with nothing open |
+  | Stuck (Messenger) | the chat's existing `needs_attention` flag, with its reason; an employee can clear it |
+  | Waiting (Messenger) | the bot is off **for that chat**, it is not the owner's own chat, and the newest customer message is later than the last bot or shop reply |
+
+  The model decides what a customer means (`finish.outcome`); this code only reads what the
+  engine already validated and checks it against the cards that were actually offered. While the
+  global Messenger switch is off the page shows a banner instead of counting every chat as waiting.
+- **Bot off for one customer**, employee or admin (`PUT /api/admin/live/chats/{key}/bot`). A
+  Messenger chat uses its existing per-chat switch, which the worker checks before every send
+  (audited as `messenger.chat_off`). A website visitor gets a new flag, which the recorder's
+  writer thread reads every 3 seconds into memory (a switch takes effect within about 3 seconds,
+  and a visitor's message never waits for the database): while it is off the visitor reads a
+  fixed "the automatic assistant is switched off, please contact the shop" message with the
+  shop's phone, no model is called, the day's model budget is given back (the address keeps the
+  message on its own daily count) and the message is audited as `live.web_chat_off`. Staff
+  answer Messenger customers in the Facebook Page inbox as before; there is no way to answer a
+  website visitor from the dashboard. Marking an alarm done or reopening it is audited too
+  (`live.alert_done`, `live.alert_open`); the owner's own chat is never listed, switched or
+  cleared here.
+- **On every dashboard page.** The nav badge, the tab title `(N)` and a chime (WebAudio, no sound
+  files) work wherever staff are; a browser lets a page play sound only after one click, so a
+  notice says so until then, and each person can mute the sound in their own browser. An open
+  alarm repeats quietly every minute. If the poll cannot reach the server the page says it is
+  offline: a silent failure would silence the alarms.
+- **Setup.** Migration 0015 comes with `uv run python -m warehouse_sync --migrate`
+  (`messenger_setup --setup` applies only the Messenger migrations, on purpose). Restart the
+  Messenger worker and the site afterwards. Until the migration is applied every route answers
+  `LIVE_NOT_SET_UP`, the page says so, and the worker and the website chat record nothing and
+  work as before; "Delete data" and the daily purge check that the table exists.
+- **What it shows and keeps.** An alarm holds at most the customer's own words (200 characters),
+  a short note the model wrote for the staff and a phone number the customer typed. A Messenger
+  customer's alarms go with "Delete data" (which fails, rather than skip them, when the login may
+  not delete from `garage.live_alerts`) and after "Keep bot records for"; the website's after
+  30 days. The website chats and messages themselves (`garage.live_web_*`) are kept for good. Both are counted from when the alarm was raised: closing or merging into one never
+  extends it. The routes return no cost, token, conversation id or admin flag; the rest of the
+  Facebook section stays admin only, and the feed never reads further back than 400 messages.
+  A new website alarm needs room: an address may cause 5 new "part not found" / failed-turn alarms
+  an hour (20 visit, service, handoff or phone alarms), and the board holds 100 of the first
+  group and 300 of the second open. Only creating an alarm counts: a repeat of an open alarm and
+  a phone number added to one are never refused, and a visitor whose bot answers again has their
+  open "failed" alarm closed by the system.
+- **Limits.** Comment replies on the Facebook page raise no alarm. The website recorder writes on
+  a background thread and drops a record rather than slow a visitor down; when the database
+  cannot be read the last set of muted visitors stays in place. A muted visitor who starts a new
+  conversation is answered again (the switch belongs to the conversation, which a visitor's
+  browser forgets after 10 minutes idle).
 
 ## What a visitor can and cannot see
 
@@ -187,6 +257,10 @@ text. They are not gallery photos and do not change when the gallery does.
   look-ups run at once, and wrong cookies are limited to 30 at once and 2 a second per
   address and 10 a second for the whole site. A cookie that turns out to be real is never
   charged, and one address's wrong cookies never hold back a session that is signed in.
+  The Live chats poll counts as activity, so a dashboard tab left open keeps its session
+  until the 7-day absolute limit; the next poll after that gets 401, the browser goes to the
+  sign-in form and the alarms stop until someone signs in. That is accepted: a screen meant
+  to raise alarms should stay signed in, and the absolute limit still ends it.
 - **CSRF:** unsafe requests to `/api/admin/*`, `/api/auth/*` and, with the staff login on,
   `/api/v1/*` must carry an allow-listed `Origin`; admin and auth requests also need the
   `X-CSRF-Token` header, an HMAC of the session token.
@@ -198,13 +272,29 @@ text. They are not gallery photos and do not change when the gallery does.
   then keep everyone there out with two wrong tries a minute. What remains: someone at the
   same address who knows a username can slow that account's sign-in from that address.
   Guessing spread over many addresses is bounded by the two hashing slots (about ten
-  checks a second for the whole site), so staff passwords should be long. Failed sign-ins
+  checks a second for the whole site, measured 188 ms each on 2026-11-19: some 900,000 a
+  day), so staff passwords should be long. An IPv6 client's /64s share their /48's
+  allowance (see Rate limits), so one /48 no longer counts as 65,536 addresses. On
+  2026-11-19 the owner, asked, declined further sign-in hardening (a lock for unknown
+  browsers, a second factor, a common-password list); a site-wide sign-in limit was
+  tried and dropped, because six addresses could empty it and keep staff out. Failed sign-ins
   are written to the audit log at most once per address a minute and ten times a minute in
   all; the rest are counted and written as one row a minute, so the log shows how much
   guessing there was without growing freely. The audit log is append-only for the site;
   pruning old rows is a task for the database owner. Recovery is `--reset-password`.
 - **Rate limits:** bounded token buckets per client address (IPv6 by /64) for pages,
-  assets, search, VIN decode, chat and sign-in. The address comes from
+  assets, search, VIN decode, chat and sign-in. In the categories that cost something
+  (`site_guard.WIDE_CATEGORIES`: sign-in, new chats, chat messages, VIN decode) an IPv6
+  client also draws on its /48, at four times one address's allowance, so changing /64
+  inside it buys nothing. There is deliberately no limit shared by the whole site: a few
+  addresses could use it up and keep everyone out. A full table forgets refilled buckets
+  first; more distinct addresses than it holds, taking turns, are still not limited per
+  address, and what they can spend is bounded by the day budgets and the hashing and turn
+  slots. The public chat's per-address day is shared by a /48 as well (twice one
+  address's), and the chat and VIN day budgets are paced: no clock hour spends more than a
+  quarter (at least ten), so one burst costs that hour's visitors, not the whole day's.
+  That slows a drain; it does not stop one: nine addresses at the chat's per-address day
+  still use up the day if they keep at it. The address comes from
   `X-Forwarded-For` only when the peer is listed in `AUTOMOTIVE_TRUSTED_PROXIES`, and the
   application refuses to start with a public origin and no trusted proxy, because every
   visitor would then share the proxy's address and one limit. The older limiter inside
@@ -244,7 +334,9 @@ text. They are not gallery photos and do not change when the gallery does.
     whole private `.env`. A takeover of the process could read the other secrets in that
     file. The separation is by database role, not by process.
   - **The rest:** the worker that answers customers has no port. The Facebook dashboard is
-    admin only, behind this application's own guard.
+    admin only, behind this application's own guard; the Live chats page is open to both roles
+    and shows staff customers' messages and phone numbers, as the privacy page says staff may
+    read the conversations.
   - **Pen-test waiver:** on 2026-11-11 the owner accepted a waiver of the release gate's
     external penetration test for this receiver, running on the laptop behind ngrok, and
     for nothing else. A production deployment of it adds `/meta/webhook`, `/privacy` and
@@ -289,6 +381,13 @@ This change makes the application deployable; it does not deploy it.
 `uv run python -m unittest discover -s tests` (`tests/test_site_*.py`; the database tests
 need `WAREHOUSE_TEST_ADMIN_DATABASE_URL`), `node tests/site_engine_timeline_test.mjs`,
 `node tests/site_chat_widget_test.mjs` (the chat widget against scripted replies),
+`node tests/admin_live_model_test.mjs` (the Live chats page's pure part; the Python side is
+`tests/test_live_*.py`, `test_site_live.py` and `test_messenger_live.py`),
+`node tests/browser/admin_responsive_walk.mjs` (every dashboard page in Chrome at nine
+screen sizes, both roles, both languages, plus saves, uploads, dialogs and chat scrolling,
+against an in-memory fixture on port 8792; it needs Playwright, see the file's header, and
+its review is [`dashboard-fullscreen-qa.md`](automotive-review/dashboard-fullscreen-qa.md);
+it still exits 1 on three older accessibility findings listed there),
 `uv run ruff check automotive tests/test_site_*.py`, `uv run bandit -q -r automotive`.
 The visual review and its screenshots are in
 [`docs/automotive-review/garage-site-qa.md`](automotive-review/garage-site-qa.md); the

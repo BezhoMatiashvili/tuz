@@ -1033,3 +1033,46 @@ A later run, without the database, of all 15 Meta, Messenger and dashboard test 
    deletion requests.
 5. Checking the OpenRouter balance.
 6. A native speaker's review of the new Georgian texts.
+
+## Live chats page (2026-11-16)
+
+A dashboard page for employees and admins ([docs/garage-site.md](docs/garage-site.md#live-chats-and-alarms)):
+customer messages of Messenger and the website chat in real time (a 3-second poll), alarms when the bot
+cannot find a part or a customer wants to visit or book service (the bot then asks once for a phone number),
+and a per-customer bot switch that employees may use. Built and verified; **nothing is committed or applied**.
+
+- **Database.** Migration `0015_live_chats`: `garage.live_alerts`, `live_web_chats`, `live_web_messages`, with
+  row-level security and grants in `garage.meta_provision()`. The worker may raise and update alarms but not
+  close them. "Delete data" and the daily purge check that the table exists.
+- **Backend.** `live_alerts.py` (pure: which alarms a turn raises, phone check), `live_store.py` (SQL),
+  `live_web.py` (the website chat's recorder: background writer, in-memory mute set, separate room for noisy and
+  valuable alarms), `site_live.py` (`/api/admin/live/*`, both roles); hooks in the Messenger worker and engine
+  adapter, `ConversationStore` (a `live` sink, a muted visitor's fixed reply), `PublicChat` and `site.py`.
+- **Engine.** `finish.staff {intent, note, phone, missing}` (required, audience `public` only). The model decides
+  what the customer means; the code checks the shape, keeps a phone only when its digits stand in the
+  customer's own messages, and keeps it out of `diagnostics`. A visit or service request makes the bot ask once
+  for a phone number. Prompt section STAFF AND CONTACT.
+- **Dashboard.** `live-watch.js` polls on every page (badge, tab title, WebAudio chime, reminder every minute,
+  offline state); `views/live.js` is the page. Both languages; the Georgian wording needs a native review.
+- **Verification.** About 190 new tests (store on a real throwaway PostgreSQL under the real roles, router with
+  the real guard, worker hook, recorder, engine with a scripted model, 17 node tests of the model module). The
+  whole suite: 2105 tests, 3 failures, all in `test_automotive_database` and present on a clean HEAD. A real-database
+  browser run in headless Chrome passed 32 of 32 checks (both roles, real writes and audit rows, sound path,
+  tel: link, mute, stuck chats, no CSP violations). An independent security review and a correctness review
+  found no critical issue. Fixed from them: admission control that never drops a visit, a repeat or a phone number
+  (separate room for noisy and valuable alarms, spent only on creation), alarms counted for retention from when
+  they were raised, a deletion and a purge that fail loudly instead of skipping alarms, the mute check taken off
+  the visitor's request path, an `items` size cap, hidden format characters stripped, audit rows for closing
+  alarms, a stricter phone check (no cut-outs of longer numbers, any separator, a rejected number no longer stops
+  the bot from asking again), the owner's own chat raising no alarm, a muted visitor spoken to in their language,
+  a muted message overtaking a running turn, the worker's grant narrowed so it cannot close alarms.
+- **Known gaps** (reviewers' low findings, left on purpose): a Messenger turn's alarms are written in separate
+  transactions, not one; the recorder writes `close_failed` on every answered turn; the website mirror stores the
+  engine's answer, not the exact sanitised text the widget shows; the `detail=1` pulse uses several connections,
+  so the badge can disagree with the lists for a moment; the sound is only ever tested through a spy.
+- **Not done.** Migration 0015 is not applied to the developer database. No live-model run of the new engine
+  signals (it needs spend approval). The privacy wording is a proposal for the owner: the Messenger privacy page
+  should name the phone number and that staff read chats, and the website chat widget should say staff may read
+  the conversation for 30 days. Staff cannot answer a website visitor from the dashboard. Comment replies on the
+  Facebook page raise no alarm. The sound was never heard, only its tones checked, and hidden-tab timer
+  throttling was not measured.

@@ -82,7 +82,7 @@ export function mountView(root, ctx) {
     const signOut = button(t('nav.sign_out'), { iconName: 'signout', onClick: () => ctx.signOut(signOut) });
     mount(root,
       pageHead(t('account.title')),
-      h('div', { class: 'stack stack--narrow' },
+      h('div', { class: 'grid grid--2 settings-grid' },
         card({ 'aria-label': t('account.signed_in') },
           h('h2', { class: 'card__title', text: t('account.signed_in') }),
           h('dl', { class: 'facts' },

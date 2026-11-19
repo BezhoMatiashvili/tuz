@@ -141,6 +141,20 @@ def ip_key(address: str | None) -> str:
     return str(parsed)
 
 
+def wide_key(address: str | None) -> str | None:
+    """The /48 an IPv6 client lies in, from its address or its ``ip_key``; None for IPv4,
+    IPv4-mapped and unreadable values. One end site is normally given a whole /48, so its
+    /64s are one client changing address, not 65,536 clients."""
+    try:
+        network = ipaddress.ip_network((address or "").strip(), strict=False)
+    except ValueError:
+        return None
+    if (network.version != 6 or network.prefixlen < 48
+            or network.network_address.ipv4_mapped is not None):
+        return None
+    return str(ipaddress.ip_network(f"{network.network_address}/48", strict=False))
+
+
 def public_user(row: dict) -> dict:
     return {"user_id": row["user_id"], "username": row["username"],
             "display_name": row.get("display_name") or "", "role": row["role"]}

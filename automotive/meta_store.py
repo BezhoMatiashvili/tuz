@@ -62,9 +62,9 @@ RUN_STATUSES = frozenset({"ok", "error", "skipped"})
 THREAD_FILTERS = {"all": sql.SQL("TRUE"), "attention": sql.SQL("t.needs_attention"),
                   "off": sql.SQL("NOT t.bot_enabled"), "admin": sql.SQL("t.is_admin"),
                   "ads": sql.SQL("t.source = 'ads'")}
-# Editable through update_settings; the switches have their own audited methods. Keep chats for
-# stops at the 365 days the public privacy page states (meta_receiver.SHOP); the column's own
-# CHECK allows 3650.
+# Editable through update_settings; the switches have their own audited methods.
+# retention_days governs reply attempts, job runs and requests and the alarms, never the
+# messages (kept for good). The dashboard accepts 30-365; the column's own CHECK allows 3650.
 SETTINGS_FIELDS = {"max_reply_age_minutes": (int, 5, 1440), "daily_turn_limit": (int, 0, 5000),
                    "customer_daily_turn_limit": (int, 0, 500),
                    "comment_public_reply": (str, 0, 300), "fallback_ka": (str, 0, 500),
@@ -233,6 +233,26 @@ def _forgetting(conn: Any) -> bool:
                        "has_table_privilege('garage.meta_comments', 'DELETE') AS allowed"
                        ).fetchone()
     return bool(row["ready"] and row["allowed"])
+
+
+class AlertsNotDeletable(RuntimeError):
+    """Migration 0015 is applied but this login may not delete alarms (provisioning was not
+    rerun). A deletion that skipped them would claim a customer's phone number was erased."""
+
+
+def _alerts_deletable(conn: Any) -> bool:
+    """Whether migration 0015 is in place, so alarms are deleted with a customer's data and by
+    retention. False before it is (nothing fails). Raises ``AlertsNotDeletable`` when the table
+    exists and this login may not delete from it: failing is better than a silent skip (CASE:
+    ``has_table_privilege`` raises for a table that does not exist, and AND does not promise to
+    stop early)."""
+    row = conn.execute(
+        "SELECT to_regclass('garage.live_alerts') IS NOT NULL AS there, "
+        "CASE WHEN to_regclass('garage.live_alerts') IS NULL THEN FALSE "
+        "ELSE has_table_privilege('garage.live_alerts', 'DELETE') END AS allowed").fetchone()
+    if row["there"] and not row["allowed"]:
+        raise AlertsNotDeletable("this login may not delete from garage.live_alerts")
+    return bool(row["there"])
 
 
 def forgotten_since(conn: Any, subjects: Iterable[str]) -> dict[str, datetime]:
@@ -1087,11 +1107,13 @@ class MetaStore:
     def purge(self, retention_days: int | None = None) -> dict:
         """Delete what retention allows (worker login).
 
-        Webhook items after 6 days (INBOX_RETENTION_DAYS). Messages, reply attempts, job runs
-        and job requests after ``retention_days`` (default: the settings value). A chat whose
-        last activity is older than that and that has no message left goes too, with its engine
-        state. The hashed ids of forgotten customers go after FORGOTTEN_DAYS (``forgotten`` is
-        None before 0014).
+        Messages are never purged: they are kept until "Delete data" (``delete_customer``).
+        Webhook items after 6 days (INBOX_RETENTION_DAYS). Reply attempts, job runs and job
+        requests after ``retention_days`` (default: the settings value). A chat whose last
+        activity is older than that and that has no message left goes too, with its engine
+        state. Live chats alarms (0015) go after the same ``retention_days`` and are left alone
+        before that migration. The hashed ids of forgotten customers go after FORGOTTEN_DAYS
+        (``forgotten`` is None before 0014).
         """
         with self.db.transaction() as conn:
             days = retention_days
@@ -1106,9 +1128,8 @@ class MetaStore:
                     "DELETE FROM garage.meta_inbox "
                     "WHERE received_at < now() - make_interval(days => %s)",
                     (INBOX_RETENTION_DAYS,)).rowcount,
-                "messages": conn.execute(
-                    "DELETE FROM garage.messenger_messages "
-                    "WHERE sent_at < now() - make_interval(days => %s)", (days,)).rowcount,
+                # Messages are kept for good (owner's decision, 2026-11-20): no purge deletes
+                # them, so their chats stay too. Only "Delete data" erases a customer's chat.
                 "replies": conn.execute(
                     "DELETE FROM garage.messenger_replies "
                     "WHERE started_at < now() - make_interval(days => %s)", (days,)).rowcount,
@@ -1131,6 +1152,14 @@ class MetaStore:
                     "DELETE FROM garage.meta_forgotten "
                     "WHERE forgotten_at < now() - make_interval(days => %s)",
                     (FORGOTTEN_DAYS,)).rowcount
+        # Live chats alarms (0015) follow the chats' retention, counted from when they were
+        # raised (closing or merging one never extends it). In a transaction of their own: a
+        # login that may not delete them (provisioning was not rerun) fails loudly here without
+        # undoing the deletions above, which the privacy page promises.
+        with self.db.transaction() as conn:
+            if _alerts_deletable(conn):
+                conn.execute("DELETE FROM garage.live_alerts "
+                             "WHERE created_at < now() - make_interval(days => %s)", (days,))
         return counts
 
     def counts_today(self) -> dict:
@@ -1158,8 +1187,9 @@ class MetaStore:
                 "turns": self.turns_today(), "cost_usd": self.cost_today()}
 
     def delete_customer(self, psid: str, actor: Any, *, client_ip: str | None = None) -> dict:
-        """Erase one customer's data: thread, messages, engine state, reply attempts and stored
-        comments (``forget_comments``: kept out of later backfills too), in one transaction.
+        """Erase one customer's data: thread, messages, engine state, reply attempts, Live chats
+        alarms (migration 0015; they may hold a phone number) and stored comments
+        (``forget_comments``: kept out of later backfills too), in one transaction.
 
         Works with the dashboard login. ``comments`` is None before migration 0014. Webhook
         items naming the PSID are deleted too when the login may (the worker); otherwise
@@ -1175,6 +1205,9 @@ class MetaStore:
                                     (psid,)).rowcount
             threads = conn.execute("DELETE FROM garage.messenger_threads WHERE psid = %s",
                                    (psid,)).rowcount
+            if _alerts_deletable(conn):  # the alarms may carry the phone number they typed
+                conn.execute("DELETE FROM garage.live_alerts "
+                             "WHERE channel = 'messenger' AND chat_key = %s", (psid,))
             inbox = None
             if conn.execute("SELECT has_table_privilege('garage.meta_inbox', 'DELETE') "
                             "AS allowed").fetchone()["allowed"]:

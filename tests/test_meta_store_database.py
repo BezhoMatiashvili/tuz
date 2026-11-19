@@ -44,7 +44,7 @@ ADMIN = {"user_id": 7, "username": "boss"}
 PAGE_TOKEN, USER_TOKEN = "EAAfixturePageToken0001", "EAAfixtureUserToken0002"
 TABLES = ("meta_inbox", "meta_page", "meta_tokens", "messenger_threads", "messenger_messages",
           "messenger_replies", "meta_sync_runs", "meta_job_requests", "meta_comments",
-          "meta_forgotten", "audit_log")
+          "meta_forgotten", "live_alerts", "live_web_chats", "live_web_messages", "audit_log")
 FORGET_UP = (ROOT / "migrations/0014_meta_forget.up.sql").read_text(encoding="utf-8")
 FORGET_DOWN = (ROOT / "migrations/0014_meta_forget.down.sql").read_text(encoding="utf-8")
 AUTHOR, OTHER_AUTHOR = "900000000000001", "900000000000009"
@@ -560,12 +560,15 @@ class MetaStoreDatabaseTests(unittest.TestCase):
                        "WHERE trigger_key = 'm_old'", (old,))
         self.admin_sql("UPDATE garage.meta_sync_runs SET started_at = %s", (old,))
         self.admin_sql("UPDATE garage.meta_job_requests SET requested_at = %s", (old,))
-        self.assertEqual(worker.purge(), {"inbox": 1, "messages": 1, "replies": 1, "threads": 1,
-                                          "runs": 1, "job_requests": 1, "forgotten": 0})
-        self.assertEqual([row["psid"] for row in self.site.list_threads()], [OTHER_PSID])
-        self.assertEqual(worker.purge(30), {"inbox": 0, "messages": 0, "replies": 0,
-                                            "threads": 0, "runs": 0, "job_requests": 0,
-                                            "forgotten": 0})
+        self.assertEqual(worker.purge(), {"inbox": 1, "replies": 1, "threads": 0, "runs": 1,
+                                          "job_requests": 1, "forgotten": 0})
+        # Messages are kept for good, so a 400-day-old one stays, and its chat with it.
+        self.assertEqual(sorted(row["psid"] for row in self.site.list_threads()),
+                         sorted([PSID, OTHER_PSID]))
+        self.assertEqual(sorted(row[0] for row in self.admin_sql(
+            "SELECT mid FROM garage.messenger_messages")), ["m_new", "m_old"])
+        self.assertEqual(worker.purge(30), {"inbox": 0, "replies": 0, "threads": 0, "runs": 0,
+                                            "job_requests": 0, "forgotten": 0})
         with self.assertRaises(errors.InsufficientPrivilege):
             self.site.purge()
 

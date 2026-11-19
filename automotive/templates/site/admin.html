@@ -12,8 +12,9 @@
 <link rel="icon" type="image/svg+xml" href="{{ asset('admin/img/mark.svg') }}">
 <link rel="stylesheet" href="{{ asset('admin/css/admin.css') }}">
 {# One request round for the whole module graph instead of a waterfall of imports. #}
-{% for module in ("strings", "dom", "format", "api", "ui", "forms", "charts", "views/overview",
-                  "views/inventory", "views/content", "views/texts", "views/services",
+{% for module in ("strings", "dom", "format", "api", "ui", "forms", "charts", "live-model",
+                  "live-watch", "views/overview", "views/inventory", "views/live",
+                  "views/content", "views/texts", "views/services",
                   "views/gallery", "views/users", "views/audit", "views/account", "views/more",
                   "views/facebook", "views/facebook-shared", "views/facebook-status",
                   "views/facebook-connect", "views/facebook-chats", "views/facebook-activity",

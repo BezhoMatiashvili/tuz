@@ -30,7 +30,9 @@ ProtectControlGroups=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 RestrictNamespaces=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
+# No MemoryDenyWriteExecute: the uv-managed CPython has no PT_GNU_STACK header, so glibc maps
+# thread stacks executable and every new thread fails ("can't start new thread"); uvicorn's
+# worker threads serve every synchronous route. Checked on 2026-11-19 with systemd-run.
 # The chat logs and the provider cache are the only paths the process writes.
 ReadWritePaths=/opt/tuz/current/data
 

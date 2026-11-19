@@ -29,6 +29,7 @@ the internet, through an ngrok tunnel; the dashboard stays on loopback.
                                                   PostgreSQL, schema garage
                                                              │
   admin's browser ──> Garage app, 127.0.0.1:8767 ──> Dashboard → Facebook (admin only)
+  employee's or admin's browser ──────────────────> Dashboard → Live chats (both roles)
 ```
 
 | Process | Command | systemd user unit | Reachable from | Database login (role) |
@@ -63,6 +64,16 @@ the internet, through an ngrok tunnel; the dashboard stays on loopback.
   Status & switches, Connect, Chats, Comments, Page and Ads. Its API is
   `/api/admin/facebook/*` (`automotive/site_meta_admin.py` and
   `automotive/site_meta_activity.py`), for admins only.
+- **Live chats** is a second page, for employees and admins alike, at `/admin/live`
+  ([garage-site.md](garage-site.md#live-chats-and-alarms)). It shows these chats as they
+  arrive (messages are stored even while the bot is off), raises an alarm when the bot could
+  not find a part, asks for staff, or got stuck, and lets an employee switch the bot off for
+  one customer: the same per-chat switch as Chats, through a narrower route that cannot touch
+  the admin-account flag or delete anything. After each turn the worker records the alarms the
+  engine reported (`EngineResult.alerts`, `live_store.LiveStore.record_turn`), before it sends
+  the reply, so a reply that could not be delivered still alarms. Alarms are in
+  `garage.live_alerts` (migration 0015); "Delete data" removes a customer's, and the daily
+  purge removes those older than "Keep bot records for".
 
 ### Why a Meta app, when everything goes through the Graph API?
 
@@ -189,8 +200,8 @@ Suspend. Closing the lid still suspends it, even on power, unless logind is told
 
 1. **Confirm the shop facts on the two pages first.** The receiver cannot read the
    dashboard, so they are constants in `automotive/meta_receiver.py` (`SHOP`): name,
-   address, phone, the "last updated" dates, the 365-day retention and how many days a
-   deletion request may take.
+   address, phone, the "last updated" dates and how many days a deletion request may take.
+   The pages say conversations are kept until the customer asks for deletion.
 2. **Open the pages** in a browser. ngrok shows browsers a warning page first; Meta's
    servers do not get it.
    - https://glorified-stratus-budding.ngrok-free.dev/privacy (English at `/privacy/en`)
@@ -344,10 +355,10 @@ audited.
 | Daily limit per customer | 30 | AI turns per chat per day; comments do not count here. |
 | Fallback reply (ka / en) | empty | Sent when the engine fails or times out. Empty uses the built-in text, and the shop phone is added at the end. Up to 500 characters. |
 | Public reply to a comment | empty | Optional text posted under a comment after a successful private reply. Up to 300 characters. |
-| Keep chats for | 365 days | 30-365: the privacy page promises 365. See [Data](#data-retention-and-deleting-a-customers-data). |
+| Keep bot records for | 365 days | 30-365. Reply attempts, job runs, comments and alarms; messages are kept for good. See [Data](#data-retention-and-deleting-a-customers-data). |
 | Bot in this chat (Chats) | on | Turn it off to take a chat over yourself; turn it on again afterwards. It also stops private replies to that customer's comments. |
 | Admin account (Chats) | off | That Facebook account may send `#bot` commands. Mark only your own. |
-| Needs attention (Chats) | off | Set by the worker when it could not answer properly. Clear it once handled. |
+| Needs attention (Chats) | off | Set by the worker when it could not answer properly. Clear it once handled; employees see it on Live chats as a stuck chat and may clear it there. |
 
 At a daily limit, the customer gets one polite notice with the phone number per day, and
 the chat is flagged `daily_cap`. Today's turns and estimated cost are on the Status card,
@@ -402,6 +413,7 @@ on their own.
 | Two different VINs | A request for one VIN. |
 | A reply to a message more than 1 hour old (the laptop slept) | The reply starts with an apology for the delay. |
 | The engine fails or times out | One short message with the shop phone, and the chat is flagged. A callback is never promised. |
+| The customer says they want to come in, or to have work done | The model sets `finish.staff.intent` to `visit` or `service` and, once, asks for a phone number in the same reply, worded as a request. It may say the team will get in touch, never a time, a price or that a part is kept for them. Staff get an alarm at once (Live chats), and the number, when the customer types it, is added to that alarm. Someone who declines is not asked again. |
 
 ## `#bot` commands
 
@@ -616,10 +628,11 @@ server of ours.
 | Data | Where | Kept |
 |---|---|---|
 | Webhook items, as Meta sent them (they include message text) | `garage.meta_inbox` | 6 days, so at most 7 with the daily purge |
-| Messages from customers, bot and shop; reply attempts | `messenger_messages`, `messenger_replies` | Keep chats for (365 days by default) |
-| Chats: name, switches, engine state | `messenger_threads` | removed once no message is left and the chat was inactive that long |
-| Job runs and dashboard job requests | `meta_sync_runs`, `meta_job_requests` | Keep chats for |
-| Comments | `meta_comments` | Keep chats for (by the comment's own time) |
+| Messages from customers, bot and shop | `messenger_messages` | for good, until "Delete data" (owner's decision, 2026-11-20) |
+| Reply attempts | `messenger_replies` | Keep bot records for (365 days by default) |
+| Chats: name, switches, engine state | `messenger_threads` | for good while a message is left, so in practice until "Delete data" |
+| Job runs and dashboard job requests | `meta_sync_runs`, `meta_job_requests` | Keep bot records for |
+| Comments | `meta_comments` | Keep bot records for (by the comment's own time) |
 | Hashed ids of customers whose data was deleted (SHA-256 of the author or comment id, never the id) | `meta_forgotten` (migration 0014) | 31 days, past the comment backfill's 30 |
 | Page stats, posts, pictures, ad results | `meta_page_daily`, `meta_posts`, `meta_images`, `meta_ad*` | not purged; they hold the page's own content |
 | Encrypted tokens | `meta_tokens` | until Disconnect |
@@ -630,10 +643,10 @@ Messenger. Before that changed it wrote `data/messenger/chat_log.sqlite3`. The w
 deletes that file and its `-wal` and `-shm` files when it starts, and the journal shows
 `messenger_old_chat_log_removed`. It never deletes a log the app on port 8767 writes.
 
-The public pages promise 365 days, 7 days for the webhook copies and an answer to a
-deletion request within `SHOP['answer_days']` days. Keep chats for accepts at most 365
-days, the number the pages state. If `SHOP` in `automotive/meta_receiver.py` changes,
-change its dates too.
+The public pages promise that conversations are kept until the customer asks for their
+deletion, 7 days for the webhook copies and an answer to a deletion request within
+`SHOP['answer_days']` days. If `SHOP` in `automotive/meta_receiver.py` changes, change its
+dates too.
 
 **A deletion request** ("delete my data", by Messenger or by phone):
 
@@ -654,8 +667,8 @@ change its dates too.
   tab, and the dashboard cannot delete a single stored comment.
 - Webhook copies the worker has not handled yet, for example while it is stopped. When it
   starts again it stores those messages, and the chat comes back. Delete it again then.
-- The engine state of a customer who writes again before a year is over. It keeps up to 12
-  earlier exchanges, which can be older than Keep chats for. Delete data removes it.
+- The engine state of a customer who writes again. It keeps up to 12 earlier exchanges.
+  Delete data removes it, with the messages, which are otherwise kept for good.
 - The privacy page names Meta, OpenRouter and Anthropic. A VIN a customer sends is also
   decoded with NHTSA's vPIC (USA), and with `JSFILTER_ENABLED`, JS Asakashi's filter
   catalogue (Japan) receives the VIN too.
@@ -737,8 +750,8 @@ has its own login, and each login belongs to one role:
 | Role | Used by | May |
 |---|---|---|
 | `garage_webhook` | the receiver | Insert four columns of `garage.meta_inbox`, nothing else. It cannot read anything back, not even its own rows, and it has no privilege on the inbox's id sequence (0014). |
-| `garage_messenger` | the worker | Read and write the Facebook tables. Read `garage.site_sections` and `garage.services` (the shop facts). Append to `garage.audit_log`. No other staff table. |
-| `garage_site` | the dashboard | Change the switches, the connection and job requests. Read chats, comments, stats and ads. See only the inbox's bookkeeping columns, never a payload. Change only a chat's switch columns. Delete a customer's chat and comments, and record their hashed ids in `meta_forgotten` (0014). |
+| `garage_messenger` | the worker | Read and write the Facebook tables. Read `garage.site_sections` and `garage.services` (the shop facts). Append to `garage.audit_log`. Raise and update alarms in `garage.live_alerts`, never change an alarm's chat or kind (0015). No other staff table. |
+| `garage_site` | the dashboard | Change the switches, the connection and job requests. Read chats, comments, stats and ads. See only the inbox's bookkeeping columns, never a payload. Change only a chat's switch columns. Delete a customer's chat and comments, and record their hashed ids in `meta_forgotten` (0014). Read the Live chats tables, mark alarms done, switch a website visitor's bot, record the website chat and its alarms, and remove a deleted customer's alarms (0015). |
 
 `automotive_runtime`, the catalogue login the engine also uses, has no access to `garage`.
 
@@ -861,7 +874,10 @@ Dashboard API, admin only, behind the site's session, Origin and CSRF checks, al
 | `GET /ads/daily` | Spend, impressions, clicks and chats started per day |
 
 The switches, connection and chat routes are in `automotive/site_meta_admin.py`; the
-comment, statistics, post and ad routes are in `automotive/site_meta_activity.py`.
+comment, statistics, post and ad routes are in `automotive/site_meta_activity.py`. The Live
+chats routes (`/api/admin/live/*`, both roles) are in `automotive/site_live.py`.
+Migration 0015 is applied by `uv run python -m warehouse_sync --migrate`, not by
+`messenger_setup --setup`; until it is, the worker records no alarms and is otherwise unaffected.
 
 ## Verification
 

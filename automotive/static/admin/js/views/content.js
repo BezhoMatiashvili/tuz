@@ -4,7 +4,7 @@
 import { api } from '../api.js';
 import { h, icon, mount } from '../dom.js';
 import { t } from '../strings.js';
-import { pageHead } from '../ui.js';
+import { pageHead, revealCurrentTab } from '../ui.js';
 import * as gallery from './gallery.js';
 import * as services from './services.js';
 import * as texts from './texts.js';
@@ -42,6 +42,7 @@ export function mountView(root, ctx, params) {
       class: 'subtabs__tab', href: `/admin/content/${name}`, dataset: { link: '' },
       'aria-current': name === tab ? 'page' : null,
     }, t(`content.tab.${name}`))));
+    revealCurrentTab(tabs);
   }
 
   function show(next) {

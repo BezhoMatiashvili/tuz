@@ -803,7 +803,14 @@ in the code decides what the customer means, which rows fit or what to ask.
    ends the turn with one `finish` call: the reply, the rows it chose (each with a
    confidence, the words of the row it rests on, a reason and a group), a question with
    2 to 8 answer buttons when the answer changes which rows are right, next-step buttons,
-   the car as it understood it, and notes for the next turn.
+   the car as it understood it, and notes for the next turn. `finish.staff` is how it calls
+   the shop's staff (dashboard > Live chats, [garage-site.md](garage-site.md#live-chats-and-alarms)):
+   `intent` (`visit`, `service` or `none`), a one-line `note`, the customer's `phone` and the
+   parts it could not offer (`missing`). Only a visitor's conversation (audience `public`) can
+   use it; the staff chat always sends none. The code accepts a phone number only when its
+   digits stand in the customer's own messages, keeps it out of `diagnostics` (the website
+   log), and the model is told next turn whether one was asked for (`asked`) or given
+   (`on_file`) so it asks once.
 5. **Code keeps facts honest.** Cards are built from database rows by id with stock read
    again: name, price and stock are never model text. A row the model names must be one
    it was shown and still be in the catalogue, the quoted words must be in the row,

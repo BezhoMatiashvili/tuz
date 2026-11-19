@@ -224,6 +224,20 @@ class CheckServingTests(unittest.TestCase):
             check_serving(replace(public, staff_auth=True))
         check_serving(replace(public, staff_auth=True, trusted_proxies=(PROXY,)))
 
+    def test_a_public_host_serves_visitors_only_on_the_engine_that_keeps_audiences_apart(self):
+        # Only the assistant engine gives a visitor the public tools; the other two engines
+        # ignore the audience.
+        public = replace(Settings(), allowed_hosts=("localhost", "127.0.0.1",
+                                                    "garage.example.ge"),
+                         staff_auth=True, trusted_proxies=(PROXY,))
+        for engine in ("orchestrated", "scripted"):
+            with self.subTest(engine=engine):
+                with self.assertRaisesRegex(ValueError, "AUTOMOTIVE_CHAT_ENGINE"):
+                    check_serving(replace(public, chat_engine=engine))
+        check_serving(replace(public, chat_engine="assistant"))
+        check_serving(replace(public, chat_engine=""))
+        check_serving(replace(Settings(), chat_engine="scripted"))  # loopback only
+
     def test_loopback_only_may_run_without_it(self):
         check_serving(Settings())
         check_serving(replace(Settings(), allowed_hosts=("localhost", "127.0.0.1", "::1")))

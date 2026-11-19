@@ -118,8 +118,8 @@ class _Strict(BaseModel):
 
 class SettingsChange(_Strict):
     """PUT /settings. The bounds are migration 0013's CHECK constraints, except
-    ``retention_days``: at most the 365 days the public privacy page promises
-    (``meta_receiver.SHOP``)."""
+    ``retention_days`` (30-365): how long reply attempts, job runs and alarms are kept;
+    messages are kept for good."""
 
     version: int = Field(ge=1, le=MAX_VERSION)
     bot_enabled: bool | None = None

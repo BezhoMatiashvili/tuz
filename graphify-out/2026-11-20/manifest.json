@@ -1,0 +1,3038 @@
+{
+  ".github/dependabot.yml": {
+    "mtime": 1794060319.8531356,
+    "seen": 1794231551.3186395,
+    "ast_hash": "28376af4c330d9293bc9bfbf41c97c51",
+    "semantic_hash": "28376af4c330d9293bc9bfbf41c97c51"
+  },
+  ".github/workflows/ci.yml": {
+    "mtime": 1794152289.2825918,
+    "seen": 1794231551.3186493,
+    "ast_hash": "4e64d9de03bf7796b92f2cf9ceba8b20",
+    "semantic_hash": "4e64d9de03bf7796b92f2cf9ceba8b20"
+  },
+  ".github/workflows/deploy-production.yml": {
+    "mtime": 1794060271.8728447,
+    "seen": 1794231551.3186533,
+    "ast_hash": "633cc26e371f7aba9f2119e0245f0290",
+    "semantic_hash": "633cc26e371f7aba9f2119e0245f0290"
+  },
+  "automotive/__init__.py": {
+    "mtime": 1794151568.8027132,
+    "seen": 1794231551.3186557,
+    "ast_hash": "672f40edb05adc4ee942aa3ab5b9cce3",
+    "semantic_hash": "672f40edb05adc4ee942aa3ab5b9cce3"
+  },
+  "automotive/__main__.py": {
+    "mtime": 1794392812.1700003,
+    "seen": 1794396760.5235958,
+    "ast_hash": "e5d8cc7fab59df8eb97a85427e01ce52",
+    "semantic_hash": ""
+  },
+  "automotive/api.py": {
+    "mtime": 1794810548.401587,
+    "seen": 1794829962.534229,
+    "ast_hash": "121d7dc78bf75cefccd432e25fd0e90d",
+    "semantic_hash": ""
+  },
+  "automotive/catalog_api.py": {
+    "mtime": 1794238895.49948,
+    "seen": 1794240120.4821167,
+    "ast_hash": "d8c4798b2574a91458f67dc4abe1276b",
+    "semantic_hash": ""
+  },
+  "automotive/categories.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.534246,
+    "ast_hash": "cbaf7f323a4897dd495fb8c2aa3cd3be",
+    "semantic_hash": ""
+  },
+  "automotive/chat.py": {
+    "mtime": 1794337467.060373,
+    "seen": 1794380112.3551111,
+    "ast_hash": "1135519be5d2f9ffe38becb37c745438",
+    "semantic_hash": ""
+  },
+  "automotive/chat_log.py": {
+    "mtime": 1794224480.863039,
+    "seen": 1794231551.318665,
+    "ast_hash": "60b7cddb8448e2d5ebf229e8541b0a38",
+    "semantic_hash": "60b7cddb8448e2d5ebf229e8541b0a38"
+  },
+  "automotive/codes.py": {
+    "mtime": 1794810548.416587,
+    "seen": 1794829962.5342517,
+    "ast_hash": "8ed7b9c947003d2d435e0b1e3a6fc47d",
+    "semantic_hash": ""
+  },
+  "automotive/config.py": {
+    "mtime": 1795117759.742548,
+    "seen": 1795118062.9668465,
+    "ast_hash": "924da0f42f51652d159aee2199e7a112",
+    "semantic_hash": ""
+  },
+  "automotive/conversation_eval.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5342534,
+    "ast_hash": "84c93fb5602eea79b8b0b6e962b5b439",
+    "semantic_hash": ""
+  },
+  "automotive/conversational.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5342543,
+    "ast_hash": "7697443fb96c5e63acfa56c48b79972c",
+    "semantic_hash": ""
+  },
+  "automotive/conversations.py": {
+    "mtime": 1794841444.4961114,
+    "seen": 1794841485.453023,
+    "ast_hash": "833056cf3eb7baf1ca8e546cd438f72d",
+    "semantic_hash": ""
+  },
+  "automotive/dialogue.py": {
+    "mtime": 1794243622.813687,
+    "seen": 1794244076.8476768,
+    "ast_hash": "a204b7562b0108fed864b069e499679a",
+    "semantic_hash": ""
+  },
+  "automotive/engine_match.py": {
+    "mtime": 1794237147.9122686,
+    "seen": 1794237178.394231,
+    "ast_hash": "493217f0c0c9284e42f369df56e7f15c",
+    "semantic_hash": ""
+  },
+  "automotive/evaluate.py": {
+    "mtime": 1794222933.2374177,
+    "seen": 1794231551.3186772,
+    "ast_hash": "14d4fe54ccecd21644ba3f2ae71f5676",
+    "semantic_hash": "14d4fe54ccecd21644ba3f2ae71f5676"
+  },
+  "automotive/evidence.py": {
+    "mtime": 1794238907.0445397,
+    "seen": 1794240120.4821494,
+    "ast_hash": "136a6e204766554282de5d93d166dee7",
+    "semantic_hash": ""
+  },
+  "automotive/fuchs.py": {
+    "mtime": 1794236916.0983098,
+    "seen": 1794237178.3942366,
+    "ast_hash": "7b48552ec6f390259fa42931398c3fc1",
+    "semantic_hash": ""
+  },
+  "automotive/grounding.py": {
+    "mtime": 1794229545.460483,
+    "seen": 1794231551.3186812,
+    "ast_hash": "44c8caa5115bcab4149a0f76c231f52a",
+    "semantic_hash": "44c8caa5115bcab4149a0f76c231f52a"
+  },
+  "automotive/importer.py": {
+    "mtime": 1794152030.8557076,
+    "seen": 1794231551.3186827,
+    "ast_hash": "397fd5970ba9de84c2cf4b6b6db4df7f",
+    "semantic_hash": "397fd5970ba9de84c2cf4b6b6db4df7f"
+  },
+  "automotive/jsfilter.py": {
+    "mtime": 1794216323.0910373,
+    "seen": 1794231551.3186843,
+    "ast_hash": "58e77afa5ebcc38e424e85733f022537",
+    "semantic_hash": "58e77afa5ebcc38e424e85733f022537"
+  },
+  "automotive/local_setup.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.534271,
+    "ast_hash": "2f118930ed54a6f4977f925dcbc1b644",
+    "semantic_hash": ""
+  },
+  "automotive/motorium.py": {
+    "mtime": 1794229248.4121385,
+    "seen": 1794231551.318687,
+    "ast_hash": "bdba357700243a428fdbd1af2485b65d",
+    "semantic_hash": "bdba357700243a428fdbd1af2485b65d"
+  },
+  "automotive/name_match.py": {
+    "mtime": 1794220568.3699775,
+    "seen": 1794231551.3186882,
+    "ast_hash": "ad8ed1f4c47871c0c9a307076e21af1d",
+    "semantic_hash": "ad8ed1f4c47871c0c9a307076e21af1d"
+  },
+  "automotive/oats.py": {
+    "mtime": 1794236897.8839679,
+    "seen": 1794237178.3942504,
+    "ast_hash": "417e866334aed8cd304872fce4641a75",
+    "semantic_hash": ""
+  },
+  "automotive/oil_match.py": {
+    "mtime": 1794222809.4110627,
+    "seen": 1794231551.318691,
+    "ast_hash": "8a9b1a187e4d844749f2c4aaf7ac1720",
+    "semantic_hash": "8a9b1a187e4d844749f2c4aaf7ac1720"
+  },
+  "automotive/pakelo.py": {
+    "mtime": 1794216397.2018957,
+    "seen": 1794231551.3186924,
+    "ast_hash": "0a99362d18b2437a667488928d4f89ee",
+    "semantic_hash": "0a99362d18b2437a667488928d4f89ee"
+  },
+  "automotive/public_http.py": {
+    "mtime": 1794238895.45748,
+    "seen": 1794240120.4821932,
+    "ast_hash": "264649be9f7029654efd935ed639267a",
+    "semantic_hash": ""
+  },
+  "automotive/recommendations.py": {
+    "mtime": 1794208998.9749298,
+    "seen": 1794231551.318695,
+    "ast_hash": "3b056d5e80693ee7965645049714ab23",
+    "semantic_hash": "3b056d5e80693ee7965645049714ab23"
+  },
+  "automotive/replies.py": {
+    "mtime": 1794236982.3414989,
+    "seen": 1794237178.39426,
+    "ast_hash": "273453c87547efcbef54a2faedb9529e",
+    "semantic_hash": ""
+  },
+  "automotive/repository.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5343003,
+    "ast_hash": "aaef1b4ab00979e33c22743ce5064744",
+    "semantic_hash": ""
+  },
+  "automotive/rules.py": {
+    "mtime": 1794254182.8518467,
+    "seen": 1794254445.6566672,
+    "ast_hash": "863d77f01f12b578a8987d379df58897",
+    "semantic_hash": ""
+  },
+  "automotive/shell_oil.py": {
+    "mtime": 1794215954.985317,
+    "seen": 1794231551.3187003,
+    "ast_hash": "22af07d1ee95e37fd63f16c018bef5a0",
+    "semantic_hash": "22af07d1ee95e37fd63f16c018bef5a0"
+  },
+  "automotive/static/app.js": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5343463,
+    "ast_hash": "409d1a1748f50c244c2c7db6ad7c6305",
+    "semantic_hash": ""
+  },
+  "automotive/stock.py": {
+    "mtime": 1794254184.572673,
+    "seen": 1794254445.6566722,
+    "ast_hash": "5eac334ca1b7034935ea428a4277134a",
+    "semantic_hash": ""
+  },
+  "automotive/vehicle_inventory.py": {
+    "mtime": 1794210961.9826353,
+    "seen": 1794231551.3187041,
+    "ast_hash": "513aa16bc508cd76255f138741ff3054",
+    "semantic_hash": "513aa16bc508cd76255f138741ff3054"
+  },
+  "automotive/vin.py": {
+    "mtime": 1794229249.6751442,
+    "seen": 1794231551.3187056,
+    "ast_hash": "10e78d835823ad0087c96ea89352ae02",
+    "semantic_hash": "10e78d835823ad0087c96ea89352ae02"
+  },
+  "automotive/vin_search.py": {
+    "mtime": 1794239028.3381662,
+    "seen": 1794240120.4822223,
+    "ast_hash": "0bb56c1dd90d26e60756134c6e371418",
+    "semantic_hash": ""
+  },
+  "automotive/worker.py": {
+    "mtime": 1794222212.7271142,
+    "seen": 1794231551.3187084,
+    "ast_hash": "3145c09005de8525f7fb1496a2bd238d",
+    "semantic_hash": "3145c09005de8525f7fb1496a2bd238d"
+  },
+  "compose.yaml": {
+    "mtime": 1794141349.7391238,
+    "seen": 1794231551.3187099,
+    "ast_hash": "17db125893044ae450b6ee93b8ed7af3",
+    "semantic_hash": "17db125893044ae450b6ee93b8ed7af3"
+  },
+  "db_ui/__init__.py": {
+    "mtime": 1794141035.9588292,
+    "seen": 1794231551.318711,
+    "ast_hash": "a4941dcce5e30520ceaa8b1c87784900",
+    "semantic_hash": "a4941dcce5e30520ceaa8b1c87784900"
+  },
+  "db_ui/__main__.py": {
+    "mtime": 1794149458.2302535,
+    "seen": 1794231551.318714,
+    "ast_hash": "446c1adc138fd0ed7e03d0a29dcffc57",
+    "semantic_hash": "446c1adc138fd0ed7e03d0a29dcffc57"
+  },
+  "db_ui/analytics.py": {
+    "mtime": 1794146484.3046997,
+    "seen": 1794231551.318715,
+    "ast_hash": "d4c415b8595e4a1561cf2e26febec697",
+    "semantic_hash": "d4c415b8595e4a1561cf2e26febec697"
+  },
+  "db_ui/export.py": {
+    "mtime": 1794149541.410629,
+    "seen": 1794231551.3187165,
+    "ast_hash": "d79205c14a9553285a53080601db9920",
+    "semantic_hash": "d79205c14a9553285a53080601db9920"
+  },
+  "db_ui/static/app.js": {
+    "mtime": 1794149458.335254,
+    "seen": 1794231551.3187177,
+    "ast_hash": "d7d824d4cb6d012287c6878e939c867f",
+    "semantic_hash": "d7d824d4cb6d012287c6878e939c867f"
+  },
+  "migrations/0001_initial.down.sql": {
+    "mtime": 1794056426.6676476,
+    "seen": 1794231551.318719,
+    "ast_hash": "fa41bb9dd6d796536f25af9b44125c2b",
+    "semantic_hash": "fa41bb9dd6d796536f25af9b44125c2b"
+  },
+  "migrations/0001_initial.up.sql": {
+    "mtime": 1794056559.19779,
+    "seen": 1794231551.3187206,
+    "ast_hash": "d9c60f01c369734b853b2a197e226e3e",
+    "semantic_hash": "d9c60f01c369734b853b2a197e226e3e"
+  },
+  "migrations/0002_secure_warehouse.down.sql": {
+    "mtime": 1794059492.9550917,
+    "seen": 1794231551.3187215,
+    "ast_hash": "7b47c00a06b3e11a0e46a0f5d26a3791",
+    "semantic_hash": "7b47c00a06b3e11a0e46a0f5d26a3791"
+  },
+  "migrations/0002_secure_warehouse.up.sql": {
+    "mtime": 1794060864.5764174,
+    "seen": 1794231551.318723,
+    "ast_hash": "b4f98bc762e4dbc604577ae1958f4975",
+    "semantic_hash": "b4f98bc762e4dbc604577ae1958f4975"
+  },
+  "migrations/0003_require_integrity_tags.down.sql": {
+    "mtime": 1794060031.1323757,
+    "seen": 1794231551.3187244,
+    "ast_hash": "8fc459995599146c5075b6b867632d5d",
+    "semantic_hash": "8fc459995599146c5075b6b867632d5d"
+  },
+  "migrations/0003_require_integrity_tags.up.sql": {
+    "mtime": 1794060031.0793753,
+    "seen": 1794231551.3187258,
+    "ast_hash": "94e045202bc379d55846c49f23fdb0c1",
+    "semantic_hash": "94e045202bc379d55846c49f23fdb0c1"
+  },
+  "migrations/0004_analytics_star.down.sql": {
+    "mtime": 1794146150.422802,
+    "seen": 1794231551.3187273,
+    "ast_hash": "b0e09db664797efe583320b6b531b875",
+    "semantic_hash": "b0e09db664797efe583320b6b531b875"
+  },
+  "migrations/0004_analytics_star.up.sql": {
+    "mtime": 1794146150.4225721,
+    "seen": 1794231551.3187284,
+    "ast_hash": "38194167683f57a2cc2771410d73613c",
+    "semantic_hash": "38194167683f57a2cc2771410d73613c"
+  },
+  "migrations/0005_fix_analytics_refresh.down.sql": {
+    "mtime": 1794146484.284816,
+    "seen": 1794231551.3187299,
+    "ast_hash": "b0e09db664797efe583320b6b531b875",
+    "semantic_hash": "b0e09db664797efe583320b6b531b875"
+  },
+  "migrations/0005_fix_analytics_refresh.up.sql": {
+    "mtime": 1794146484.283816,
+    "seen": 1794231551.3187315,
+    "ast_hash": "344493cf4e53970ed6a681a24446b773",
+    "semantic_hash": "344493cf4e53970ed6a681a24446b773"
+  },
+  "migrations/0006_automotive.down.sql": {
+    "mtime": 1794151604.6738725,
+    "seen": 1794231551.318733,
+    "ast_hash": "268c7dd1648273266c4b08714b1b06f7",
+    "semantic_hash": "268c7dd1648273266c4b08714b1b06f7"
+  },
+  "migrations/0006_automotive.up.sql": {
+    "mtime": 1794151701.9175675,
+    "seen": 1794231551.3187344,
+    "ast_hash": "15ba286a8ec59e17a402a6958d7be928",
+    "semantic_hash": "15ba286a8ec59e17a402a6958d7be928"
+  },
+  "migrations/0007_content_hash_index.down.sql": {
+    "mtime": 1794222153.922528,
+    "seen": 1794231551.3187358,
+    "ast_hash": "22c4e4f5d558dc2df9dff9eeb896ab77",
+    "semantic_hash": "22c4e4f5d558dc2df9dff9eeb896ab77"
+  },
+  "migrations/0007_content_hash_index.up.sql": {
+    "mtime": 1794222148.0435007,
+    "seen": 1794231551.3187373,
+    "ast_hash": "0aa54a2226fd956cce3f60c9c2c79596",
+    "semantic_hash": "0aa54a2226fd956cce3f60c9c2c79596"
+  },
+  "ops/bin/warehouse-activate-release": {
+    "mtime": 1794060760.4857905,
+    "seen": 1794231551.3187385,
+    "ast_hash": "e960cf48c6e1c0d2b19d1bd187b9df48",
+    "semantic_hash": "e960cf48c6e1c0d2b19d1bd187b9df48"
+  },
+  "ops/bin/warehouse-backup": {
+    "mtime": 1794059934.6257868,
+    "seen": 1794231551.3187397,
+    "ast_hash": "d726b632258506fad1dba5b778c56834",
+    "semantic_hash": "d726b632258506fad1dba5b778c56834"
+  },
+  "ops/bin/warehouse-restore-drill": {
+    "mtime": 1794060760.6637914,
+    "seen": 1794231551.3187413,
+    "ast_hash": "565c1bca62557fd0b8124ae5b879b049",
+    "semantic_hash": "565c1bca62557fd0b8124ae5b879b049"
+  },
+  "ops/bin/warehouse-sync-alert": {
+    "mtime": 1794061291.1159875,
+    "seen": 1794231551.3187425,
+    "ast_hash": "ff6920fb75b89e61a321a37f31d35cc7",
+    "semantic_hash": "ff6920fb75b89e61a321a37f31d35cc7"
+  },
+  "ops/bin/warehouse-sync-healthcheck": {
+    "mtime": 1794254120.5651627,
+    "seen": 1794254445.656737,
+    "ast_hash": "ef799e2aedcb2afe706a1976da244466",
+    "semantic_hash": ""
+  },
+  "ops/bin/warehouse-sync-run": {
+    "mtime": 1794059934.4547858,
+    "seen": 1794231551.318745,
+    "ast_hash": "72da39b4883a4b2394e3bb58172ba68f",
+    "semantic_hash": "72da39b4883a4b2394e3bb58172ba68f"
+  },
+  "ops/sql/provision_automotive_roles.sql": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5344136,
+    "ast_hash": "301f60ab189fd95c80d66546e7258e05",
+    "semantic_hash": ""
+  },
+  "ops/sql/provision_production_roles.sql": {
+    "mtime": 1794061123.8239796,
+    "seen": 1794231551.3187473,
+    "ast_hash": "d4f80d2a374e612af60692d8638192e4",
+    "semantic_hash": "d4f80d2a374e612af60692d8638192e4"
+  },
+  "ops/sql/verify_privileges.sql": {
+    "mtime": 1794061129.048011,
+    "seen": 1794231551.3187487,
+    "ast_hash": "e7cf5d62930cdf0c9ea975756cb935c8",
+    "semantic_hash": "e7cf5d62930cdf0c9ea975756cb935c8"
+  },
+  "pyproject.toml": {
+    "mtime": 1795105981.8374612,
+    "seen": 1795106609.3349855,
+    "ast_hash": "cb4df8bc7d0902e3130705133756c466",
+    "semantic_hash": ""
+  },
+  "tests/automotive_chat_ui_test.cjs": {
+    "mtime": 1794329473.8407927,
+    "seen": 1794329600.3460224,
+    "ast_hash": "b3665fd03eeef82a5253cc90f51938cc",
+    "semantic_hash": ""
+  },
+  "tests/automotive_ui_test.cjs": {
+    "mtime": 1794209658.381897,
+    "seen": 1794231551.3187528,
+    "ast_hash": "70f111a8adc4fc8a6fc90d0acfdda0d5",
+    "semantic_hash": "70f111a8adc4fc8a6fc90d0acfdda0d5"
+  },
+  "tests/fixtures/conversations/scenarios.json": {
+    "mtime": 1794225671.539192,
+    "seen": 1794231551.3187542,
+    "ast_hash": "3ef42e5cc2cb7014219f57e5dabf913f",
+    "semantic_hash": "3ef42e5cc2cb7014219f57e5dabf913f"
+  },
+  "tests/test_analytics.py": {
+    "mtime": 1794146275.4256914,
+    "seen": 1794231551.3187554,
+    "ast_hash": "ee024f45534705cc85707dd19114904e",
+    "semantic_hash": "ee024f45534705cc85707dd19114904e"
+  },
+  "tests/test_analytics_cli.py": {
+    "mtime": 1794146502.9878888,
+    "seen": 1794231551.3187568,
+    "ast_hash": "73c434562f77370ec874b159a318bc8b",
+    "semantic_hash": "73c434562f77370ec874b159a318bc8b"
+  },
+  "tests/test_automotive_api.py": {
+    "mtime": 1794810548.414587,
+    "seen": 1794829962.5344667,
+    "ast_hash": "fe9ea221add64d025b00c5489b7f5a03",
+    "semantic_hash": ""
+  },
+  "tests/test_automotive_catalog_fallback.py": {
+    "mtime": 1794222405.258345,
+    "seen": 1794231551.3187594,
+    "ast_hash": "d38b0623363a5d64859e94f7493c3696",
+    "semantic_hash": "d38b0623363a5d64859e94f7493c3696"
+  },
+  "tests/test_automotive_categories.py": {
+    "mtime": 1794211060.2410846,
+    "seen": 1794231551.3187609,
+    "ast_hash": "bb7d27e87b282021423086c57d7a0c7e",
+    "semantic_hash": "bb7d27e87b282021423086c57d7a0c7e"
+  },
+  "tests/test_automotive_chat.py": {
+    "mtime": 1794382735.1416059,
+    "seen": 1794383534.7128015,
+    "ast_hash": "095a4d80a065cd8800e0487e90843c26",
+    "semantic_hash": ""
+  },
+  "tests/test_automotive_chat_log.py": {
+    "mtime": 1794224552.727902,
+    "seen": 1794231551.3187637,
+    "ast_hash": "34261ffec6466b52f6646559e44657eb",
+    "semantic_hash": "34261ffec6466b52f6646559e44657eb"
+  },
+  "tests/test_automotive_conversations.py": {
+    "mtime": 1794386650.029673,
+    "seen": 1794387117.2622564,
+    "ast_hash": "716d003488dd973b382379ca1d16e470",
+    "semantic_hash": ""
+  },
+  "tests/test_automotive_database.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5344782,
+    "ast_hash": "36ba29c3cd2f61362b921112eaaa9d6e",
+    "semantic_hash": ""
+  },
+  "tests/test_automotive_evidence.py": {
+    "mtime": 1794173988.0301113,
+    "seen": 1794231551.3187673,
+    "ast_hash": "b961a1caa4bd6b537117ba3014e97aa7",
+    "semantic_hash": "b961a1caa4bd6b537117ba3014e97aa7"
+  },
+  "tests/test_automotive_fluids.py": {
+    "mtime": 1794231825.9922714,
+    "seen": 1794231847.6133373,
+    "ast_hash": "279a6317eb3f71dfc2cfaa31e5ac8ee1",
+    "semantic_hash": ""
+  },
+  "tests/test_automotive_local_setup.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.534482,
+    "ast_hash": "e58e15d5866fc62816ae6c2b25fa3aed",
+    "semantic_hash": ""
+  },
+  "tests/test_automotive_motorium.py": {
+    "mtime": 1794217441.0515473,
+    "seen": 1794231551.3187728,
+    "ast_hash": "71ba801feb83bf3356e28ca8e89eca8d",
+    "semantic_hash": "71ba801feb83bf3356e28ca8e89eca8d"
+  },
+  "tests/test_automotive_requirements.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5344846,
+    "ast_hash": "1ce0a81ff0e31261cf20432711018c99",
+    "semantic_hash": ""
+  },
+  "tests/test_automotive_rules.py": {
+    "mtime": 1794254203.8885462,
+    "seen": 1794254445.6568298,
+    "ast_hash": "9029417a5cbc2c47a03a67eb48f42716",
+    "semantic_hash": ""
+  },
+  "tests/test_automotive_vehicle_inventory.py": {
+    "mtime": 1794209658.6118982,
+    "seen": 1794231551.318777,
+    "ast_hash": "f28b93630347026af01a5b18b34a1c20",
+    "semantic_hash": "f28b93630347026af01a5b18b34a1c20"
+  },
+  "tests/test_automotive_vin_search.py": {
+    "mtime": 1794229418.7569096,
+    "seen": 1794231551.3187783,
+    "ast_hash": "b4536bfea8fb4510221950191a3a304a",
+    "semantic_hash": "b4536bfea8fb4510221950191a3a304a"
+  },
+  "tests/test_client.py": {
+    "mtime": 1794061142.2560906,
+    "seen": 1794231551.3187797,
+    "ast_hash": "cc86f7c1b9b554569f7a5c1448bf7367",
+    "semantic_hash": "cc86f7c1b9b554569f7a5c1448bf7367"
+  },
+  "tests/test_config.py": {
+    "mtime": 1794060965.8330276,
+    "seen": 1794231551.318781,
+    "ast_hash": "28b6fa380a0ef5ca0bdbeaa3446152ce",
+    "semantic_hash": "28b6fa380a0ef5ca0bdbeaa3446152ce"
+  },
+  "tests/test_conversation_eval.py": {
+    "mtime": 1794239049.7062764,
+    "seen": 1794240120.4823687,
+    "ast_hash": "b97f76090cbbe3520e23f0f916a9174c",
+    "semantic_hash": ""
+  },
+  "tests/test_conversational_chat.py": {
+    "mtime": 1794337555.9617383,
+    "seen": 1794380112.3557613,
+    "ast_hash": "dd7705e938eeaf5699dfcc96d203889d",
+    "semantic_hash": ""
+  },
+  "tests/test_db_ui.py": {
+    "mtime": 1794149437.6601608,
+    "seen": 1794231551.318785,
+    "ast_hash": "aa39b87b9e8dc748ac90edad884357e9",
+    "semantic_hash": "aa39b87b9e8dc748ac90edad884357e9"
+  },
+  "tests/test_dialogue.py": {
+    "mtime": 1794237064.772812,
+    "seen": 1794237178.3943772,
+    "ast_hash": "2e5c74badd2511f383f65e17ccac74b4",
+    "semantic_hash": ""
+  },
+  "tests/test_grounding.py": {
+    "mtime": 1794229549.1574998,
+    "seen": 1794231551.3187878,
+    "ast_hash": "790c64318d7d0bf09b17489c206535d2",
+    "semantic_hash": "790c64318d7d0bf09b17489c206535d2"
+  },
+  "tests/test_integrity.py": {
+    "mtime": 1794059644.6450174,
+    "seen": 1794231551.3187895,
+    "ast_hash": "efc7efd1965a5e36182aad5702488a45",
+    "semantic_hash": "efc7efd1965a5e36182aad5702488a45"
+  },
+  "tests/test_parser.py": {
+    "mtime": 1794059644.7040179,
+    "seen": 1794231551.3187907,
+    "ast_hash": "88e44239b359fb1883e70643c8869e48",
+    "semantic_hash": "88e44239b359fb1883e70643c8869e48"
+  },
+  "tests/test_postgres_security.py": {
+    "mtime": 1794061093.0617943,
+    "seen": 1794231551.318792,
+    "ast_hash": "9b548a7bf8faa442cef3ee35cc111f4a",
+    "semantic_hash": "9b548a7bf8faa442cef3ee35cc111f4a"
+  },
+  "tests/test_progress.py": {
+    "mtime": 1794146181.1334198,
+    "seen": 1794231551.3187935,
+    "ast_hash": "b6a509ace7d80e455d30f9a45544fb45",
+    "semantic_hash": "b6a509ace7d80e455d30f9a45544fb45"
+  },
+  "tests/test_reliability.py": {
+    "mtime": 1794146386.7543669,
+    "seen": 1794231551.318795,
+    "ast_hash": "1e683b252147d0af21da7ae692205ec6",
+    "semantic_hash": "1e683b252147d0af21da7ae692205ec6"
+  },
+  "tests/test_replies.py": {
+    "mtime": 1794237077.453873,
+    "seen": 1794237178.39439,
+    "ast_hash": "369c9e7ee736caf3c76a9f80ffdd34fc",
+    "semantic_hash": ""
+  },
+  "tests/test_sync_e2e.py": {
+    "mtime": 1794061093.1227946,
+    "seen": 1794231551.318798,
+    "ast_hash": "b178e0292251a7348aed6a7271890cc3",
+    "semantic_hash": "b178e0292251a7348aed6a7271890cc3"
+  },
+  "warehouse_sync/__init__.py": {
+    "mtime": 1794056426.8366492,
+    "seen": 1794231551.3188047,
+    "ast_hash": "8afbbb3ae5bd33c23e7d78190d483dcd",
+    "semantic_hash": "8afbbb3ae5bd33c23e7d78190d483dcd"
+  },
+  "warehouse_sync/__main__.py": {
+    "mtime": 1794146359.826243,
+    "seen": 1794231551.3188064,
+    "ast_hash": "c8932b166d54481a007590cdb6ae91a3",
+    "semantic_hash": "c8932b166d54481a007590cdb6ae91a3"
+  },
+  "warehouse_sync/client.py": {
+    "mtime": 1794146359.826243,
+    "seen": 1794231551.318808,
+    "ast_hash": "bc20eba91d8f5b493246186ec7e22f68",
+    "semantic_hash": "bc20eba91d8f5b493246186ec7e22f68"
+  },
+  "warehouse_sync/config.py": {
+    "mtime": 1794061171.3872662,
+    "seen": 1794231551.3188095,
+    "ast_hash": "e12165e9c297021bd303f0b4589509d0",
+    "semantic_hash": "e12165e9c297021bd303f0b4589509d0"
+  },
+  "warehouse_sync/errors.py": {
+    "mtime": 1794146338.8721464,
+    "seen": 1794231551.3188112,
+    "ast_hash": "4eab57293050dc47df15375f34ff3c12",
+    "semantic_hash": "4eab57293050dc47df15375f34ff3c12"
+  },
+  "warehouse_sync/history.py": {
+    "mtime": 1794061171.3862662,
+    "seen": 1794231551.3188124,
+    "ast_hash": "4407942d0712b1b36e34234fb9168fd6",
+    "semantic_hash": "4407942d0712b1b36e34234fb9168fd6"
+  },
+  "warehouse_sync/integrity.py": {
+    "mtime": 1794059240.9115555,
+    "seen": 1794231551.318814,
+    "ast_hash": "cc625fbc2cad1d683c66394a12cf7a53",
+    "semantic_hash": "cc625fbc2cad1d683c66394a12cf7a53"
+  },
+  "warehouse_sync/migrations.py": {
+    "mtime": 1794061171.3862662,
+    "seen": 1794231551.3188152,
+    "ast_hash": "94efe3340acbba4049bf972449f7b891",
+    "semantic_hash": "94efe3340acbba4049bf972449f7b891"
+  },
+  "warehouse_sync/models.py": {
+    "mtime": 1794059240.7925549,
+    "seen": 1794231551.3188164,
+    "ast_hash": "ca0dc79f57d4b942244ed7bc27344b1e",
+    "semantic_hash": "ca0dc79f57d4b942244ed7bc27344b1e"
+  },
+  "warehouse_sync/parser.py": {
+    "mtime": 1794146310.9390175,
+    "seen": 1794231551.318818,
+    "ast_hash": "d00bad37cbe154d0c600fdd0957dc96e",
+    "semantic_hash": "d00bad37cbe154d0c600fdd0957dc96e"
+  },
+  "warehouse_sync/repository.py": {
+    "mtime": 1794146166.8803542,
+    "seen": 1794231551.3188193,
+    "ast_hash": "2e911d350470a490f529477984d4a7d2",
+    "semantic_hash": "2e911d350470a490f529477984d4a7d2"
+  },
+  "warehouse_sync/service.py": {
+    "mtime": 1794146338.9231465,
+    "seen": 1794231551.318821,
+    "ast_hash": "1ce327e13d475bde4b2828100a4f7a46",
+    "semantic_hash": "1ce327e13d475bde4b2828100a4f7a46"
+  },
+  "AGENTS.md": {
+    "mtime": 1794146604.436363,
+    "seen": 1794231551.3188221,
+    "ast_hash": "1605e769f964d50355c1c4b29057e564",
+    "semantic_hash": "1605e769f964d50355c1c4b29057e564"
+  },
+  "IMPLEMENTATION_PROGRESS.md": {
+    "mtime": 1794841531.968958,
+    "seen": 1794841802.1900086,
+    "ast_hash": "722bd0e6a606440a8438f126491c7797",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1794267177.8358397,
+    "seen": 1794267747.3848772,
+    "ast_hash": "e116a595bb8bbfea27818e28aa540f1a",
+    "semantic_hash": ""
+  },
+  "automotive/static/index.html": {
+    "mtime": 1794323237.5774095,
+    "seen": 1794323694.1323905,
+    "ast_hash": "879b1ba368fde9281d984f921dc8acf7",
+    "semantic_hash": ""
+  },
+  "db_ui/static/index.html": {
+    "mtime": 1794149388.082937,
+    "seen": 1794231551.3188276,
+    "ast_hash": "ee5039a11b499d845c9a8993166af8d6",
+    "semantic_hash": "ee5039a11b499d845c9a8993166af8d6"
+  },
+  "docs/analytics.md": {
+    "mtime": 1794254291.8709512,
+    "seen": 1794254445.656895,
+    "ast_hash": "7e3598553d9a38a081bb690d972fe003",
+    "semantic_hash": ""
+  },
+  "docs/asvs-l2-evidence.md": {
+    "mtime": 1795106511.6811204,
+    "seen": 1795106609.3351622,
+    "ast_hash": "355a0d91c5b585ed2061431b88f39161",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/automotive-qa-report.md": {
+    "mtime": 1794152446.9296305,
+    "seen": 1794231551.3188317,
+    "ast_hash": "ec3a65e24cd1fd4f53f5cc6e1826e234",
+    "semantic_hash": "ec3a65e24cd1fd4f53f5cc6e1826e234"
+  },
+  "docs/automotive-review/chat-texting-qa.md": {
+    "mtime": 1794229621.5098271,
+    "seen": 1794231551.3188329,
+    "ast_hash": "9424e4b56298f79fb590c3a3ab2b098c",
+    "semantic_hash": "9424e4b56298f79fb590c3a3ab2b098c"
+  },
+  "docs/automotive-review/conversational-parts-ui-qa.md": {
+    "mtime": 1794211304.3073444,
+    "seen": 1794231551.318834,
+    "ast_hash": "5fb0d9e94f2e0ee824254d7ca8adeca8",
+    "semantic_hash": "5fb0d9e94f2e0ee824254d7ca8adeca8"
+  },
+  "docs/automotive-review/unified-vin-qa.md": {
+    "mtime": 1794209913.8365078,
+    "seen": 1794231551.3188355,
+    "ast_hash": "52cbd7a2ca7486d7febb991d9818d6bd",
+    "semantic_hash": "52cbd7a2ca7486d7febb991d9818d6bd"
+  },
+  "docs/automotive-review/vehicle-inventory-qa.md": {
+    "mtime": 1794175242.9609945,
+    "seen": 1794231551.3188365,
+    "ast_hash": "c1076aa2f317169b5852eaa900fa676e",
+    "semantic_hash": "c1076aa2f317169b5852eaa900fa676e"
+  },
+  "docs/automotive.md": {
+    "mtime": 1794839223.9621065,
+    "seen": 1794839281.7528636,
+    "ast_hash": "dc80b7ce2be006c6e2a81154187e33c2",
+    "semantic_hash": ""
+  },
+  "docs/integrations/fluids.md": {
+    "mtime": 1794216232.680615,
+    "seen": 1794231551.3188393,
+    "ast_hash": "516b6db383a74a809086fe76627a77d4",
+    "semantic_hash": "516b6db383a74a809086fe76627a77d4"
+  },
+  "docs/integrations/motorium.md": {
+    "mtime": 1794209743.946226,
+    "seen": 1794231551.3188405,
+    "ast_hash": "71af5a4639ad76622c3c2e5548c51571",
+    "semantic_hash": "71af5a4639ad76622c3c2e5548c51571"
+  },
+  "docs/production-runbook.md": {
+    "mtime": 1794810548.418587,
+    "seen": 1794829962.5346003,
+    "ast_hash": "9a78e54d301b9dbeb32c6c9125a3d8ca",
+    "semantic_hash": ""
+  },
+  "requirements.txt": {
+    "mtime": 1795105981.8401875,
+    "seen": 1795106609.3351922,
+    "ast_hash": "ea83b6597291bac2c1ed5f805fbe81c2",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/automotive-desktop.png": {
+    "mtime": 1794152446.9293342,
+    "seen": 1794231551.3188443,
+    "ast_hash": "5973e9530b8a720cb2200aeccd45dbf4",
+    "semantic_hash": "5973e9530b8a720cb2200aeccd45dbf4"
+  },
+  "docs/automotive-review/automotive-mobile.png": {
+    "mtime": 1794152446.9295187,
+    "seen": 1794231551.3188457,
+    "ast_hash": "fed2cc6a9fbb687f5529943e48081c17",
+    "semantic_hash": "fed2cc6a9fbb687f5529943e48081c17"
+  },
+  "docs/automotive-review/chat-texting-desktop.png": {
+    "mtime": 1794228215.3884463,
+    "seen": 1794231551.318847,
+    "ast_hash": "362ee373712640d10c6c45b9b6fc0d97",
+    "semantic_hash": "362ee373712640d10c6c45b9b6fc0d97"
+  },
+  "docs/automotive-review/chat-texting-mobile.png": {
+    "mtime": 1794228215.388933,
+    "seen": 1794231551.3188486,
+    "ast_hash": "897b21f57f7b2a419f72f7c0b99be31a",
+    "semantic_hash": "897b21f57f7b2a419f72f7c0b99be31a"
+  },
+  "docs/automotive-review/conversational-parts-desktop.png": {
+    "mtime": 1794211867.0034482,
+    "seen": 1794231551.3188498,
+    "ast_hash": "d560e099721ac76c73daa5575bbfa4b2",
+    "semantic_hash": "d560e099721ac76c73daa5575bbfa4b2"
+  },
+  "docs/automotive-review/conversational-parts-mobile.png": {
+    "mtime": 1794211867.0804982,
+    "seen": 1794231551.318851,
+    "ast_hash": "7f4edb68ca5237f0397598d7b105874a",
+    "semantic_hash": "7f4edb68ca5237f0397598d7b105874a"
+  },
+  ".claude/settings.json": {
+    "mtime": 1794231753.4089353,
+    "seen": 1794231809.3973186,
+    "ast_hash": "6f8cfbce48344f0a12921a08295bd87c",
+    "semantic_hash": ""
+  },
+  ".cursor/hooks.json": {
+    "mtime": 1794231765.422991,
+    "seen": 1794231809.397334,
+    "ast_hash": "f98b3eb46294baa557c08264e262aa70",
+    "semantic_hash": ""
+  },
+  "scripts/graphify-update.sh": {
+    "mtime": 1794231711.036075,
+    "seen": 1794231809.3976028,
+    "ast_hash": "984acad98d14bbd4b8bbef1177ec54c4",
+    "semantic_hash": ""
+  },
+  "automotive/research.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5343018,
+    "ast_hash": "999870f9e1d54a07c572491bbeea0621",
+    "semantic_hash": ""
+  },
+  "automotive/ttl_cache.py": {
+    "mtime": 1794238660.582329,
+    "seen": 1794238723.271619,
+    "ast_hash": "b2482b630d47b5199d78be5f7d536739",
+    "semantic_hash": ""
+  },
+  "tests/test_ai_orchestration.py": {
+    "mtime": 1794810548.414587,
+    "seen": 1794829962.534454,
+    "ast_hash": "fc6211e266b4bf694cf3a6f40bf1e9d1",
+    "semantic_hash": ""
+  },
+  "tests/test_automotive_research.py": {
+    "mtime": 1794239241.8272567,
+    "seen": 1794240120.4823534,
+    "ast_hash": "cfd8c966c2dd6ac1cb1e9a2f0c1352fa",
+    "semantic_hash": ""
+  },
+  "tests/test_automotive_resolution_cache.py": {
+    "mtime": 1794238765.9318314,
+    "seen": 1794238788.012737,
+    "ast_hash": "65f29696381735eebcafff5ef1b9591c",
+    "semantic_hash": ""
+  },
+  "automotive/orchestration.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5342944,
+    "ast_hash": "fbc3dd17654279d855a41176bb7e8340",
+    "semantic_hash": ""
+  },
+  "automotive/turn_budget.py": {
+    "mtime": 1794238959.2348092,
+    "seen": 1794240120.4822161,
+    "ast_hash": "e9ecf06e28212b56a0af350d9833a893",
+    "semantic_hash": ""
+  },
+  "automotive/knowledge.py": {
+    "mtime": 1794810548.416587,
+    "seen": 1794829962.5342653,
+    "ast_hash": "6c601590de19cd14bd45af76f37f6d6f",
+    "semantic_hash": ""
+  },
+  "automotive/knowledge_judge.py": {
+    "mtime": 1794810548.416587,
+    "seen": 1794829962.5342665,
+    "ast_hash": "987ff038c175e230c7187bfb1ad81b09",
+    "semantic_hash": ""
+  },
+  "automotive/knowledge_repository.py": {
+    "mtime": 1794810548.402587,
+    "seen": 1794829962.5342672,
+    "ast_hash": "23542220e6e48dba5784ef8b586a16dc",
+    "semantic_hash": ""
+  },
+  "automotive/knowledge_search.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5342681,
+    "ast_hash": "1e521893bd5d5efab4256ac55cef0500",
+    "semantic_hash": ""
+  },
+  "automotive/knowledge_types.py": {
+    "mtime": 1794238857.7892852,
+    "seen": 1794240120.4821713,
+    "ast_hash": "b9c5e3e2f99a6bc8e68bfa4610545a89",
+    "semantic_hash": ""
+  },
+  "automotive/knowledge_worker.py": {
+    "mtime": 1794239078.2734241,
+    "seen": 1794240120.4821737,
+    "ast_hash": "a0886961081bfc51dd14d6f00dcf483f",
+    "semantic_hash": ""
+  },
+  "migrations/0008_automotive_knowledge.down.sql": {
+    "mtime": 1794238918.9306011,
+    "seen": 1794240120.4822755,
+    "ast_hash": "4d6c57d41f83f2d45e4e7a38e3c1bc40",
+    "semantic_hash": ""
+  },
+  "migrations/0008_automotive_knowledge.up.sql": {
+    "mtime": 1794238918.887601,
+    "seen": 1794240120.4822776,
+    "ast_hash": "023d1cea58d463408b8450c99870f91c",
+    "semantic_hash": ""
+  },
+  "tests/test_automotive_public_http.py": {
+    "mtime": 1794238860.3082983,
+    "seen": 1794240120.4823484,
+    "ast_hash": "9427f944f7acced787e58696862eaba4",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/orchestration-surface-qa.md": {
+    "mtime": 1794239233.1332123,
+    "seen": 1794240120.4824448,
+    "ast_hash": "040627a9a3b9e7e60582c0a60ac8092f",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/orchestration-desktop.png": {
+    "mtime": 1794239193.3930101,
+    "seen": 1794240120.4824765,
+    "ast_hash": "0cff803ce2d9f474d917f0cfb69a7008",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/orchestration-mobile.png": {
+    "mtime": 1794239193.4977286,
+    "seen": 1794240120.4824789,
+    "ast_hash": "0eeb726c2be8977087e7ce79dce9de96",
+    "semantic_hash": ""
+  },
+  "tests/test_automotive_knowledge.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.534481,
+    "ast_hash": "2f0ec9d1bfb175ae0930f01637d97f1e",
+    "semantic_hash": ""
+  },
+  "automotive/parts_catalog.py": {
+    "mtime": 1794810548.416587,
+    "seen": 1794829962.5342965,
+    "ast_hash": "3950b560b042b63a14c09f844f4eaced",
+    "semantic_hash": ""
+  },
+  "migrations/0009_parts_catalog.down.sql": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.534396,
+    "ast_hash": "cb6eb8c728d8303bc4431a51e0c7ff6c",
+    "semantic_hash": ""
+  },
+  "migrations/0009_parts_catalog.up.sql": {
+    "mtime": 1794810548.416587,
+    "seen": 1794829962.5343971,
+    "ast_hash": "28a649e5294e5f5e9b87ee32f32952c0",
+    "semantic_hash": ""
+  },
+  "parts_crawler/__init__.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5344164,
+    "ast_hash": "be24e798b76b314d612c9ff90f5c9dd7",
+    "semantic_hash": ""
+  },
+  "parts_crawler/__main__.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5344174,
+    "ast_hash": "9da6cdf795bd44801d4b55eed4197367",
+    "semantic_hash": ""
+  },
+  "parts_crawler/config.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.534418,
+    "ast_hash": "6dd501d97177b6edb0804b690ac16ad0",
+    "semantic_hash": ""
+  },
+  "parts_crawler/har.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.534419,
+    "ast_hash": "fd6666e8baea0bcee15b2759b848ac33",
+    "semantic_hash": ""
+  },
+  "parts_crawler/http.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5344198,
+    "ast_hash": "4fe66d5f8b1132db30523cd1d63cb747",
+    "semantic_hash": ""
+  },
+  "parts_crawler/importers/__init__.py": {
+    "mtime": 1794810548.402587,
+    "seen": 1794829962.5344205,
+    "ast_hash": "e2f689244bf87b3eecbb99e326ad37f5",
+    "semantic_hash": ""
+  },
+  "parts_crawler/importers/fapi.py": {
+    "mtime": 1794810548.418587,
+    "seen": 1794829962.5344212,
+    "ast_hash": "ab572c39799e38bd46d92b36d58bcb5e",
+    "semantic_hash": ""
+  },
+  "parts_crawler/importers/vpic.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5344234,
+    "ast_hash": "f64059bd6385f5659dc46dbe7d58a05e",
+    "semantic_hash": ""
+  },
+  "parts_crawler/importers/ymm_csv.py": {
+    "mtime": 1794810548.414587,
+    "seen": 1794829962.534425,
+    "ast_hash": "82bb243bd48c5034a93a64d9b6f6512b",
+    "semantic_hash": ""
+  },
+  "parts_crawler/progress.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.534426,
+    "ast_hash": "8b017947d490878f4763631fbdabfbbc",
+    "semantic_hash": ""
+  },
+  "parts_crawler/rawstore.py": {
+    "mtime": 1794810548.416587,
+    "seen": 1794829962.534427,
+    "ast_hash": "5a9e8ad9afb87ac4d8e8ba5de135e1ec",
+    "semantic_hash": ""
+  },
+  "parts_crawler/records.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5344276,
+    "ast_hash": "65632a913a0cb1da58255dc81ccdfe95",
+    "semantic_hash": ""
+  },
+  "parts_crawler/robots.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5344286,
+    "ast_hash": "dc7e59147ee99411f9b129c836aac571",
+    "semantic_hash": ""
+  },
+  "parts_crawler/scheduler.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5344298,
+    "ast_hash": "bdc5eccc827e8f6ea28f7d8edb81ad44",
+    "semantic_hash": ""
+  },
+  "parts_crawler/setup.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5344305,
+    "ast_hash": "50deca842a7fc72fe409850ef57923d7",
+    "semantic_hash": ""
+  },
+  "parts_crawler/sources/__init__.py": {
+    "mtime": 1794810548.4035869,
+    "seen": 1794829962.5344315,
+    "ast_hash": "b19033cc665e8ca6b6a03a895dc11a8e",
+    "semantic_hash": ""
+  },
+  "parts_crawler/sources/base.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5344322,
+    "ast_hash": "61299424423cb1d5ad8e34e98cdfe9a3",
+    "semantic_hash": ""
+  },
+  "parts_crawler/sources/catcar.py": {
+    "mtime": 1794810548.416587,
+    "seen": 1794829962.5344334,
+    "ast_hash": "ada513a9597d49962db59e32ae13e6c5",
+    "semantic_hash": ""
+  },
+  "parts_crawler/sources/generic.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.534434,
+    "ast_hash": "7bef9cf57526134ea02366c57f484024",
+    "semantic_hash": ""
+  },
+  "parts_crawler/sources/mann.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5344348,
+    "ast_hash": "29c7b38e75e39afed059aeba393a79b9",
+    "semantic_hash": ""
+  },
+  "parts_crawler/sources/ngk.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5344367,
+    "ast_hash": "98e86328fc46022d36bd6386c062ed60",
+    "semantic_hash": ""
+  },
+  "parts_crawler/sources/partsouq.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5344374,
+    "ast_hash": "8339e2c63742692e876159f62938c8ad",
+    "semantic_hash": ""
+  },
+  "parts_crawler/sources/realoem.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5344381,
+    "ast_hash": "b5e009aea77c4b46089ab755ae89328e",
+    "semantic_hash": ""
+  },
+  "parts_crawler/sources/rockauto.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5344388,
+    "ast_hash": "e7eb2f9a3fe634a9dc5ae56993d83eab",
+    "semantic_hash": ""
+  },
+  "parts_crawler/store.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.53444,
+    "ast_hash": "20ac4d38ce64d0a110e7a437c57d4a54",
+    "semantic_hash": ""
+  },
+  "tests/test_parts_catalog_api.py": {
+    "mtime": 1794810548.414587,
+    "seen": 1794829962.5345204,
+    "ast_hash": "8cc82d668dca9046d3c28d9e65ea451b",
+    "semantic_hash": ""
+  },
+  "tests/test_parts_crawler_http.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5345223,
+    "ast_hash": "3bf99ed7fae9c6ae7f9402bac26716dd",
+    "semantic_hash": ""
+  },
+  "tests/test_parts_crawler_queue.py": {
+    "mtime": 1794810548.402587,
+    "seen": 1794829962.5345235,
+    "ast_hash": "62ab23f0a5ded831c9450f6bd74482fc",
+    "semantic_hash": ""
+  },
+  "tests/test_parts_crawler_sources.py": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5345244,
+    "ast_hash": "05bb8ad4ff3350cfad6f12415ffae632",
+    "semantic_hash": ""
+  },
+  "docs/parts-crawler.md": {
+    "mtime": 1794810548.417587,
+    "seen": 1794829962.5345986,
+    "ast_hash": "5555d859704eb9fa4aef032ed637bb89",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/mann_product.html": {
+    "mtime": 1794250187.97517,
+    "seen": 1794250729.0183434,
+    "ast_hash": "8461b0f2a6ce01958954f1f19a629658",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/ngk_make.html": {
+    "mtime": 1794250188.0003636,
+    "seen": 1794250729.0183449,
+    "ast_hash": "e401857c0501cde8deb22269d5277f00",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/ngk_year.html": {
+    "mtime": 1794250187.9905016,
+    "seen": 1794250729.0183465,
+    "ast_hash": "293a638cd8e75a1eaa30622c5a71e93d",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/rockauto_engine.html": {
+    "mtime": 1794250187.9742594,
+    "seen": 1794250729.018348,
+    "ast_hash": "8cd660c47f79f1d2491e38450a0898d4",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/rockauto_leaf.html": {
+    "mtime": 1794250187.9598408,
+    "seen": 1794250729.0183494,
+    "ast_hash": "7d6a0488fa4bac3df9777fd0e09bfb1a",
+    "semantic_hash": ""
+  },
+  "migrations/0010_sales_purchasing.down.sql": {
+    "mtime": 1794253943.0563457,
+    "seen": 1794254005.7487743,
+    "ast_hash": "23215ea4839002a31e07d61800842b64",
+    "semantic_hash": ""
+  },
+  "migrations/0010_sales_purchasing.up.sql": {
+    "mtime": 1794253941.740341,
+    "seen": 1794254005.7487772,
+    "ast_hash": "b2f3b461c21a8509e1892ad4a677c363",
+    "semantic_hash": ""
+  },
+  "tests/test_sales_purchasing.py": {
+    "mtime": 1794254078.8339705,
+    "seen": 1794254445.6568637,
+    "ast_hash": "c2d807f8423a8f3b526286bfc9590a5f",
+    "semantic_hash": ""
+  },
+  "docs/sales-purchasing.md": {
+    "mtime": 1794254289.660941,
+    "seen": 1794254445.6569161,
+    "ast_hash": "afc21eee60b0199f44a6b324b8aba298",
+    "semantic_hash": ""
+  },
+  "automotive/site.py": {
+    "mtime": 1795118528.955521,
+    "seen": 1795118763.2825341,
+    "ast_hash": "954c3d3c20762ddc4b240d75032a3116",
+    "semantic_hash": ""
+  },
+  "automotive/site_admin.py": {
+    "mtime": 1794265739.8558555,
+    "seen": 1794267747.384678,
+    "ast_hash": "7c98a2fee38b7a1a499ea2c8bc9a4098",
+    "semantic_hash": ""
+  },
+  "automotive/site_auth.py": {
+    "mtime": 1795105816.910301,
+    "seen": 1795106609.3347638,
+    "ast_hash": "c2c0748a9ada4186c937fed5cd7166fd",
+    "semantic_hash": ""
+  },
+  "automotive/site_catalog.py": {
+    "mtime": 1794310623.4488776,
+    "seen": 1794312138.7514765,
+    "ast_hash": "d20c8100653a0c3e20173ac974bf2a75",
+    "semantic_hash": ""
+  },
+  "automotive/site_chat.py": {
+    "mtime": 1795105836.6591384,
+    "seen": 1795106609.3347666,
+    "ast_hash": "81cd0b7cf11e075c77c2c713a6a875b0",
+    "semantic_hash": ""
+  },
+  "automotive/site_content.py": {
+    "mtime": 1794278601.1871517,
+    "seen": 1794291177.297201,
+    "ast_hash": "3175fac4a0486c9960daee9921cea347",
+    "semantic_hash": ""
+  },
+  "automotive/site_guard.py": {
+    "mtime": 1795106431.8274524,
+    "seen": 1795106609.3347695,
+    "ast_hash": "7d226dfa78b731291f0fa97befa5e601",
+    "semantic_hash": ""
+  },
+  "automotive/site_media.py": {
+    "mtime": 1794258669.8238962,
+    "seen": 1794260412.6019769,
+    "ast_hash": "8394cf6d83e672f018c61c42085d3546",
+    "semantic_hash": ""
+  },
+  "automotive/site_pages.py": {
+    "mtime": 1794278601.187916,
+    "seen": 1794291177.2972054,
+    "ast_hash": "907c1639ead44706690be60f0174c3e0",
+    "semantic_hash": ""
+  },
+  "automotive/site_reports.py": {
+    "mtime": 1794264557.4240284,
+    "seen": 1794267747.3846848,
+    "ast_hash": "725b6dd9a8a2fdfaa16a05195d5fd11d",
+    "semantic_hash": ""
+  },
+  "automotive/site_repository.py": {
+    "mtime": 1794265766.792547,
+    "seen": 1794267747.384686,
+    "ast_hash": "48729b15ebb4994c910ac3e61aceedee",
+    "semantic_hash": ""
+  },
+  "automotive/site_setup.py": {
+    "mtime": 1794306952.695663,
+    "seen": 1794307188.671359,
+    "ast_hash": "4e52a0b50514b0478919f7a6b3ed2864",
+    "semantic_hash": ""
+  },
+  "automotive/site_strings.py": {
+    "mtime": 1794323071.6656544,
+    "seen": 1794323694.1320121,
+    "ast_hash": "61eb00fa9cf20d94735766c3eda0508d",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/js/engine/parts.js": {
+    "mtime": 1794264520.6590285,
+    "seen": 1794267747.384717,
+    "ast_hash": "138a033a062b5d14316510bf7ce8a751",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/js/engine/timeline.js": {
+    "mtime": 1794269119.3401828,
+    "seen": 1794274274.413089,
+    "ast_hash": "69961687df410f7e825f5629a1ef5272",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/vendor/three@0.187.0/BufferGeometryUtils.js": {
+    "mtime": 1794265033.8118963,
+    "seen": 1794267747.384723,
+    "ast_hash": "a654e89726fd9a438169e52cec116bbb",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/vendor/three@0.187.0/RoundedBoxGeometry.js": {
+    "mtime": 1794265033.8117101,
+    "seen": 1794267747.384724,
+    "ast_hash": "31e3d769d20f3aae95d9e79165e0c5a8",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/vendor/three@0.187.0/VENDOR.json": {
+    "mtime": 1794265033.8126886,
+    "seen": 1794267747.384725,
+    "ast_hash": "3d55fc1381d6bb9370a983d305c32072",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/vendor/three@0.187.0/three.core.js": {
+    "mtime": 1794265033.8094838,
+    "seen": 1794267747.384726,
+    "ast_hash": "b3682ed01fe2f05f876b4a460a760858",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/vendor/three@0.187.0/three.module.js": {
+    "mtime": 1794265033.8073552,
+    "seen": 1794267747.384727,
+    "ast_hash": "e2862f665720fa064b2cf12a48461a06",
+    "semantic_hash": ""
+  },
+  "migrations/0011_vehicle_detail.down.sql": {
+    "mtime": 1794257507.1616933,
+    "seen": 1794260412.6020646,
+    "ast_hash": "3dd7eb132c61678213bf9bb5c6240593",
+    "semantic_hash": ""
+  },
+  "migrations/0011_vehicle_detail.up.sql": {
+    "mtime": 1794257500.2486622,
+    "seen": 1794260412.6020663,
+    "ast_hash": "7d826cd0a10107bff5db555a6c92b180",
+    "semantic_hash": ""
+  },
+  "migrations/0012_garage_site.down.sql": {
+    "mtime": 1794258347.1576235,
+    "seen": 1794260412.602068,
+    "ast_hash": "d856971054a6e5686db81db52263a76c",
+    "semantic_hash": ""
+  },
+  "migrations/0012_garage_site.up.sql": {
+    "mtime": 1794258346.5074522,
+    "seen": 1794260412.6020696,
+    "ast_hash": "4bea673b913e173b286e5466bdb5e4fe",
+    "semantic_hash": ""
+  },
+  "parts_crawler/importers/fueleconomy.py": {
+    "mtime": 1794258767.2323313,
+    "seen": 1794260412.6021008,
+    "ast_hash": "70ae6cc2d8ab4f8f10cd2f72077f5daf",
+    "semantic_hash": ""
+  },
+  "parts_crawler/importers/wikidata.py": {
+    "mtime": 1794258778.3353808,
+    "seen": 1794260412.6021037,
+    "ast_hash": "ffb4d755b6ae6cf44b0a8f6f47e81a4c",
+    "semantic_hash": ""
+  },
+  "parts_crawler/sources/mann_api.py": {
+    "mtime": 1794258665.1998754,
+    "seen": 1794260412.6021266,
+    "ast_hash": "becc62eb6a04ab91a48a84c636b58ce5",
+    "semantic_hash": ""
+  },
+  "parts_crawler/term.py": {
+    "mtime": 1794258563.7454224,
+    "seen": 1794260412.602137,
+    "ast_hash": "5b9ad47040df7b82602c6a05e6e91387",
+    "semantic_hash": ""
+  },
+  "scripts/vendor_site_assets.py": {
+    "mtime": 1794265031.3542213,
+    "seen": 1794267747.3848062,
+    "ast_hash": "b2b0f4f7a6c8e819e0b113bf7d15dc6b",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/index.json": {
+    "mtime": 1794259053.0033917,
+    "seen": 1794260412.602149,
+    "ast_hash": "b990a3d2af4476f3dbbe7a2f1114a531",
+    "semantic_hash": ""
+  },
+  "tests/test_parts_crawler_catalogs.py": {
+    "mtime": 1794304587.2341344,
+    "seen": 1794304629.652797,
+    "ast_hash": "33c79700c78e077d5911a44846d7c468",
+    "semantic_hash": ""
+  },
+  "automotive/templates/site/admin.html": {
+    "mtime": 1794838753.7900097,
+    "seen": 1794839281.7528048,
+    "ast_hash": "7337449715f04cfceb42e776bd020065",
+    "semantic_hash": ""
+  },
+  "automotive/templates/site/landing.html": {
+    "mtime": 1794261984.2658858,
+    "seen": 1794267747.3848836,
+    "ast_hash": "c1c47d91ffc0e43bd7912859c728df3f",
+    "semantic_hash": ""
+  },
+  "automotive/templates/site/login.html": {
+    "mtime": 1794262087.2039325,
+    "seen": 1794267747.3848848,
+    "ast_hash": "981f166b92391b9823d6013a5427c2b8",
+    "semantic_hash": ""
+  },
+  "docs/garage-site.md": {
+    "mtime": 1795119384.193489,
+    "seen": 1795119403.493204,
+    "ast_hash": "b4945e658776a1bf7cdfc88654da1de6",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/audivw_models.html": {
+    "mtime": 1794259052.9148924,
+    "seen": 1794260412.6022809,
+    "ast_hash": "f0dbdfd0e4c14c3c602d45142ea7756f",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/audivw_parts.html": {
+    "mtime": 1794259052.9274938,
+    "seen": 1794260412.6022823,
+    "ast_hash": "6eaba323e10f87e38138e50b768f2bcc",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/audivw_years.html": {
+    "mtime": 1794259052.91984,
+    "seen": 1794260412.602284,
+    "ast_hash": "887a4a00f0bda63fc88d863677e8795c",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/bmw_parts.html": {
+    "mtime": 1794259052.8411376,
+    "seen": 1794260412.6022856,
+    "ast_hash": "4b2da1437a15736725e5429d3c62360f",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/bmw_regions.html": {
+    "mtime": 1794259052.8341317,
+    "seen": 1794260412.602287,
+    "ast_hash": "2e146ca1c2b2b62b80293f6a7942d73e",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/home.html": {
+    "mtime": 1794259052.7096717,
+    "seen": 1794260412.6022887,
+    "ast_hash": "70113b52891879dc9c370f3e250041e7",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/honda_parts.html": {
+    "mtime": 1794259052.945708,
+    "seen": 1794260412.6022902,
+    "ast_hash": "16659e055f8be20b247874908f016b3b",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/honda_variants.html": {
+    "mtime": 1794259052.938186,
+    "seen": 1794260412.6022918,
+    "ast_hash": "a127dfc9f952699769af44de6a8583dc",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/hyundai_models.html": {
+    "mtime": 1794259052.8187387,
+    "seen": 1794260412.602293,
+    "ast_hash": "ace5bb14c402a1b039c84705fb5b89de",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/hyundai_parts.html": {
+    "mtime": 1794259052.828797,
+    "seen": 1794260412.6022944,
+    "ast_hash": "03b1d8517aae770678290a0ae2631bb0",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/mazda_models.html": {
+    "mtime": 1794259052.952582,
+    "seen": 1794260412.6022959,
+    "ast_hash": "8fbf4c8c3e0808a3b86f590faf003ee6",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/mazda_parts.html": {
+    "mtime": 1794259052.9600377,
+    "seen": 1794260412.602297,
+    "ast_hash": "41624d5dad043f1b2b496d8d0206f3e5",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/mercedes_models.html": {
+    "mtime": 1794259052.8907542,
+    "seen": 1794260412.6022987,
+    "ast_hash": "950ced5192628733da055aba6885a855",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/mercedes_parts.html": {
+    "mtime": 1794259052.9047904,
+    "seen": 1794260412.6023,
+    "ast_hash": "09f13ce64468842fa7bdb0bd9eb6b48b",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/mitsubishi_articles.html": {
+    "mtime": 1794259053.0032134,
+    "seen": 1794260412.6023011,
+    "ast_hash": "d633c459bbd5f8ef365dfb0cf81f9987",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/mitsubishi_codes.html": {
+    "mtime": 1794259052.9973269,
+    "seen": 1794260412.6023028,
+    "ast_hash": "e7d6ded3e209e0f4f90e7723135a2811",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/mitsubishi_models.html": {
+    "mtime": 1794259052.9927871,
+    "seen": 1794260412.602304,
+    "ast_hash": "d7207ab0544a2100d68513a34bad2ba4",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/mitsubishi_trims.html": {
+    "mtime": 1794259053.0016437,
+    "seen": 1794260412.6023052,
+    "ast_hash": "da187ff04c4442c10e325f9303448370",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/nissan_models.html": {
+    "mtime": 1794259052.7967927,
+    "seen": 1794260412.6023066,
+    "ast_hash": "82ec51b0ea3a2f7aaf753751cd1949ba",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/nissan_parts.html": {
+    "mtime": 1794259052.8036723,
+    "seen": 1794260412.602308,
+    "ast_hash": "a2bdd75e8303fdfb199c9d5126242f4d",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/subaru_models.html": {
+    "mtime": 1794259052.96717,
+    "seen": 1794260412.6023097,
+    "ast_hash": "b0feab6180a9b75c5dae591ef9269215",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/subaru_parts.html": {
+    "mtime": 1794259052.9796407,
+    "seen": 1794260412.6023111,
+    "ast_hash": "9d5656c72ba2bfdbbead052803be479f",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/subaru_variants.html": {
+    "mtime": 1794259052.971988,
+    "seen": 1794260412.6023128,
+    "ast_hash": "d3e43dec4f2234e00a2e64b4846562fa",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/toyota_articles.html": {
+    "mtime": 1794259052.7867599,
+    "seen": 1794260412.6023142,
+    "ast_hash": "96c5d243999218237ae03850288b5115",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/toyota_groups.html": {
+    "mtime": 1794259052.7787588,
+    "seen": 1794260412.6023154,
+    "ast_hash": "979b61dd8b4ae2b557c38601728cb429",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/toyota_markets.html": {
+    "mtime": 1794259052.716113,
+    "seen": 1794260412.602317,
+    "ast_hash": "200e5e85e7b0867f973194bddbcdf462",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/toyota_models.html": {
+    "mtime": 1794259052.7543151,
+    "seen": 1794260412.6023183,
+    "ast_hash": "293a1c92c3438c35e76624203f201368",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/toyota_modifications.html": {
+    "mtime": 1794259052.769936,
+    "seen": 1794260412.60232,
+    "ast_hash": "947700a78107a46cae2013a71ccf88b2",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/parts_crawler/catcar/toyota_subgroup.html": {
+    "mtime": 1794259052.7854059,
+    "seen": 1794260412.6023214,
+    "ast_hash": "8ac8c2469b2a1d566cc5fcbaa5ae6250",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/js/engine/materials.js": {
+    "mtime": 1794270833.0693622,
+    "seen": 1794274274.4130838,
+    "ast_hash": "b8f45af2aa3808519f0e2d271297e3d8",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/api.js": {
+    "mtime": 1794264548.2863526,
+    "seen": 1794267747.3846903,
+    "ast_hash": "b091367e2d694603f6ca14bfe14e69df",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/app.js": {
+    "mtime": 1794838740.5164073,
+    "seen": 1794839281.7521918,
+    "ast_hash": "981f6c67828df74de5c1c80f94fdd368",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/charts.js": {
+    "mtime": 1794264586.5421453,
+    "seen": 1794267747.384692,
+    "ast_hash": "50d548a7c6c1ff3ce180bff6f4c69c75",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/dom.js": {
+    "mtime": 1794838496.0798645,
+    "seen": 1794839281.7521987,
+    "ast_hash": "666ab3fd119d7e9da942a6643e7028ab",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/format.js": {
+    "mtime": 1794262706.534725,
+    "seen": 1794267747.3846939,
+    "ast_hash": "1f0d310c358ed1a808e1322b38b48f35",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/forms.js": {
+    "mtime": 1794262963.2818594,
+    "seen": 1794267747.3846943,
+    "ast_hash": "7e8cdd919772920c76bba6414d5a9681",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/login.js": {
+    "mtime": 1795105926.3284574,
+    "seen": 1795106609.3347952,
+    "ast_hash": "c3bd506c0f18f49b2b8382dd6dcbdc45",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/strings.js": {
+    "mtime": 1795119120.490298,
+    "seen": 1795119151.7567825,
+    "ast_hash": "7342d25d5be28602b1a5300a49566144",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/ui.js": {
+    "mtime": 1795119183.0880768,
+    "seen": 1795119267.78346,
+    "ast_hash": "26cd1079899e54a27049ba7b79aef6d5",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/account.js": {
+    "mtime": 1795104455.882861,
+    "seen": 1795104545.8021681,
+    "ast_hash": "de7b981c99be99c9f6f14895482bb696",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/audit.js": {
+    "mtime": 1794261920.934554,
+    "seen": 1794267747.3846984,
+    "ast_hash": "c8e02a5b529c096a4f144622485a13d2",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/content.js": {
+    "mtime": 1795119185.8331153,
+    "seen": 1795119267.783467,
+    "ast_hash": "4caddb5efc86e7b03c99b9c521bbbbcc",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/gallery.js": {
+    "mtime": 1794263612.043713,
+    "seen": 1794267747.3846998,
+    "ast_hash": "3d15f79ac1d8729dbf2e5b2c251352b9",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/inventory.js": {
+    "mtime": 1794263964.8554175,
+    "seen": 1794267747.384701,
+    "ast_hash": "1be1ac571eab8a056c56db714f15c6f7",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/more.js": {
+    "mtime": 1795104455.9378612,
+    "seen": 1795104545.802211,
+    "ast_hash": "f56486c10691cdbff5a54c896f7fcb3a",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/overview.js": {
+    "mtime": 1794265739.8545487,
+    "seen": 1794267747.3847024,
+    "ast_hash": "91cd771ae66424722d59717af831cb5f",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/services.js": {
+    "mtime": 1794264586.5416222,
+    "seen": 1794267747.3847034,
+    "ast_hash": "4d9f8175db8a4dcf9218d5bad6014a09",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/texts.js": {
+    "mtime": 1794264378.761343,
+    "seen": 1794267747.3847046,
+    "ast_hash": "e846e352c711907f43542fdca07dfd39",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/users.js": {
+    "mtime": 1794264654.1797533,
+    "seen": 1794267747.3847053,
+    "ast_hash": "a6a17a74e1f91f44f70082644d63a666",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/dev/engine-harness.js": {
+    "mtime": 1794270908.180933,
+    "seen": 1794274274.4130712,
+    "ast_hash": "415159bbd97d15213a6a23b2edd323b9",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/fonts/FONTS.json": {
+    "mtime": 1794266179.5873976,
+    "seen": 1794267747.3847084,
+    "ast_hash": "e339fd36feea9a78035e21c6ae9247fe",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/ASSETS.json": {
+    "mtime": 1794306769.6369529,
+    "seen": 1794307188.6714072,
+    "ast_hash": "a58f5713bc9e7271ffcb2a908734f0d9",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/engine/pins.json": {
+    "mtime": 1794270406.780912,
+    "seen": 1794274274.4130757,
+    "ast_hash": "e5e2b2db688a2475390ee0c93bf0cc4d",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/gallery/manifest.json": {
+    "mtime": 1794306763.26906,
+    "seen": 1794307188.671411,
+    "ast_hash": "1124fe941f8f0956c0a085ec0737fcfc",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/js/chat.js": {
+    "mtime": 1794324402.053797,
+    "seen": 1794324455.7418337,
+    "ast_hash": "1ea439012531bc12b6168fa21bde8cfe",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/js/dom.js": {
+    "mtime": 1794276954.6719754,
+    "seen": 1794291177.2972772,
+    "ast_hash": "a9161f8da9e0a35a7b2a13937261026a",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/js/engine/geometry.js": {
+    "mtime": 1794268899.492137,
+    "seen": 1794274274.41308,
+    "ast_hash": "967904242981ac189a9ec7f971c23a13",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/js/engine/index.js": {
+    "mtime": 1794271353.1736467,
+    "seen": 1794274274.4130814,
+    "ast_hash": "f0575b722091d5aabbbd9eb1d35440f3",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/js/engine/labels.js": {
+    "mtime": 1794264375.4116647,
+    "seen": 1794267747.384715,
+    "ast_hash": "33d71e83222da530b80857ebd001eebc",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/js/engine/scene.js": {
+    "mtime": 1794271606.3322017,
+    "seen": 1794274274.413088,
+    "ast_hash": "ed3dc6ae1087f980bc7f731669092779",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/js/search.js": {
+    "mtime": 1794265997.8862338,
+    "seen": 1794267747.38472,
+    "ast_hash": "5bbe31ae394a8dc195e3146fa1cb463a",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/js/site.js": {
+    "mtime": 1794297969.9900913,
+    "seen": 1794298478.4650176,
+    "ast_hash": "5e8f67404b93d5b420560b4b0bb01f31",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/vendor/phosphor/VENDOR.json": {
+    "mtime": 1794266180.0425923,
+    "seen": 1794267747.384722,
+    "ast_hash": "5997cf22dbb760126296b885f2935809",
+    "semantic_hash": ""
+  },
+  "scripts/build_site_assets.py": {
+    "mtime": 1794306750.7567997,
+    "seen": 1794307188.671615,
+    "ast_hash": "853dbb66660e6dd9c3454f3b0bb08984",
+    "semantic_hash": ""
+  },
+  "tests/site_engine_timeline_test.mjs": {
+    "mtime": 1794271740.2543628,
+    "seen": 1794274274.4131942,
+    "ast_hash": "eefdf4b7e625422567cd3c0923bb644e",
+    "semantic_hash": ""
+  },
+  "tests/test_site_admin.py": {
+    "mtime": 1794275359.3724911,
+    "seen": 1794291177.297547,
+    "ast_hash": "4da5eecd2af667d5d754fe17da6a015d",
+    "semantic_hash": ""
+  },
+  "tests/test_site_auth.py": {
+    "mtime": 1794278685.0403397,
+    "seen": 1794291177.2975488,
+    "ast_hash": "d5ffa7bd3d5f5f66c42f5c37dbb67e50",
+    "semantic_hash": ""
+  },
+  "tests/test_site_catalog.py": {
+    "mtime": 1794284944.7696295,
+    "seen": 1794291177.297551,
+    "ast_hash": "19a4883f8c928b76f28e0789950a3394",
+    "semantic_hash": ""
+  },
+  "tests/test_site_chat.py": {
+    "mtime": 1795105704.8381486,
+    "seen": 1795106609.335098,
+    "ast_hash": "1fec7aa71f8e7cb443371d79d065acd7",
+    "semantic_hash": ""
+  },
+  "tests/test_site_config.py": {
+    "mtime": 1795105707.7295544,
+    "seen": 1795106609.335099,
+    "ast_hash": "87939910745e0e92966baf83e850040f",
+    "semantic_hash": ""
+  },
+  "tests/test_site_content.py": {
+    "mtime": 1794278846.334524,
+    "seen": 1794291177.2975562,
+    "ast_hash": "042fe46cfb84a6d94cfa33c8a079e6bf",
+    "semantic_hash": ""
+  },
+  "tests/test_site_database.py": {
+    "mtime": 1794837212.6697087,
+    "seen": 1794837693.1614919,
+    "ast_hash": "987f5fe09761e18b6298cbc1b00d324c",
+    "semantic_hash": ""
+  },
+  "tests/test_site_guard.py": {
+    "mtime": 1795106448.1499963,
+    "seen": 1795106609.335107,
+    "ast_hash": "6a56ef8edab4d53df2723323ce5cd3f1",
+    "semantic_hash": ""
+  },
+  "tests/test_site_media.py": {
+    "mtime": 1794307037.7618363,
+    "seen": 1794307188.6717422,
+    "ast_hash": "57aaf111ed5e2aa18c5d7bb17de3e530",
+    "semantic_hash": ""
+  },
+  "tests/test_site_pages.py": {
+    "mtime": 1794307041.6457858,
+    "seen": 1794307188.671745,
+    "ast_hash": "1f0d2accf0313f3e95fa2b38ccb9816f",
+    "semantic_hash": ""
+  },
+  "tests/test_site_reports.py": {
+    "mtime": 1794262557.6008158,
+    "seen": 1794267747.384861,
+    "ast_hash": "41e9d6ec6b7c65591533c6e58b4f0abe",
+    "semantic_hash": ""
+  },
+  "tests/test_site_setup.py": {
+    "mtime": 1794306998.002134,
+    "seen": 1794307188.67175,
+    "ast_hash": "db6b39e29d9d7b7b4429cef626a02808",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/dev/engine.html": {
+    "mtime": 1794264601.575077,
+    "seen": 1794267747.384879,
+    "ast_hash": "c7048f35ef2db6f53e50d11075132699",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/fonts/OFL-BarlowCondensed.txt": {
+    "mtime": 1794266179.5868015,
+    "seen": 1794267747.38488,
+    "ast_hash": "46cbde1f44ff31807ec209f1b72acad2",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/fonts/OFL-NotoSansGeorgian.txt": {
+    "mtime": 1794266179.5860658,
+    "seen": 1794267747.3848813,
+    "ast_hash": "e6cff3502cf23c902629a3bc3a5191e4",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/vendor/phosphor/LICENSE.txt": {
+    "mtime": 1794266180.0419564,
+    "seen": 1794267747.384882,
+    "ast_hash": "9c267cca94df6a7ac13d83b43a8bccfb",
+    "semantic_hash": ""
+  },
+  "automotive/templates/site/partials/band.html": {
+    "mtime": 1794262624.0970747,
+    "seen": 1794267747.3848855,
+    "ast_hash": "0e1b30fb367b8f230eabe849d5425a44",
+    "semantic_hash": ""
+  },
+  "automotive/templates/site/partials/chat.html": {
+    "mtime": 1794310776.1050594,
+    "seen": 1794312138.7520278,
+    "ast_hash": "030420174917c728756a9931e019d347",
+    "semantic_hash": ""
+  },
+  "automotive/templates/site/partials/engine.html": {
+    "mtime": 1794264839.8550947,
+    "seen": 1794267747.3848875,
+    "ast_hash": "6ad13550929bdf0a5487605551ddb4b1",
+    "semantic_hash": ""
+  },
+  "automotive/templates/site/partials/footer.html": {
+    "mtime": 1794262081.087905,
+    "seen": 1794267747.3848884,
+    "ast_hash": "42c6d9f43e803d4d0775e41b76845291",
+    "semantic_hash": ""
+  },
+  "automotive/templates/site/partials/gallery.html": {
+    "mtime": 1794264296.0467806,
+    "seen": 1794267747.3848891,
+    "ast_hash": "b84721df56592fc2f3ba0fadf7d341bf",
+    "semantic_hash": ""
+  },
+  "automotive/templates/site/partials/hero.html": {
+    "mtime": 1794265972.6415577,
+    "seen": 1794267747.3848898,
+    "ast_hash": "8eb776caa76a3c485b8962ed461fc15c",
+    "semantic_hash": ""
+  },
+  "automotive/templates/site/partials/macros.html": {
+    "mtime": 1794261963.0728266,
+    "seen": 1794267747.3848906,
+    "ast_hash": "56b1656a22547a07591181259a4061f6",
+    "semantic_hash": ""
+  },
+  "automotive/templates/site/partials/nav.html": {
+    "mtime": 1794264511.9043365,
+    "seen": 1794267747.3848915,
+    "ast_hash": "112d74102b8d5d277271cb4ca8dbde91",
+    "semantic_hash": ""
+  },
+  "automotive/templates/site/partials/parts.html": {
+    "mtime": 1794264614.39551,
+    "seen": 1794267747.3848922,
+    "ast_hash": "ebe23e46b710d89741a22c04ea380922",
+    "semantic_hash": ""
+  },
+  "automotive/templates/site/partials/services.html": {
+    "mtime": 1794276954.6721272,
+    "seen": 1794291177.2976346,
+    "ast_hash": "ec6cb012c422a20058e4d2cae68b598d",
+    "semantic_hash": ""
+  },
+  "automotive/templates/site/partials/story.html": {
+    "mtime": 1794307874.892642,
+    "seen": 1794308807.9974158,
+    "ast_hash": "04b1066dd4e1b2268855bbc4aa784513",
+    "semantic_hash": ""
+  },
+  "automotive/templates/site/partials/visit.html": {
+    "mtime": 1794262080.5052655,
+    "seen": 1794267747.3848946,
+    "ast_hash": "050362e312509499ecf0e170f1b31fe7",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/img/mark.svg": {
+    "mtime": 1794262108.154027,
+    "seen": 1794267747.3849456,
+    "ast_hash": "d497d6a90a1ca3905a1592ebfcaa04cf",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/apple-touch-icon.png": {
+    "mtime": 1794266180.1234243,
+    "seen": 1794267747.3849463,
+    "ast_hash": "e607f6f15658e8e797dc1be9cec02ae2",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/burst-k-640.webp": {
+    "mtime": 1794266185.0934465,
+    "seen": 1794267747.3849475,
+    "ast_hash": "44e793362f315ce32fa993eff9a8fc09",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/burst-k.webp": {
+    "mtime": 1794266185.0226684,
+    "seen": 1794267747.3849483,
+    "ast_hash": "ee64e13a509e0df11a9159b61a941b2c",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/burst-w-640.webp": {
+    "mtime": 1794266185.2864475,
+    "seen": 1794267747.3849492,
+    "ast_hash": "0aa69b2020a7cc325c8b4bb638b3ea70",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/burst-w.webp": {
+    "mtime": 1794266185.209779,
+    "seen": 1794267747.3849502,
+    "ast_hash": "2d62fef67b8c13d48a68fad8f099c287",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/engine/burst.webp": {
+    "mtime": 1794265022.644181,
+    "seen": 1794267747.384951,
+    "ast_hash": "8dcfb70ba9086fb7dd3c8f6844cf3334",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/engine/poster-landscape-0.webp": {
+    "mtime": 1794270403.4982593,
+    "seen": 1794274274.413397,
+    "ast_hash": "1aa55aaf11d4519176cfa564ecd12a02",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/engine/poster-landscape-1.webp": {
+    "mtime": 1794270406.3992724,
+    "seen": 1794274274.4133985,
+    "ast_hash": "779307f63188a957d8fa990c9ecc765a",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/engine/poster-portrait-0.webp": {
+    "mtime": 1794270397.6052327,
+    "seen": 1794274274.4134002,
+    "ast_hash": "726a46e91ea5d2302cbd9957a494693c",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/engine/poster-portrait-1.webp": {
+    "mtime": 1794270400.0052435,
+    "seen": 1794274274.4134011,
+    "ast_hash": "e2f7e18161344e30a76887ca3c9f6d96",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/favicon.svg": {
+    "mtime": 1794266180.0754843,
+    "seen": 1794267747.384958,
+    "ast_hash": "5bd42aefa964a6f962ffa6193de62635",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/gallery/brakes-wall.webp": {
+    "mtime": 1794306761.2515702,
+    "seen": 1794307188.6719778,
+    "ast_hash": "9b473d11f2c29c2d7c643508225c1462",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/gallery/engine-wall.webp": {
+    "mtime": 1794306761.5195718,
+    "seen": 1794307188.6719828,
+    "ast_hash": "f09efdcb381f5e1d645e3f15deb4f149",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/gallery/logo-wall.webp": {
+    "mtime": 1794306760.609567,
+    "seen": 1794307188.6719906,
+    "ast_hash": "81a39ed225910af47de46cd2d6925571",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/gallery/lubricants-wall.webp": {
+    "mtime": 1794306762.114575,
+    "seen": 1794307188.671996,
+    "ast_hash": "a55039ba64bb8b2b9d82a6e27062b390",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/gallery/route-66-wall.webp": {
+    "mtime": 1794306761.926574,
+    "seen": 1794307188.671999,
+    "ast_hash": "2bdacaad9fc2656e8e5f5db6be9eab0a",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/gallery/service-wall.webp": {
+    "mtime": 1794306760.827568,
+    "seen": 1794307188.6720016,
+    "ast_hash": "31e1c93a82dbbd065876b5b024effa20",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/gallery/turbo-wall.webp": {
+    "mtime": 1794306761.748573,
+    "seen": 1794307188.672004,
+    "ast_hash": "c0b9fed19d8dd9e2de6594b97a0a03ad",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/grain.png": {
+    "mtime": 1794266186.760454,
+    "seen": 1794267747.384965,
+    "ast_hash": "bb418caf0623f8116f9b49132b76693c",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/lettering.webp": {
+    "mtime": 1794266186.1084511,
+    "seen": 1794267747.3849657,
+    "ast_hash": "927cf1424245e61f472ddd551ae7f4ff",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/logo-full.svg": {
+    "mtime": 1794266180.0742793,
+    "seen": 1794267747.3849666,
+    "ast_hash": "6e6de52b919a8a54dd575b10d9113695",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/og.jpg": {
+    "mtime": 1794306769.613333,
+    "seen": 1794307188.6720138,
+    "ast_hash": "6bb587a252701c0c1269be57046d978a",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/service-mural-640.webp": {
+    "mtime": 1794306760.1775646,
+    "seen": 1794307188.672016,
+    "ast_hash": "ff4f4a9fcca95c654c6992637d4c98bb",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/service-mural.webp": {
+    "mtime": 1794306760.055564,
+    "seen": 1794307188.6720178,
+    "ast_hash": "43ae8ae65a3f7b40e691e59c7c661ba6",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/sheen.webp": {
+    "mtime": 1794266186.6574535,
+    "seen": 1794267747.38497,
+    "ast_hash": "7ff6061f8350f5dd0c912e44057a8dc4",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/wordmark.svg": {
+    "mtime": 1794266180.0752404,
+    "seen": 1794267747.3849707,
+    "ast_hash": "c5f61bb4b9bce330890e4882e811b38d",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/vendor/phosphor/caret-down.svg": {
+    "mtime": 1794266180.0421526,
+    "seen": 1794267747.3849716,
+    "ast_hash": "1c0c5538a600ac6cd42040f32a1df3ee",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/vendor/phosphor/sprite.svg": {
+    "mtime": 1794266180.0415478,
+    "seen": 1794267747.3849723,
+    "ast_hash": "ac883d0f726cf5fffa0677e2f044d8c7",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/js/engine/pace.js": {
+    "mtime": 1794271606.3319347,
+    "seen": 1794274274.4130855,
+    "ast_hash": "f379fa7e5a87b46beed9732ee7a97073",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/garage-site-qa.md": {
+    "mtime": 1794308792.9935176,
+    "seen": 1794308807.997436,
+    "ast_hash": "082796f828b998853eccb3cc532fa066",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/garage-site-admin-desktop.png": {
+    "mtime": 1794272378.1890626,
+    "seen": 1794274274.4134374,
+    "ast_hash": "d1e5a4da8d54dbf1847cf5355b1b4d34",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/garage-site-admin-mobile.png": {
+    "mtime": 1794272378.304063,
+    "seen": 1794274274.4134388,
+    "ast_hash": "1b6730d11f8cdc44dcdf1b848e8eff05",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/garage-site-desktop.png": {
+    "mtime": 1794272376.6365466,
+    "seen": 1794274274.41344,
+    "ast_hash": "4917f5f7edde202ccbd4d4d6e71a13c1",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/garage-site-engine-desktop.png": {
+    "mtime": 1794272377.3187017,
+    "seen": 1794274274.4134412,
+    "ast_hash": "07c8152587922a09b68152dc44a97b85",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/garage-site-engine-mobile.png": {
+    "mtime": 1794272377.7053812,
+    "seen": 1794274274.4134426,
+    "ast_hash": "14020fd5ee9e771658bd1992bd2cd41e",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/garage-site-mobile.png": {
+    "mtime": 1794272377.0210571,
+    "seen": 1794274274.4134438,
+    "ast_hash": "d880cc4ca6929873524f9e2b93817702",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/garage-site-parts-mobile.png": {
+    "mtime": 1794291000.2152555,
+    "seen": 1794291177.2977934,
+    "ast_hash": "1c89f13325fd3c9e9a3e586f4b93292e",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/gallery/benz-1886-wall.webp": {
+    "mtime": 1794306761.0515692,
+    "seen": 1794307188.6719744,
+    "ast_hash": "f06c1e7cbb2b1b1476a54189569876b5",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/gallery/engine-close-wall.webp": {
+    "mtime": 1794306763.0305798,
+    "seen": 1794307188.6719801,
+    "ast_hash": "417eab37297bab5343c7148f4e8a8cfc",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/gallery/horse-close-wall.webp": {
+    "mtime": 1794306762.679578,
+    "seen": 1794307188.6719851,
+    "ast_hash": "72a1888cdaa7fc250ccb095747b4fc43",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/gallery/horse-wall.webp": {
+    "mtime": 1794306762.3845763,
+    "seen": 1794307188.6719878,
+    "ast_hash": "d17b34f41363cf0f2a29d743159247a5",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/gallery/lubricants-clear-wall.webp": {
+    "mtime": 1794306763.240581,
+    "seen": 1794307188.671993,
+    "ast_hash": "bf475bc1342b5ff5cf4dd6575ff039da",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/story-mural-520.webp": {
+    "mtime": 1794306760.442566,
+    "seen": 1794307188.6720228,
+    "ast_hash": "256ece9ca12a7c1a460ae17caa39280c",
+    "semantic_hash": ""
+  },
+  "automotive/static/site/img/story-mural.webp": {
+    "mtime": 1794306760.3275654,
+    "seen": 1794307188.6720252,
+    "ast_hash": "2c72de871cfb3ef05d5a970a35b610ec",
+    "semantic_hash": ""
+  },
+  "automotive/assistant.py": {
+    "mtime": 1795117759.7413292,
+    "seen": 1795118062.9667912,
+    "ast_hash": "60e2370d496c25f7af69e005c21b32c9",
+    "semantic_hash": ""
+  },
+  "automotive/assistant_catalog.py": {
+    "mtime": 1795117680.3183215,
+    "seen": 1795118062.9667983,
+    "ast_hash": "134e0b7bfdb7bfd29446bfa60341325a",
+    "semantic_hash": ""
+  },
+  "automotive/assistant_prompt.py": {
+    "mtime": 1795117759.7119913,
+    "seen": 1795118062.9668145,
+    "ast_hash": "41ee7d88f40eb1696e418cf546bf1689",
+    "semantic_hash": ""
+  },
+  "automotive/assistant_tools.py": {
+    "mtime": 1795117759.7142012,
+    "seen": 1795118062.9668248,
+    "ast_hash": "a0817637c4b6c305eb736486ae7889a5",
+    "semantic_hash": ""
+  },
+  "automotive/chat_contract.py": {
+    "mtime": 1794323467.0774467,
+    "seen": 1794323694.1319065,
+    "ast_hash": "cb77109ab31337074f7a49c5c741d250",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/chat_ui/turns.json": {
+    "mtime": 1794323479.427795,
+    "seen": 1794323694.1322486,
+    "ast_hash": "4dfaf5e04613da64d93e74ed2d07738c",
+    "semantic_hash": ""
+  },
+  "tests/site_chat_widget_test.mjs": {
+    "mtime": 1794324497.5790155,
+    "seen": 1794325171.6188977,
+    "ast_hash": "2b73cb9872cf7af2edb1a1f357fb87f1",
+    "semantic_hash": ""
+  },
+  "tests/test_assistant.py": {
+    "mtime": 1795109431.552855,
+    "seen": 1795109849.3665555,
+    "ast_hash": "eef9379db2d61a4ed1d6f9f806df773b",
+    "semantic_hash": ""
+  },
+  "tests/test_assistant_catalog.py": {
+    "mtime": 1795107831.9945514,
+    "seen": 1795109849.3665576,
+    "ast_hash": "c5cfc1394a440bb4816ce7b2bd74d618",
+    "semantic_hash": ""
+  },
+  "tests/test_chat_contract.py": {
+    "mtime": 1794323506.6655211,
+    "seen": 1794323694.1323013,
+    "ast_hash": "d5d11cfeef726941366050b2520c60b4",
+    "semantic_hash": ""
+  },
+  "automotive/assistant_eval.py": {
+    "mtime": 1795117759.74349,
+    "seen": 1795118062.966802,
+    "ast_hash": "845526df999a7c3770c4dc79db425eea",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/assistant/conversations.json": {
+    "mtime": 1794337113.413199,
+    "seen": 1794337240.9087677,
+    "ast_hash": "4fd67e359030b8c6f3584fc97dad40da",
+    "semantic_hash": ""
+  },
+  "tests/test_assistant_eval.py": {
+    "mtime": 1794329420.649581,
+    "seen": 1794329600.3460596,
+    "ast_hash": "3c0479a529e9aa88859f715545743f1c",
+    "semantic_hash": ""
+  },
+  "automotive/chat_review.py": {
+    "mtime": 1794315699.6535068,
+    "seen": 1794315790.513012,
+    "ast_hash": "481f51cfe5c98d259ff02fa2a00ac0d1",
+    "semantic_hash": ""
+  },
+  "tests/test_chat_review.py": {
+    "mtime": 1794315684.471673,
+    "seen": 1794315790.5137007,
+    "ast_hash": "9783cc10d4d55fe188035e95fded0645",
+    "semantic_hash": ""
+  },
+  "tests/browser/assistant_chat_walk.mjs": {
+    "mtime": 1794326874.4149942,
+    "seen": 1794327081.6151786,
+    "ast_hash": "55fc983b87ff322c5c1128959828b3c3",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/assistant-chat-qa.md": {
+    "mtime": 1794329019.0885532,
+    "seen": 1794329113.4602368,
+    "ast_hash": "f5b67ab1e7c7b486ccdbcebd56133282",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/assistant-staff-answer-tapped.png": {
+    "mtime": 1794326615.6779132,
+    "seen": 1794327081.6154456,
+    "ast_hash": "69f7ba5d67d5c4606b45452c91b8684e",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/assistant-staff-oil-change.png": {
+    "mtime": 1794326615.6828806,
+    "seen": 1794327081.615447,
+    "ast_hash": "2d9bcd55c83fbbbb4c5f712725c38085",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/assistant-staff-question.png": {
+    "mtime": 1794326615.6743956,
+    "seen": 1794327081.6154485,
+    "ast_hash": "4b3f9efdb9a6b92ed335335ceceba503",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/assistant-widget-desktop-oil-change.png": {
+    "mtime": 1794326615.6811397,
+    "seen": 1794327081.6154501,
+    "ast_hash": "91ee106f2e33b7a5ff8bb422d319e4ba",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/assistant-widget-desktop-question.png": {
+    "mtime": 1794326615.6722062,
+    "seen": 1794327081.6154516,
+    "ast_hash": "b9aa0ea77397ef92b8aaa318ae241af7",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/assistant-widget-phone-answer-tapped.png": {
+    "mtime": 1794326615.6753507,
+    "seen": 1794327081.615453,
+    "ast_hash": "3684ddef43d652610fec1a9c9910bb94",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/assistant-widget-phone-english.png": {
+    "mtime": 1794326615.6860726,
+    "seen": 1794327081.615456,
+    "ast_hash": "d659a2a382f1d2758d399d01598a4746",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/assistant-widget-phone-groups.png": {
+    "mtime": 1794326615.6844823,
+    "seen": 1794327081.6154575,
+    "ast_hash": "ac5afb0fe8f9faa216e61f3efd51d699",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/assistant-widget-phone-parts.png": {
+    "mtime": 1794326615.6794662,
+    "seen": 1794327081.6154606,
+    "ast_hash": "00233681de74bbd4d37fa28230b6897b",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/assistant-widget-phone-question.png": {
+    "mtime": 1794326615.6696496,
+    "seen": 1794327081.6154618,
+    "ast_hash": "2e4d643fc854e2ac91a5483dfe0118ef",
+    "semantic_hash": ""
+  },
+  "automotive/assistant_names.py": {
+    "mtime": 1794326852.5985336,
+    "seen": 1794327081.61499,
+    "ast_hash": "da62379c196d4a56e57e0af38d840274",
+    "semantic_hash": ""
+  },
+  "tests/test_assistant_names.py": {
+    "mtime": 1794326852.5989335,
+    "seen": 1794327081.6151958,
+    "ast_hash": "8877963aee6b2a5bcd62fdc6d42d839f",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/assistant-widget-phone-dont-know.png": {
+    "mtime": 1794326615.6896145,
+    "seen": 1794327081.6154542,
+    "ast_hash": "2dc3868b136fa95d1dbb5ef5f30fca42",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/assistant-widget-phone-oil-spec.png": {
+    "mtime": 1794326615.6878858,
+    "seen": 1794327081.615459,
+    "ast_hash": "c7d04ce9d875af7da61fe8dc3b17e6c9",
+    "semantic_hash": ""
+  },
+  "automotive/model_client.py": {
+    "mtime": 1794387008.6817172,
+    "seen": 1794387117.2619905,
+    "ast_hash": "366b71d9fa0b897433200f7eef539b87",
+    "semantic_hash": ""
+  },
+  "tests/test_model_fallback.py": {
+    "mtime": 1794387010.0757897,
+    "seen": 1794387117.262291,
+    "ast_hash": "64e911c393a438be88f73fe18d6bcedb",
+    "semantic_hash": ""
+  },
+  "automotive/assistant_bench.py": {
+    "mtime": 1794410273.6725082,
+    "seen": 1794410413.7768762,
+    "ast_hash": "56fbb7340d6d5e27da2bc15b83eaab02",
+    "semantic_hash": ""
+  },
+  "automotive/assistant_exam.py": {
+    "mtime": 1794478308.1883204,
+    "seen": 1794478366.58497,
+    "ast_hash": "a78fa13b49d0be52f02aec7b2b4e514d",
+    "semantic_hash": ""
+  },
+  "tests/test_assistant_bench.py": {
+    "mtime": 1794410307.776948,
+    "seen": 1794410413.7771733,
+    "ast_hash": "2aabf9f2fe307a212baf8d9f5f1f8204",
+    "semantic_hash": ""
+  },
+  "tests/test_assistant_exam.py": {
+    "mtime": 1794478328.7548633,
+    "seen": 1794478366.5855143,
+    "ast_hash": "72ed5cf2328b2670dbf674d3192f0667",
+    "semantic_hash": ""
+  },
+  "automotive/assistant_extras.py": {
+    "mtime": 1795117759.7428174,
+    "seen": 1795118062.9668074,
+    "ast_hash": "c652993e40382d0e59631c9f754a8059",
+    "semantic_hash": ""
+  },
+  "automotive/assistant_research.py": {
+    "mtime": 1794482413.1529272,
+    "seen": 1794482536.8329177,
+    "ast_hash": "add5389c2de9c005be727360ab3bf0a2",
+    "semantic_hash": ""
+  },
+  "automotive/assistant_sources.py": {
+    "mtime": 1794392488.4738216,
+    "seen": 1794392552.6554563,
+    "ast_hash": "87f48b9fc64dd56aabf5ba564865dd64",
+    "semantic_hash": ""
+  },
+  "tests/test_assistant_research.py": {
+    "mtime": 1794482414.0577579,
+    "seen": 1794482536.833303,
+    "ast_hash": "a62661c8a677b3a0e04efa7ded3dab3e",
+    "semantic_hash": ""
+  },
+  "tests/test_assistant_sources.py": {
+    "mtime": 1794386129.412799,
+    "seen": 1794387117.2622476,
+    "ast_hash": "b58810b8bb7dfaa18dd295a8aa66deea",
+    "semantic_hash": ""
+  },
+  "tests/test_assistant_extras.py": {
+    "mtime": 1794481665.2391446,
+    "seen": 1794481790.005195,
+    "ast_hash": "be1a10b73351f4f2956b3e9006fb292d",
+    "semantic_hash": ""
+  },
+  "automotive/meta_config.py": {
+    "mtime": 1794402495.922145,
+    "seen": 1794407809.326211,
+    "ast_hash": "14cc8e2002e52074a1744c07dbd19075",
+    "semantic_hash": ""
+  },
+  "automotive/meta_crypto.py": {
+    "mtime": 1794402510.433614,
+    "seen": 1794407809.3262126,
+    "ast_hash": "7f04797723d2a787a519bde0d5416dbe",
+    "semantic_hash": ""
+  },
+  "automotive/meta_db.py": {
+    "mtime": 1794402502.1271808,
+    "seen": 1794407809.3262134,
+    "ast_hash": "4219467d394b2f33a23d77bd8692286e",
+    "semantic_hash": ""
+  },
+  "automotive/meta_graph.py": {
+    "mtime": 1794480144.867012,
+    "seen": 1794480251.6527002,
+    "ast_hash": "44ade96077c3c8072abc74addcc47a70",
+    "semantic_hash": ""
+  },
+  "migrations/0013_meta_messenger.down.sql": {
+    "mtime": 1794402453.3775008,
+    "seen": 1794407809.3263237,
+    "ast_hash": "021846861f273ace51bf1170c403b1e3",
+    "semantic_hash": ""
+  },
+  "migrations/0013_meta_messenger.up.sql": {
+    "mtime": 1794402448.6218665,
+    "seen": 1794407809.3263247,
+    "ast_hash": "4128b76a12bca04f866f32c9a4fa0cec",
+    "semantic_hash": ""
+  },
+  "automotive/meta_receiver.py": {
+    "mtime": 1795118520.0083723,
+    "seen": 1795118763.2824903,
+    "ast_hash": "3514b02b79300a0783d7c673e075fb64",
+    "semantic_hash": ""
+  },
+  "automotive/meta_store.py": {
+    "mtime": 1795118520.009243,
+    "seen": 1795118763.2824922,
+    "ast_hash": "acf92db7509ba9ec6f3fbe8e2b1ee12a",
+    "semantic_hash": ""
+  },
+  "automotive/messenger_engine.py": {
+    "mtime": 1794839111.3716042,
+    "seen": 1794839281.7520425,
+    "ast_hash": "93fa4f8a7dfd1fd7a5bc5ebc3a9e58dd",
+    "semantic_hash": ""
+  },
+  "automotive/messenger_events.py": {
+    "mtime": 1794408358.3833249,
+    "seen": 1794408516.9198422,
+    "ast_hash": "11cf9ff2c512112532068ddd7f826479",
+    "semantic_hash": ""
+  },
+  "automotive/messenger_render.py": {
+    "mtime": 1794487863.759922,
+    "seen": 1794487949.3897123,
+    "ast_hash": "ee7a6940df09387c4209537111da6105",
+    "semantic_hash": ""
+  },
+  "tests/test_messenger_engine.py": {
+    "mtime": 1794480999.3072212,
+    "seen": 1794481535.10943,
+    "ast_hash": "7cbba4eb23dff2ce03cd1747427bc03c",
+    "semantic_hash": ""
+  },
+  "tests/test_messenger_events.py": {
+    "mtime": 1794409401.2639127,
+    "seen": 1794409636.484464,
+    "ast_hash": "e8a1a200eacf122d1edc31b6df08700d",
+    "semantic_hash": ""
+  },
+  "tests/test_messenger_render.py": {
+    "mtime": 1794487888.4155877,
+    "seen": 1794487949.390074,
+    "ast_hash": "6c43a198f5b7ed7d21b045b43f5cf0a6",
+    "semantic_hash": ""
+  },
+  "automotive/templates/meta/data_deletion.html": {
+    "mtime": 1794408275.4599855,
+    "seen": 1794408337.750059,
+    "ast_hash": "263b3d8284540d0d1a3896cb481f73a4",
+    "semantic_hash": ""
+  },
+  "automotive/templates/meta/privacy.html": {
+    "mtime": 1795118520.0077624,
+    "seen": 1795118763.2831395,
+    "ast_hash": "879ac6b2d809991f7f91c984cc1cb132",
+    "semantic_hash": ""
+  },
+  "tests/test_meta_receiver.py": {
+    "mtime": 1795118564.4736094,
+    "seen": 1795118763.2830338,
+    "ast_hash": "5c0e8cb31b4b0ba992e735ab5f3bf7c4",
+    "semantic_hash": ""
+  },
+  "tests/test_meta_store_database.py": {
+    "mtime": 1795118564.466335,
+    "seen": 1795118763.283036,
+    "ast_hash": "28629302c9f97c97fdc08ba77e9d8f46",
+    "semantic_hash": ""
+  },
+  "automotive/meta_connect.py": {
+    "mtime": 1794480268.2002459,
+    "seen": 1794480300.363833,
+    "ast_hash": "65ad1e6413d1fa66e37c7e04bf5226f5",
+    "semantic_hash": ""
+  },
+  "automotive/meta_context.py": {
+    "mtime": 1794408723.872877,
+    "seen": 1794408814.171042,
+    "ast_hash": "c35a9adc877ad973571280e8de891cc9",
+    "semantic_hash": ""
+  },
+  "automotive/assistant_vehicles.py": {
+    "mtime": 1794416145.1379097,
+    "seen": 1794416146.8640642,
+    "ast_hash": "4f4fc2471c2dddcb8988369dd3e07983",
+    "semantic_hash": ""
+  },
+  "automotive/messenger_setup.py": {
+    "mtime": 1794478275.2881162,
+    "seen": 1794478366.5851157,
+    "ast_hash": "063d4cbb7d04c1aeb0d1f5107a51fb14",
+    "semantic_hash": ""
+  },
+  "tests/test_assistant_vehicles.py": {
+    "mtime": 1794416174.3333058,
+    "seen": 1794416302.2494886,
+    "ast_hash": "77344a14a27e32b11945fa579c6eac76",
+    "semantic_hash": ""
+  },
+  "tests/test_messenger_setup.py": {
+    "mtime": 1794478200.3178368,
+    "seen": 1794478366.5855746,
+    "ast_hash": "37e7df760eb2615b4949de6eccacfb69",
+    "semantic_hash": ""
+  },
+  "tests/test_meta_connect.py": {
+    "mtime": 1794480180.1354675,
+    "seen": 1794480251.653163,
+    "ast_hash": "3a1c46f7cb864140855e0ef7d980eb9e",
+    "semantic_hash": ""
+  },
+  "tests/test_meta_foundation.py": {
+    "mtime": 1794552802.2482386,
+    "seen": 1794553086.7979555,
+    "ast_hash": "6c0a454b34939a027c7348aeed4b80b6",
+    "semantic_hash": ""
+  },
+  "tests/test_meta_graph.py": {
+    "mtime": 1794480075.5173948,
+    "seen": 1794480251.6531665,
+    "ast_hash": "b82d0ffed8783c804f8f555761e687c3",
+    "semantic_hash": ""
+  },
+  "automotive/messenger_worker.py": {
+    "mtime": 1794837582.7838268,
+    "seen": 1794837693.160991,
+    "ast_hash": "0a06db65bdcb47aa6a22ff6e3bf93c51",
+    "semantic_hash": ""
+  },
+  "automotive/meta_page_stats.py": {
+    "mtime": 1794412377.8317902,
+    "seen": 1794413247.8053887,
+    "ast_hash": "d8c040683662ccc5602d4597187c2b1d",
+    "semantic_hash": ""
+  },
+  "automotive/meta_sync.py": {
+    "mtime": 1794411291.6863515,
+    "seen": 1794411375.7950509,
+    "ast_hash": "7388f53c1bc2c8eac126019e14bc22b3",
+    "semantic_hash": ""
+  },
+  "automotive/meta_ads.py": {
+    "mtime": 1794412414.4121077,
+    "seen": 1794413247.8053734,
+    "ast_hash": "ab926f1c0881044bc959f98ae8d1fbfe",
+    "semantic_hash": ""
+  },
+  "automotive/meta_comments.py": {
+    "mtime": 1794480322.4746444,
+    "seen": 1794480354.284473,
+    "ast_hash": "d04d25e1231d9d940c17ef06ad965321",
+    "semantic_hash": ""
+  },
+  "automotive/site_meta_admin.py": {
+    "mtime": 1795118528.9550364,
+    "seen": 1795118763.2825565,
+    "ast_hash": "ad7646161584c4ba1a5b9a85e95e1e53",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/facebook-connect.js": {
+    "mtime": 1794414172.598699,
+    "seen": 1794414215.2314308,
+    "ast_hash": "9c46200457b52b609e87131d954c9ad1",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/facebook-shared.js": {
+    "mtime": 1794412990.9410236,
+    "seen": 1794413247.805461,
+    "ast_hash": "6c02ed733eccc155f04ac23942ea2105",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/facebook-status.js": {
+    "mtime": 1795118979.372186,
+    "seen": 1795119151.7568257,
+    "ast_hash": "cec86689ed6cfabf28c6cc00dcd48cfa",
+    "semantic_hash": ""
+  },
+  "tests/test_messenger_worker.py": {
+    "mtime": 1795118564.4682052,
+    "seen": 1795118763.2830133,
+    "ast_hash": "6c19ff2f2f4114631af05cd30cc5a480",
+    "semantic_hash": ""
+  },
+  "tests/test_meta_ads.py": {
+    "mtime": 1794412062.7085257,
+    "seen": 1794413247.805722,
+    "ast_hash": "c9bed6eac08d68717bf2bdec47a1627a",
+    "semantic_hash": ""
+  },
+  "tests/test_meta_comments.py": {
+    "mtime": 1794480331.851724,
+    "seen": 1794480354.2847693,
+    "ast_hash": "59b1c7d2d3f0567fc8fa6bff42a59c21",
+    "semantic_hash": ""
+  },
+  "tests/test_meta_page_stats.py": {
+    "mtime": 1794477819.9912899,
+    "seen": 1794478144.1904895,
+    "ast_hash": "cffc37539365b455f5cddf3a83d415d6",
+    "semantic_hash": ""
+  },
+  "tests/test_site_meta_admin.py": {
+    "mtime": 1795118564.4711506,
+    "seen": 1795118763.2830846,
+    "ast_hash": "6bec88bb21d809f327956bf5dbc4f80c",
+    "semantic_hash": ""
+  },
+  "automotive/site_meta_activity.py": {
+    "mtime": 1794478764.5381925,
+    "seen": 1794479265.553039,
+    "ast_hash": "cfbcae59bb1e1ba95c8d0211f1b1e9e1",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/facebook-ads.js": {
+    "mtime": 1794415574.9570615,
+    "seen": 1794415595.9627566,
+    "ast_hash": "cd1e5f9a85ccb078130db491aaa8bede",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/facebook-chats.js": {
+    "mtime": 1794414402.9619184,
+    "seen": 1794414475.277347,
+    "ast_hash": "6ebf1d6b4c4f45df897ccce1fbe8c51f",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/facebook-comments.js": {
+    "mtime": 1794415069.368992,
+    "seen": 1794415368.3311503,
+    "ast_hash": "f52e85961c29f76687e1d5a1ab3a4ede",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/facebook-page.js": {
+    "mtime": 1794415845.6683617,
+    "seen": 1794416034.814569,
+    "ast_hash": "a5b152aa5d48d048655146870bf12297",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/facebook.js": {
+    "mtime": 1795119193.559344,
+    "seen": 1795119267.783494,
+    "ast_hash": "5a23ddac983caafc57ad29823c62bb8e",
+    "semantic_hash": ""
+  },
+  "tests/test_site_meta_activity.py": {
+    "mtime": 1794478753.7450442,
+    "seen": 1794479265.55328,
+    "ast_hash": "b476ccb5a67f2b5d6314066a2aa86c96",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/facebook-activity.js": {
+    "mtime": 1794415844.2049725,
+    "seen": 1794416034.8145483,
+    "ast_hash": "dd1ac9e2b4c91698b58e87344927332b",
+    "semantic_hash": ""
+  },
+  "docs/garage-messenger.md": {
+    "mtime": 1795118979.3728812,
+    "seen": 1795119151.7575657,
+    "ast_hash": "3c17fe7258947438212e512826dfa637",
+    "semantic_hash": ""
+  },
+  "tests/test_messenger_e2e.py": {
+    "mtime": 1794478341.3637617,
+    "seen": 1794478366.5855699,
+    "ast_hash": "f9702ccb4be9a1b77bc66e3c34842b16",
+    "semantic_hash": ""
+  },
+  "docs/testing/openrouter-fallback.tdd.md": {
+    "mtime": 1794438868.2584605,
+    "seen": 1794438897.3028803,
+    "ast_hash": "e3c05ebc82296f933a67d9aa08c4a72e",
+    "semantic_hash": ""
+  },
+  "migrations/0014_meta_forget.down.sql": {
+    "mtime": 1794477745.9184735,
+    "seen": 1794478144.1903253,
+    "ast_hash": "a27ae5429bb017e215769ccba5dbad1c",
+    "semantic_hash": ""
+  },
+  "migrations/0014_meta_forget.up.sql": {
+    "mtime": 1794477728.522722,
+    "seen": 1794478144.190327,
+    "ast_hash": "6fba86a92603d202a529db776b33c1aa",
+    "semantic_hash": ""
+  },
+  "tests/test_messenger_admin_cycle.py": {
+    "mtime": 1794483224.9353554,
+    "seen": 1794483443.776787,
+    "ast_hash": "6f334d85dbbf5cbb41d572257b2345f6",
+    "semantic_hash": ""
+  },
+  "automotive/customer_eval.py": {
+    "mtime": 1795117759.744496,
+    "seen": 1795118062.9668562,
+    "ast_hash": "7ef67273c371a032a9d734b8c24402de",
+    "semantic_hash": ""
+  },
+  "tests/test_customer_eval.py": {
+    "mtime": 1795029178.180144,
+    "seen": 1795061523.5857744,
+    "ast_hash": "dc126acf9e396ff0bb4d12cef58b7e6f",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/chatbot-improvement-2026-11-16.md": {
+    "mtime": 1794837996.290229,
+    "seen": 1794838020.9677706,
+    "ast_hash": "e9a7d5224ff9e9b6ebf47c35dba0a81d",
+    "semantic_hash": ""
+  },
+  "docs/chatbot-improvement-loop.md": {
+    "mtime": 1795041565.557526,
+    "seen": 1795061523.585949,
+    "ast_hash": "3160af655ae75ee30d5816d24f3b3601",
+    "semantic_hash": ""
+  },
+  "automotive/live_alerts.py": {
+    "mtime": 1795117940.7451963,
+    "seen": 1795118062.9668891,
+    "ast_hash": "6c4481025f2c482b1fb4d3e28d23197d",
+    "semantic_hash": ""
+  },
+  "automotive/live_store.py": {
+    "mtime": 1795118485.1971414,
+    "seen": 1795118763.28244,
+    "ast_hash": "5081629c3d2e86125324f3382917f058",
+    "semantic_hash": ""
+  },
+  "automotive/live_web.py": {
+    "mtime": 1795118520.022232,
+    "seen": 1795118763.2824438,
+    "ast_hash": "f175466982bd690e909d89b0c649a189",
+    "semantic_hash": ""
+  },
+  "automotive/site_live.py": {
+    "mtime": 1794841010.7292347,
+    "seen": 1794841242.8286874,
+    "ast_hash": "3c7e6465aaa8d1c5f801e43a73a10536",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/live-model.js": {
+    "mtime": 1794838285.6780264,
+    "seen": 1794839281.7522082,
+    "ast_hash": "f098934c9fbdbc67756f1c7e75a2402d",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/live-watch.js": {
+    "mtime": 1794838488.5998313,
+    "seen": 1794839281.7522118,
+    "ast_hash": "5cc67288030aaf59e02a381a04eb9475",
+    "semantic_hash": ""
+  },
+  "automotive/static/admin/js/views/live.js": {
+    "mtime": 1795104455.9958618,
+    "seen": 1795104545.8022082,
+    "ast_hash": "6b75ddb99665c70cd783ab0436d3b229",
+    "semantic_hash": ""
+  },
+  "migrations/0015_live_chats.down.sql": {
+    "mtime": 1794836850.0012784,
+    "seen": 1794837693.1612444,
+    "ast_hash": "db82f14324c7fa3a684b5db12990e158",
+    "semantic_hash": ""
+  },
+  "migrations/0015_live_chats.up.sql": {
+    "mtime": 1794840839.795452,
+    "seen": 1794841242.828847,
+    "ast_hash": "7b883857cea146151809a198c8d31d7b",
+    "semantic_hash": ""
+  },
+  "tests/admin_live_model_test.mjs": {
+    "mtime": 1794838315.7210672,
+    "seen": 1794839281.7525368,
+    "ast_hash": "3e46b5a551da92efeb0d63004d20f391",
+    "semantic_hash": ""
+  },
+  "tests/test_assistant_staff.py": {
+    "mtime": 1794841475.8034267,
+    "seen": 1794841485.4532785,
+    "ast_hash": "14594ea4a61900911f980803f5fb35e7",
+    "semantic_hash": ""
+  },
+  "tests/test_live_alerts.py": {
+    "mtime": 1794841474.3180406,
+    "seen": 1794841485.4533086,
+    "ast_hash": "1a408e6179a049920ff1f37a532524ca",
+    "semantic_hash": ""
+  },
+  "tests/test_live_store_database.py": {
+    "mtime": 1795118564.470236,
+    "seen": 1795118763.282995,
+    "ast_hash": "34ed091c2237877f5494d5a95f8ba9db",
+    "semantic_hash": ""
+  },
+  "tests/test_live_web.py": {
+    "mtime": 1794841482.243169,
+    "seen": 1794841485.4533105,
+    "ast_hash": "746d7c35183e8512e8c828fc939c70b6",
+    "semantic_hash": ""
+  },
+  "tests/test_messenger_live.py": {
+    "mtime": 1794839190.820771,
+    "seen": 1794839281.7526755,
+    "ast_hash": "e1929bd6dac00b0a81f3a9350472b9ab",
+    "semantic_hash": ""
+  },
+  "tests/test_site_live.py": {
+    "mtime": 1794841013.2792463,
+    "seen": 1794841242.8290017,
+    "ast_hash": "fb22e694630bbe7495aaa7cca40f9ca7",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/chatbot-improvement-2026-11-17.md": {
+    "mtime": 1794933341.0847266,
+    "seen": 1794933362.9312935,
+    "ast_hash": "23e93f2dd12a15aae7dfee579374d3ef",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/chatbot-improvement-2026-11-19.md": {
+    "mtime": 1795117965.9083152,
+    "seen": 1795118062.9677114,
+    "ast_hash": "97e2eeb34743754b785f5478aec9fdca",
+    "semantic_hash": ""
+  },
+  "tests/browser/admin_fixture_server.py": {
+    "mtime": 1795104379.894329,
+    "seen": 1795104545.8025112,
+    "ast_hash": "8a985738dfd4d63d9a78d7d8d6b286ad",
+    "semantic_hash": ""
+  },
+  "tests/browser/admin_responsive_walk.mjs": {
+    "mtime": 1795119221.262514,
+    "seen": 1795119267.783734,
+    "ast_hash": "2f0d36ec9aa653766204bf79c28047cc",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/dashboard-fullscreen-qa.md": {
+    "mtime": 1795119555.534873,
+    "seen": 1795119604.5698736,
+    "ast_hash": "8b0f6f9b63a6989877ec859f2ca80b7a",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/dashboard-fullscreen-320-tabbar.png": {
+    "mtime": 1795118794.223927,
+    "seen": 1795119151.7578347,
+    "ast_hash": "e1c6f168c9dda43beb6d7aa8f9fc6d8c",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/dashboard-fullscreen-after-1920-account.png": {
+    "mtime": 1795119528.2155674,
+    "seen": 1795119604.5701349,
+    "ast_hash": "d57b681ee297c3f021faa18c715bc883",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/dashboard-fullscreen-after-1920.png": {
+    "mtime": 1795119528.213631,
+    "seen": 1795119604.5701375,
+    "ast_hash": "0716d38b17a4c698dd376d088e2bb192",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/dashboard-fullscreen-after-375-live.png": {
+    "mtime": 1795119528.2173502,
+    "seen": 1795119604.5701404,
+    "ast_hash": "044babe63bbba16df02df95aff023f2e",
+    "semantic_hash": ""
+  },
+  "docs/automotive-review/dashboard-fullscreen-before-1920.png": {
+    "mtime": 1795118794.216957,
+    "seen": 1795119151.757844,
+    "ast_hash": "946f4579ece802b63ffb90b18e688907",
+    "semantic_hash": ""
+  }
+}

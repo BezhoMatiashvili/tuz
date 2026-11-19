@@ -110,11 +110,10 @@ SHOP = {
     "address_en": "17 Kavtaradze Street, Tbilisi, Georgia",
     "phone": "+995 596 33 33 74",
     "phone_link": "+995596333374",
-    "updated_ka": "2026 წლის 11 ნოემბერი",
-    "updated_en": "11 November 2026",
-    # meta_settings.retention_days: 365 by default, and the most the dashboard accepts
-    # (meta_store.SETTINGS_FIELDS, a test keeps them equal), so no setting outlasts the pages.
-    "retention_days": 365,
+    "updated_ka": "2026 წლის 20 ნოემბერი",
+    "updated_en": "20 November 2026",
+    # Conversations are kept until the customer asks for deletion (owner's decision,
+    # 2026-11-20): MetaStore.purge never deletes messages, and the pages say so.
     # The worker purges meta_inbox rows older than meta_store.INBOX_RETENTION_DAYS (6) once a
     # day, so none is older than this.
     "inbox_days": 7,

@@ -22,7 +22,7 @@ from urllib.parse import quote
 import anyio
 from starlette.datastructures import Headers, MutableHeaders
 
-from automotive.site_auth import csrf_token, ip_key, read_cookie
+from automotive.site_auth import csrf_token, ip_key, read_cookie, wide_key
 
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; "
        "img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; "
@@ -42,6 +42,13 @@ LIMITS = {
     "session": (30, 120),
     "session_all": (200, 600),
 }
+# Categories where a new IPv6 address must not buy a new allowance: a request there also
+# draws on the /48 its /64 lies in, at WIDE times one address's allowance (one end site is
+# normally given a whole /48). There is deliberately no bucket for the whole site: a few
+# addresses could empty it and so keep everyone from signing in or opening a chat. What
+# these calls cost is bounded by the day budgets and the hashing and turn slots instead.
+WIDE = 4
+WIDE_CATEGORIES = frozenset({"login", "chat_create", "chat_message", "vin"})
 # Look-ups of cookies never seen valid that may run at once. They share the worker threads
 # with every page, so a slow database must not let them take those.
 LOOKUPS = 4
@@ -52,57 +59,112 @@ class _ClientGone(Exception):
 
 
 class TokenBuckets:
-    """Bounded per-key token buckets. When full, the oldest key is evicted: a flood of new
-    addresses can never turn the limiter into a site-wide denial."""
+    """Bounded per-key token buckets. When full, a key is evicted rather than a request
+    refused, so a flood of new addresses can never turn the limiter into a site-wide denial.
+    A bucket that has refilled goes first: it says nothing a new one would not. Only when
+    every old bucket is still owed tokens does the oldest go, and it then comes back full:
+    more distinct addresses than ``maximum``, taking turns, are not limited per address.
+    A /48 bucket is touched by every request of its /64s, so it stays while they churn."""
+
+    # How many of the oldest entries an eviction looks at for a refilled one.
+    SCAN = 64
 
     def __init__(self, maximum: int = 20_000, clock: Any = time.monotonic) -> None:
         self.maximum, self.clock = maximum, clock
-        self._buckets: OrderedDict[tuple, tuple[float, float]] = OrderedDict()
+        # key -> (tokens, stamp, burst, per minute)
+        self._buckets: OrderedDict[tuple, tuple[float, float, float, float]] = OrderedDict()
         self._lock = Lock()
+
+    @staticmethod
+    def _level(entry: tuple[float, float, float, float], now: float) -> float:
+        tokens, stamp, burst, per_minute = entry
+        return min(burst, tokens + (now - stamp) * per_minute / 60.0)
+
+    def _tokens(self, key: tuple, burst: float, per_minute: float, now: float) -> float:
+        """The key's tokens now. Call with the lock held."""
+        entry = self._buckets.get(key)
+        return burst if entry is None else self._level((entry[0], entry[1], burst, per_minute),
+                                                       now)
+
+    def _store(self, key: tuple, tokens: float, burst: float, per_minute: float,
+               now: float) -> None:
+        """Call with the lock held."""
+        self._buckets[key] = (tokens, now, burst, per_minute)
+        self._buckets.move_to_end(key)
+
+    def _evict(self, now: float) -> None:
+        """Bring the table back to ``maximum``. Call with the lock held."""
+        while len(self._buckets) > self.maximum:
+            for index, (key, entry) in enumerate(self._buckets.items()):
+                if index >= self.SCAN:
+                    self._buckets.popitem(last=False)
+                    break
+                if self._level(entry, now) >= entry[2]:
+                    del self._buckets[key]
+                    break
+            else:
+                self._buckets.popitem(last=False)
 
     def has(self, key: tuple, burst: float, per_minute: float) -> bool:
         """Whether ``allow`` would pass, without taking the token."""
         now = self.clock()
         with self._lock:
-            tokens, stamp = self._buckets.get(key, (burst, now))
-            return min(burst, tokens + (now - stamp) * per_minute / 60.0) >= 1.0
+            return self._tokens(key, burst, per_minute, now) >= 1.0
 
     def allow(self, key: tuple, burst: float, per_minute: float) -> bool:
+        return self.allow_all([(key, burst, per_minute)])
+
+    def allow_all(self, buckets: list[tuple[tuple, float, float]]) -> bool:
+        """Take one token from every ``(key, burst, per_minute)`` bucket, or from none of
+        them when any one is empty."""
         now = self.clock()
         with self._lock:
-            tokens, stamp = self._buckets.get(key, (burst, now))
-            tokens = min(burst, tokens + (now - stamp) * per_minute / 60.0)
-            allowed = tokens >= 1.0
-            self._buckets[key] = (tokens - 1.0 if allowed else tokens, now)
-            self._buckets.move_to_end(key)
-            while len(self._buckets) > self.maximum:
-                self._buckets.popitem(last=False)
+            levels = [self._tokens(key, burst, rate, now) for key, burst, rate in buckets]
+            allowed = all(level >= 1.0 for level in levels)
+            for (key, burst, rate), level in zip(buckets, levels, strict=True):
+                self._store(key, level - 1.0 if allowed else level, burst, rate, now)
+            self._evict(now)
             return allowed
 
 
 class DailyBudget:
-    """A whole-site allowance per UTC day, for calls that cost money or a provider's goodwill."""
+    """A whole-site allowance per UTC day, for calls that cost money or a provider's goodwill.
 
-    def __init__(self, limit: int, clock: Any = time.time) -> None:
+    ``per_hour`` paces it: no clock hour may spend more, so a burst of abuse costs the
+    visitors of that hour rather than the whole day's."""
+
+    def __init__(self, limit: int, clock: Any = time.time, *,
+                 per_hour: int | None = None) -> None:
         self.limit, self.clock = max(0, int(limit)), clock
+        self.per_hour = None if per_hour is None else max(0, int(per_hour))
         self._day, self._used = -1, 0
+        self._hour, self._hour_used = -1, 0
         self._lock = Lock()
 
     def take(self, amount: int = 1) -> bool:
         with self._lock:
-            day = int(self.clock() // 86400)
+            now = self.clock()
+            day, hour = int(now // 86400), int(now // 3600)
             if day != self._day:
                 self._day, self._used = day, 0
+            if hour != self._hour:
+                self._hour, self._hour_used = hour, 0
             if self._used + amount > self.limit:
                 return False
+            if self.per_hour is not None and self._hour_used + amount > self.per_hour:
+                return False
             self._used += amount
+            self._hour_used += amount
             return True
 
     def refund(self, amount: int = 1) -> None:
         """Give back what ``take`` charged for something that then did not happen."""
         with self._lock:
-            if int(self.clock() // 86400) == self._day:
+            now = self.clock()
+            if int(now // 86400) == self._day:
                 self._used = max(0, self._used - amount)
+            if int(now // 3600) == self._hour:
+                self._hour_used = max(0, self._hour_used - amount)
 
     @property
     def used(self) -> int:
@@ -165,6 +227,17 @@ def rule_for(path: str, method: str, staff_auth: bool) -> Rule:
         # everyone once it is full, so anonymous traffic is never allowed to reach it.
         return Rule(blocked=True)
     return Rule("page", noindex=path == "/login")
+
+
+def admission(category: str, client: str) -> list[tuple[tuple, float, float]]:
+    """The buckets one request draws on: its address's, and in a WIDE_CATEGORIES category
+    also its IPv6 /48's."""
+    burst, refill = LIMITS[category]
+    buckets = [((category, ip_key(client)), burst, refill)]
+    wide = wide_key(client) if category in WIDE_CATEGORIES else None
+    if wide is not None:
+        buckets.append(((category, wide), burst * WIDE, refill * WIDE))
+    return buckets
 
 
 def _aliased(path: str) -> bool:
@@ -242,8 +315,7 @@ class SiteGuard:
             return
         # Throttle by address before any session lookup, so guessed cookies cannot be used to
         # make the database work.
-        burst, refill = LIMITS[rule.category]
-        if not self.buckets.allow((rule.category, ip_key(client)), burst, refill):
+        if not self.buckets.allow_all(admission(rule.category, client)):
             await reply(429, "RATE_LIMITED", {"retry-after": "10"})
             return
         state = scope.setdefault("state", {})

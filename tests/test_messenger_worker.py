@@ -1898,7 +1898,7 @@ class WorkerDatabaseTests(unittest.TestCase):
                                       "WHERE status = 'ok'")), len(JOB_NAMES) + 1)
         purge = self.sql("SELECT records, detail FROM garage.meta_sync_runs WHERE job = 'purge'")
         self.assertEqual(tuple(purge[0]), (1, "comments=1 forgotten=0 inbox=0 job_requests=0 "
-                                              "messages=0 replies=0 runs=0 threads=0"))
+                                              "replies=0 runs=0 threads=0"))
         self.assertEqual([row[0] for row in self.sql(
             "SELECT comment_id FROM garage.meta_comments")], ["1_2_4"])
 

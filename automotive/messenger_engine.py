@@ -39,6 +39,7 @@ from automotive.assistant import ACCOUNT_STATUSES, TRANSCRIPT_TURNS
 from automotive.assistant_tools import HANDLE
 from automotive.chat import VIN_PATTERN, _redact
 from automotive.conversations import ConversationError, ConversationStore
+from automotive.live_alerts import TurnAlerts, turn_alerts
 from automotive.meta_config import ROOT
 from automotive.site_chat import SAID_LIMIT, plain, public_turn
 from automotive.site_repository import SERVICE_COLUMNS
@@ -102,6 +103,10 @@ class EngineResult:
       started from with this message added as unanswered, which the next turn reads with its own
       message. Keeping the old state and sending this message again with the next one also
       works; at worst a message is read twice, never lost.
+
+    ``alerts`` is what the turn means for the shop's staff (``live_alerts.turn_alerts``: a part
+    not found, a visit or service request, a handoff, a phone number the customer typed); empty
+    unless ``ok``. The worker records it whether or not the reply could be sent.
     """
 
     status: str
@@ -112,6 +117,7 @@ class EngineResult:
     usage: dict
     error_code: str
     unsent_state: dict = field(default_factory=dict)
+    alerts: TurnAlerts = field(default_factory=TurnAlerts)
 
 
 class MessengerConversations(ConversationStore):
@@ -353,10 +359,13 @@ class MessengerEngine:
         # left the state as it was, so the message is kept as unanswered instead.
         state = compact(final) if engine_status and final is not None else unsent
         usage = payload.get("usage")
+        # The customer's own words stand in for a note the model did not write: redacted like
+        # everything else the engine stores, and never kept for a turn that sent no reply.
+        alerts = turn_alerts(payload, _redact(message)) if status == "ok" else TurnAlerts()
         return EngineResult(status=status, public=public, state=state,
                             engine_status=engine_status, language=public["language"],
                             usage=_json_safe(usage) if isinstance(usage, dict) else {},
-                            error_code=code, unsent_state=unsent)
+                            error_code=code, unsent_state=unsent, alerts=alerts)
 
     def close(self) -> None:
         """Stop the store and everything ``build_engine`` started (catalogue poller, search
@@ -780,7 +789,7 @@ def _fewer_rows(state: dict) -> bool:
 
 def _bare_memory(state: dict) -> bool:
     memory = _memory(state)
-    kept = {key: memory[key] for key in ("language", "car_label", "notes", "question")
+    kept = {key: memory[key] for key in ("language", "car_label", "notes", "question", "phone")
             if key in memory}
     if "memory" not in state or kept == memory:
         return False

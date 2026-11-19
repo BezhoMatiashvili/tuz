@@ -51,6 +51,7 @@
   --axis: #c3c2b7;
 
   --tabbar-h: 60px;
+  --nav-reserve: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
   --ease: cubic-bezier(0.23, 1, 0.32, 1);
   --font: system-ui, "Noto Sans Georgian", "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
@@ -104,6 +105,7 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  scroll-padding-bottom: calc(var(--nav-reserve) + 24px);
 }
 
 body {
@@ -262,8 +264,10 @@ textarea {
 
 .main {
   width: 100%;
-  max-width: 1240px;
-  margin: 0 auto;
+  min-width: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  container: dashboard / inline-size;
   padding: 16px max(16px, env(safe-area-inset-right))
     calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 28px) max(16px, env(safe-area-inset-left));
   outline: none;
@@ -293,6 +297,10 @@ textarea {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.tabbar__list--5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .tabbar__item {
   position: relative;
   display: flex;
@@ -304,6 +312,9 @@ textarea {
   padding: 6px 4px;
   color: var(--text-3);
   font-size: 11.5px;
+  /* Five labels share a 320 px phone; the longest Georgian one ("მიმოხილვა", bold when
+     current) only stays inside its slot at the smaller size. 375 px and up are unchanged. */
+  font-size: min(11.5px, 3.1vw);
   line-height: 1.2;
   text-align: center;
   text-decoration: none;
@@ -453,6 +464,10 @@ textarea {
 }
 
 @media (min-width: 1024px) {
+  :root {
+    --nav-reserve: 0px;
+  }
+
   body {
     font-size: 15px;
   }
@@ -592,12 +607,30 @@ textarea {
   margin-top: 12px;
 }
 
+.grid--2 {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Two readable panels, including on ultrawide screens. Query the space left after
+   the sidebar and gutters, not the window or a chart's own nested container. */
+@container dashboard (min-width: 852px) {
+  .grid--2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .stack {
   display: grid;
   gap: 12px;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
 }
 
-.stack--narrow {
+.settings-grid {
+  align-items: start;
+}
+
+.settings-grid .field {
   max-width: 560px;
 }
 
@@ -646,6 +679,15 @@ textarea {
   gap: 4px;
 }
 
+/* Narrow phones (page body 340 px or less, screens up to 372 px): beside its value a label
+   such as "მომხმარებლის სახელი" would be split mid-word, so labels go above values. */
+@container dashboard (max-width: 340px) {
+  .facts > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+}
+
 .pref {
   display: flex;
   flex-wrap: wrap;
@@ -668,6 +710,10 @@ textarea {
   justify-content: center;
   gap: 8px;
   min-height: 44px;
+  /* Never wider than its row; a long label wraps at its spaces. No min-width: 0 or
+     overflow-wrap: anywhere here: in a grid's auto column (the chart "Table" toggle) that let
+     the button collapse and break its label mid-word. */
+  max-width: 100%;
   padding: 8px 16px;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -796,6 +842,7 @@ textarea {
 
 .input {
   width: 100%;
+  min-width: 0;
   min-height: 44px;
   padding: 9px 12px;
   background: var(--surface);
@@ -1014,6 +1061,18 @@ textarea {
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+/* On a 320 px phone equal thirds are too narrow for "ამოწურულია" (98 px): size each
+   segment by its own label and share out what is left. */
+@container dashboard (max-width: 300px) {
+  .segmented {
+    grid-auto-columns: auto;
+  }
+
+  .segmented__text {
+    padding: 0 6px;
+  }
 }
 
 .segmented__input:checked + .segmented__text {
@@ -2126,6 +2185,7 @@ textarea {
 .inv-card__meta {
   color: var(--text-3);
   font-size: 12.5px;
+  overflow-wrap: anywhere;
 }
 
 .inv-card__bottom {
@@ -2638,6 +2698,8 @@ textarea {
 
 .photo__actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
   align-items: center;
   justify-content: space-between;
   margin: -4px -6px -6px;
@@ -2814,6 +2876,17 @@ textarea {
   font-weight: 700;
 }
 
+.who > div {
+  min-width: 0;
+}
+
+.who,
+.sidebar__user,
+.user__name,
+.menu__label {
+  overflow-wrap: anywhere;
+}
+
 .who__role {
   color: var(--text-3);
   font-size: 13px;
@@ -2864,6 +2937,513 @@ textarea {
 .menu__trail {
   display: grid;
   color: var(--text-3);
+}
+
+/* -- live chats -------------------------------------------------------------------------- */
+
+/* The alarm count on the Live item of the sidebar and the tab bar. White on the status red
+   keeps 4.5:1 in both themes. */
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--status-critical);
+  color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.sidebar__item .nav-badge {
+  margin-left: auto;
+}
+
+.tabbar__item .nav-badge {
+  position: absolute;
+  top: 6px;
+  left: calc(50% + 6px);
+}
+
+.live__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.live__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.live__dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--status-neutral);
+}
+
+.live__dot--on {
+  background: var(--status-good);
+  animation: live-pulse 2.4s ease-in-out infinite;
+}
+
+.live__dot--off {
+  background: var(--status-critical);
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.live__banners:empty,
+.live__chips:empty {
+  display: none;
+}
+
+.live__alarms {
+  margin-bottom: 24px;
+}
+
+.live__heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.live__heading .block__title {
+  margin-bottom: 0;
+}
+
+.live__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip--critical {
+  background: var(--error-soft);
+  border-color: var(--status-critical);
+  color: var(--error-text);
+}
+
+.chip--warning {
+  background: var(--warning-soft);
+  border-color: var(--status-warning);
+  color: var(--text);
+}
+
+/* Alarm cards: a coloured edge says how urgent, the chip says what, and a new one flashes
+   its edge (opacity only) for a few seconds. */
+.alarms {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+}
+
+.alarms--compact {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.alarms--stuck {
+  margin-top: 12px;
+}
+
+.alarm {
+  --alarm-color: var(--status-critical);
+  position: relative;
+  min-width: 0;
+  padding: 14px 14px 14px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.alarm--warning {
+  --alarm-color: var(--status-warning);
+}
+
+.alarm--done {
+  --alarm-color: var(--status-neutral);
+}
+
+.alarm--compact {
+  padding: 10px 12px 10px 16px;
+}
+
+.alarm::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 6px 0 0 6px;
+  background: var(--alarm-color);
+}
+
+.alarm--fresh::before {
+  animation: alarm-flash 1.2s ease-in-out 5;
+}
+
+@keyframes alarm-flash {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.alarm__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.alarm__kind {
+  gap: 6px;
+  padding-left: 6px;
+}
+
+.alarm__time {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+.alarm__who {
+  margin-top: 8px;
+  font-weight: 700;
+}
+
+.alarm__note {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.alarm__meta {
+  margin-top: 4px;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+
+.alarm__earlier {
+  margin-top: 6px;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+
+.alarm__earlier summary {
+  min-height: 44px;
+  padding-block: 10px;
+  cursor: pointer;
+}
+
+.alarm__earlier ul {
+  margin: 4px 0 0;
+  padding-left: 20px;
+}
+
+.alarm__phone {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-weight: 650;
+}
+
+.alarm__phone--missing {
+  color: var(--text-3);
+  font-weight: 500;
+}
+
+.alarm__tel {
+  color: var(--accent);
+  font-size: 16px;
+}
+
+.alarm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 12px;
+}
+
+.alarm__actions .field--switch {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* The switch's hint is for the conversation page; on a card it stays for screen readers. */
+.alarm__actions .field__hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.live__handled {
+  margin-top: 20px;
+}
+
+.live__handled > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--text-2);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.live__handled[open] > summary {
+  margin-bottom: 8px;
+}
+
+/* The conversation list beside the open conversation; on a phone one at a time. */
+.live__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.live__body,
+.live__list,
+.live__detail {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.live__list .toolbar .field {
+  flex: 1 1 200px;
+}
+
+.live__row {
+  align-items: flex-start;
+}
+
+.live__row--open {
+  background: var(--sunken);
+}
+
+.live__preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.live__empty {
+  padding: 24px 16px;
+}
+
+@media (min-width: 1024px) {
+  .live__body {
+    grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  }
+
+  .live__back {
+    display: none;
+  }
+}
+
+@media (max-width: 1023.98px) {
+  .live--detail .live__alarms,
+  .live--detail .live__list,
+  .live:not(.live--detail) .live__detail {
+    display: none;
+  }
+}
+
+.live__threadwrap {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The transcript card fits in the visible screen with navigation and gutters left
+   clear. Its heading and older-message button take their natural height; only the
+   messages scroll. Customer details above remain in normal document flow. */
+.live__messages {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: max(240px, calc(100vh - var(--nav-reserve) - 32px));
+  height: max(240px, calc(100dvh - var(--nav-reserve) - 32px));
+}
+
+.thread {
+  display: grid;
+  align-content: start;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  height: 100%;
+  margin: 0;
+  padding: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  background: var(--sunken);
+  border-radius: 6px;
+}
+
+.thread__empty {
+  padding: 8px;
+}
+
+.bubble {
+  max-width: min(86%, 560px);
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 14.5px;
+  overflow-wrap: anywhere;
+}
+
+.bubble--customer {
+  justify-self: start;
+  border-top-left-radius: 2px;
+}
+
+.bubble--bot {
+  justify-self: end;
+  background: var(--info-soft);
+  border-top-right-radius: 2px;
+}
+
+.bubble--shop {
+  justify-self: end;
+  background: var(--good-soft);
+  border-top-right-radius: 2px;
+}
+
+.bubble__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.bubble__meta strong {
+  color: var(--text-2);
+}
+
+.bubble__text {
+  margin-top: 2px;
+}
+
+.bubble__offered {
+  margin: 6px 0 0;
+  padding: 4px 0 4px 10px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-2);
+  font-size: 13px;
+  list-style: none;
+}
+
+/* Centred without a transform: a pressed button scales itself. */
+.live__pill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 12px;
+  width: max-content;
+  margin: 0 auto;
+  box-shadow: var(--shadow);
+}
+
+/* Alarm toasts carry a link, so unlike the ordinary toasts they take clicks. They sit at the
+   bottom (above the tab bar on a phone, at the right of a desktop), never over the page's own
+   controls at the top. */
+.toasts--alarm {
+  inset: auto 12px calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 12px) 12px;
+  width: auto;
+  max-width: none;
+  justify-items: stretch;
+  transform: none;
+}
+
+.toasts--alarm .toast {
+  pointer-events: auto;
+}
+
+.toasts--alarm .toast:not(.toast--in) {
+  transform: translateY(8px);
+}
+
+.toasts--alarm .toast--critical {
+  border-left: 4px solid var(--status-critical);
+}
+
+.toasts--alarm .toast--warning {
+  border-left: 4px solid var(--status-warning);
+}
+
+.toast__link {
+  color: inherit;
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.toast__close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-left: 4px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: var(--tip-muted);
+  cursor: pointer;
+}
+
+.toast__close:hover {
+  color: var(--tip-text);
+}
+
+@media (min-width: 1024px) {
+  .toasts--alarm {
+    inset: auto 24px 24px auto;
+    width: max-content;
+    max-width: min(440px, calc(100vw - 304px));
+    justify-items: end;
+  }
+}
+
+.menu__state {
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 600;
 }
 
 /* -- reduced motion ---------------------------------------------------------------------- */

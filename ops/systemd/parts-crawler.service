@@ -1,0 +1,28 @@
+# systemd USER unit: the parts catalog crawler (docs/parts-crawler.md), the same run as
+# `uv run python -m parts_crawler run --source mann_api,catcar,ngk`, kept going across
+# reboots. One instance only: a second process would halve every site's per-host delay.
+# Settings (PARTS_CRAWLER_DATABASE_URL, PARTS_CRAWLER_ROBOTS_EXEMPT) come from the
+# repository's private .env, which the process reads itself. No secret belongs in this file.
+# Install it as the laptop user, never with sudo:
+#   install -m 0644 ops/systemd/parts-crawler.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now parts-crawler
+# Stop it (finishes the page in flight, then exits; the next start continues the queue):
+#   systemctl --user disable --now parts-crawler
+[Unit]
+Description=Parts catalog crawler (MANN-FILTER API, CatCar, NGK)
+Documentation=file:///home/bezhomatiashvili/Desktop/tuz/docs/parts-crawler.md
+
+[Service]
+Type=exec
+WorkingDirectory=/home/bezhomatiashvili/Desktop/tuz
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/bezhomatiashvili/Desktop/tuz/.venv/bin/python -m parts_crawler run --source mann_api,catcar,ngk --plain
+# A finished queue exits 0 and stays stopped; a crash or a lost database restarts it.
+Restart=on-failure
+RestartSec=60
+# SIGTERM makes the scheduler stop after the request in flight (parts_crawler/term.py).
+TimeoutStopSec=120
+Nice=10
+
+[Install]
+WantedBy=default.target

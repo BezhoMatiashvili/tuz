@@ -18,8 +18,8 @@ import {
 } from './facebook-shared.js';
 
 const REFRESH_MS = 30000;
-// The bounds are the database's own (migration 0013), except Keep chats for: at most the 365
-// days the public privacy page promises (the server refuses more).
+// The bounds are the database's own (migration 0013), except Keep bot records for: 30-365
+// days (the server refuses more). Messages are kept for good whatever it says.
 const NUMBERS = [
   { name: 'max_reply_age_minutes', min: 5, max: 1440 },
   { name: 'daily_turn_limit', min: 0, max: 5000 },

@@ -31,6 +31,8 @@ ProtectControlGroups=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 RestrictNamespaces=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
+# No MemoryDenyWriteExecute: the uv-managed CPython has no PT_GNU_STACK header, so glibc maps
+# thread stacks executable and every new thread fails ("can't start new thread"), as in
+# garage-site.service. Checked on 2026-11-19 with systemd-run.
 # The reports (data/chat_logs/reviews) and the provider cache are the only paths it writes.
 ReadWritePaths=/opt/tuz/current/data

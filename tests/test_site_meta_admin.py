@@ -729,7 +729,7 @@ class SwitchTests(FacebookCase):
             ({"customer_daily_turn_limit": -1}, {"customer_daily_turn_limit": "OUT_OF_RANGE"}),
             ({"max_reply_age_minutes": 4}, {"max_reply_age_minutes": "OUT_OF_RANGE"}),
             ({"retention_days": 29}, {"retention_days": "OUT_OF_RANGE"}),
-            # The public privacy page promises 365 days (meta_receiver.SHOP).
+            # Reply attempts, job runs and alarms: 30-365 days (messages are kept for good).
             ({"retention_days": 366}, {"retention_days": "OUT_OF_RANGE"}),
             ({"daily_turn_limit": True}, {"daily_turn_limit": "INVALID"}),
             ({"max_reply_age_minutes": "60"}, {"max_reply_age_minutes": "INVALID"}),

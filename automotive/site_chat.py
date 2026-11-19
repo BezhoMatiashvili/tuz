@@ -27,7 +27,7 @@ from automotive import chat_contract
 from automotive.chat import VIN_PATTERN
 from automotive.conversations import ConversationError, ConversationStore
 from automotive.replies import make_name
-from automotive.site_auth import ip_key
+from automotive.site_auth import ip_key, wide_key
 from automotive.site_strings import STRINGS
 
 LOGGER = logging.getLogger(__name__)
@@ -318,10 +318,14 @@ class PublicChat:
 
     def __init__(self, store: Any, catalog_store: Any, daily: Any, *,
                  per_address_daily: int = 40, live_per_address: int = 3, inflight: int = 4,
-                 inflight_per_address: int = 2,
+                 inflight_per_address: int = 2, per_wide_daily: int | None = None,
                  clock: Any = time.monotonic, wall: Any = time.time) -> None:
         self.store, self.catalog_store, self.daily = store, catalog_store, daily
         self.per_address_daily, self.live_per_address = per_address_daily, live_per_address
+        # The /64s of one IPv6 /48 (one end site) share twice one address's day, so changing
+        # address inside it buys nothing more (site_auth.wide_key).
+        self.per_wide_daily = (2 * per_address_daily if per_wide_daily is None
+                               else per_wide_daily)
         self.inflight, self.inflight_per_address = inflight, inflight_per_address
         self.clock, self.wall = clock, wall
         self._lock = Lock()
@@ -407,11 +411,16 @@ class PublicChat:
             if len(self._running) >= self.inflight or mine >= self.inflight_per_address:
                 raise ConversationError("CHAT_WORKER_CAPACITY", 429)
             self._sent = {key: count for key, count in self._sent.items() if key[0] == day}
-            if self._sent.get((day, address), 0) >= self.per_address_daily:
+            counted = [((day, address), self.per_address_daily)]
+            wide = wide_key(address)
+            if wide is not None:
+                counted.append(((day, wide), self.per_wide_daily))
+            if any(self._sent.get(key, 0) >= limit for key, limit in counted):
                 raise ConversationError("CHAT_DAILY_LIMIT", 429)
             if not self.daily.take():
                 raise ConversationError("CHAT_DAILY_LIMIT", 429)
-            self._sent[(day, address)] = self._sent.get((day, address), 0) + 1
+            for key, _ in counted:
+                self._sent[key] = self._sent.get(key, 0) + 1
             self._renew(identifier)
             self._said[identifier] = (self._said.get(identifier, "") + " "
                                       + plain(message))[-SAID_LIMIT:]
@@ -420,6 +429,12 @@ class PublicChat:
             slot = (self.clock() + getattr(self.store, "turn_seconds", 75) + 5, address)
             reservation = object()
             self._running[reservation] = slot
+        live = getattr(self.store, "live", None)
+        if live is not None:
+            try:
+                live.seen(identifier, address)  # for the hourly cap on one address's alarms
+            except Exception:
+                LOGGER.debug("live_address_skipped")
         try:
             tapped = ({"choice": choice}
                       if choice is not None and _takes_choice(self.store.submit) else {})
@@ -428,8 +443,9 @@ class PublicChat:
             with self._lock:
                 self._running.pop(reservation, None)
                 # No turn was started, so nothing is charged for it.
-                if self._sent.get((day, address), 0) > 0:
-                    self._sent[(day, address)] -= 1
+                for key, _ in counted:
+                    if self._sent.get(key, 0) > 0:
+                        self._sent[key] -= 1
                 if isinstance(exc, ConversationError) and exc.code == "CONVERSATION_EXPIRED":
                     self._drop(identifier)
             refund = getattr(self.daily, "refund", None)
@@ -439,6 +455,13 @@ class PublicChat:
         with self._lock:
             self._running.pop(reservation, None)
             self._running[started["turn_id"]] = slot
+        if started.get("canned"):
+            # No model ran (staff switched the bot off), so the day's model budget is given
+            # back. The address keeps the message on its own daily count: a muted visitor
+            # cannot write without end, and every message is a row on the staff's screen.
+            refund = getattr(self.daily, "refund", None)
+            if refund is not None:
+                refund()
         return {"turn_id": started["turn_id"], "status": started["status"],
                 "language": started["language"]}
 
@@ -475,11 +498,16 @@ class PublicChat:
         chat_log = getattr(self, "chat_log", None)
         if chat_log is not None:
             chat_log.close()  # Drains queued records before exit, as the staff log does.
+        live = getattr(self.store, "live", None)
+        if live is not None and hasattr(live, "close"):
+            live.close()  # Writes what is queued for the Live chats page, then stops.
 
 
 def build_public_chat(settings: Any, chat_service: Any, repository: Any, vin_service: Any,
-                      catalog_store: Any, daily: Any, search_service: Any = None) -> PublicChat:
-    """A visitor store with its own coordinator: no paid catalogue, no Motorium, no learning."""
+                      catalog_store: Any, daily: Any, search_service: Any = None,
+                      live: Any = None) -> PublicChat:
+    """A visitor store with its own coordinator: no paid catalogue, no Motorium, no learning.
+    ``live`` is the Live chats recorder (``live_web.LiveRecorder``) or None."""
     owns_search = search_service is None
     if search_service is None:
         from automotive.fuchs import FuchsClient
@@ -513,7 +541,7 @@ def build_public_chat(settings: Any, chat_service: Any, repository: Any, vin_ser
     store = ConversationStore(
         chat_service, search_service, ttl_seconds=600,
         turn_seconds=min(float(getattr(settings, "chat_turn_seconds", 60)), 60.0),
-        maximum=40, chat_log=chat_log)
+        maximum=40, chat_log=chat_log, live=live)
     # A visitor's conversation: the assistant engine gives it none of the shop's own numbers.
     store.audience = "public"
     # One address may use an eighth of the day's allowance, so emptying it takes several.

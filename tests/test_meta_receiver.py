@@ -737,8 +737,10 @@ class ResponseTests(ReceiverCase):
             head = await client.head(path)
             self.assertEqual((head.status_code, head.content), (200, b""), path)
         privacy = (await client.get("/privacy")).text
-        for processor in ("Meta Platforms", "OpenRouter", "Anthropic", "365"):
+        for processor in ("Meta Platforms", "OpenRouter", "Anthropic",
+                          "სანამ მის წაშლას არ მოგვთხოვთ"):
             self.assertIn(processor, privacy)
+        self.assertIn("until you ask us to delete them", (await client.get("/privacy/en")).text)
 
     async def test_health_answers_ok(self):
         client = self.client()
@@ -901,11 +903,16 @@ class StartupTests(unittest.TestCase):
         self.assertNotIn("workers", options)
         self.assertNotIn("reload", options)
 
-    def test_the_pages_state_the_longest_retention_the_dashboard_allows(self):
+    def test_the_dashboard_bounds_for_bot_records_agree_and_no_page_names_a_cut(self):
+        """Conversations are kept until deletion, so the pages promise no number of days;
+        the dashboard, the API and the store agree on the bot records' 30-365."""
         from automotive.meta_store import SETTINGS_FIELDS
         from automotive.site_meta_admin import SettingsChange
 
-        days = meta_receiver.SHOP["retention_days"]
+        self.assertNotIn("retention_days", meta_receiver.SHOP)
+        page = (ROOT / "automotive/templates/meta/privacy.html").read_text(encoding="utf-8")
+        self.assertNotIn("retention_days", page)
+        days = 365
         self.assertEqual(SETTINGS_FIELDS["retention_days"][2], days)
         bounds = SettingsChange.model_fields["retention_days"].metadata
         self.assertIn(days, [getattr(item, "le", None) for item in bounds])

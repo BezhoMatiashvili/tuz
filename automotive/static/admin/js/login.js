@@ -43,9 +43,10 @@ function label(key) {
   return tables[getLang()][key] || tables.ka[key] || tables.en[key] || '';
 }
 
-/** Only ever leave for a same-site path the server offers. */
+/** Only ever leave for one of the landings: never a path the answer names, so a reply can
+ * never send the browser to "//another-host". */
 function leave(path) {
-  const target = typeof path === 'string' && /^\/[A-Za-z0-9/_-]*$/.test(path) ? path : LANDINGS[next];
+  const target = Object.values(LANDINGS).includes(path) ? path : LANDINGS[next];
   window.location.assign(target);
 }
 
