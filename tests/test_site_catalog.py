@@ -459,6 +459,54 @@ class CatalogStoreTests(unittest.TestCase):
         for statement in connection.statements:
             self.assertTrue(statement.lstrip().upper().startswith("SELECT"), statement)
 
+    def test_a_sync_moving_pages_reloads_at_most_every_ten_minutes(self):
+        later = NOW + timedelta(minutes=5)
+        connection = FakeConnection((8, NOW, NOW), ROWS)
+        store = CatalogStore("postgresql://runtime-fixture@127.0.0.1/catalog")
+        with patch.object(site_catalog.psycopg, "connect", return_value=connection):
+            self.assertTrue(store.refresh())
+            first = store.current()
+            # The sync looked again and changed nothing: only the snapshot's age moves.
+            connection.fingerprint = (8, NOW, later)
+            self.assertFalse(store.refresh())
+            self.assertIs(store.current(), first)
+            self.assertEqual(first.observed_at, later)
+            # It changed a product: not reloaded again within ten minutes of the last load...
+            connection.fingerprint = (8, later, later)
+            self.assertFalse(store.refresh())
+            self.assertIs(store.current(), first)
+            # ...but a product added or gone reloads at once,
+            connection.fingerprint, connection.rows = (7, later, later), ROWS[:7]
+            self.assertTrue(store.refresh())
+            # and later edits once the ten minutes are over.
+            store._loaded_at -= site_catalog.MIN_RELOAD_SECONDS
+            connection.fingerprint = (7, later + timedelta(minutes=1), later)
+            self.assertTrue(store.refresh())
+        self.assertEqual(connection.statements.count(site_catalog.SNAPSHOT_SQL), 3)
+
+    def test_what_a_new_snapshot_needs_is_built_before_anybody_can_read_it(self):
+        connection = FakeConnection((8, NOW, NOW), ROWS)
+        store = CatalogStore("postgresql://runtime-fixture@127.0.0.1/catalog")
+        seen: list[tuple] = []
+
+        def hook(catalog):
+            seen.append((len(catalog.items), store.current() is catalog))
+
+        def broken(catalog):
+            raise RuntimeError("index failed")
+
+        store.on_load(hook)
+        store.on_load(broken)
+        with patch.object(site_catalog.psycopg, "connect", return_value=connection), \
+                self.assertLogs("automotive.site_catalog", "WARNING"):
+            self.assertTrue(store.refresh())
+        self.assertEqual(seen, [(8, False)])  # ran before the swap
+        self.assertEqual(len(store.current().items), 8)  # a failing hook stops nothing
+        # A hook added after the first load runs for the loaded snapshot, off this thread.
+        done = threading.Event()
+        store.on_load(lambda catalog: done.set())
+        self.assertTrue(done.wait(5))
+
     def test_the_rules_given_to_the_store_shape_the_catalog(self):
         store = CatalogStore("postgresql://runtime-fixture@127.0.0.1/catalog",
                              Rules(min_store=2.0, min_tuz11=5.0))

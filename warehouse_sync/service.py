@@ -10,7 +10,12 @@ import psycopg
 
 from warehouse_sync.client import WarehouseClient
 from warehouse_sync.config import Settings
-from warehouse_sync.errors import SourceChangedError, SourceProtocolError, failure_code
+from warehouse_sync.errors import (
+    SourceChangedError,
+    SourceProtocolError,
+    SyncAlreadyRunning,
+    failure_code,
+)
 from warehouse_sync.models import ParsedPage, SyncCounters
 from warehouse_sync.parser import parse_products_page
 from warehouse_sync.repository import WarehouseRepository
@@ -110,13 +115,15 @@ def _sync_once(settings: Settings, *, max_pages: int | None, dry_run: bool) -> S
         repository = WarehouseRepository(settings.database_url, settings.hmac_key)
         try:
             if not repository.acquire_single_runner_lock():
-                raise RuntimeError("Another warehouse synchronisation is already running.")
+                raise SyncAlreadyRunning("Another warehouse synchronisation is already running.")
             run_id = repository.start_run(pages_planned)
             counters = SyncCounters()
             signatures: list[tuple[tuple[str, str], ...]] = []
             seen_ids: set[str] = set()
             expected_page_size = len(first_page.products)
             try:
+                # This process holds the lock: any other run still marked 'running' died.
+                repository.close_abandoned_runs(run_id)
                 _check_page(first_page, 1, pages_available, expected_page_size, seen_ids)
                 signatures.append(_page_signature(first_page))
                 counters.add(

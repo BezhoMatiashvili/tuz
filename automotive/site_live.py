@@ -57,6 +57,13 @@ class BotChange(_Strict):
     version: int | None = Field(default=None, ge=1, le=MAX_VERSION)
 
 
+class Dismiss(_Strict):
+    """POST /chats/{key}/waiting/dismiss: the newest stored message the screen showed (the
+    chat's ``last_id``); without it, the newest one stored."""
+
+    seen_id: int | None = Field(default=None, ge=1, le=MAX_ID)
+
+
 class Ready(NamedTuple):
     """The signed-in user (admin or employee) and the store a route works with."""
 
@@ -83,7 +90,7 @@ def build_live_router(store: Any = None) -> APIRouter:
         if store is None:
             raise _fail(503, "LIVE_NOT_CONFIGURED")
         with _database():
-            there = store.ready()
+            there = store.pages_ready()  # 0015's tables and 0016's column: WAITING reads it
         if not there:
             raise _fail(503, "LIVE_NOT_SET_UP")
         return Ready(user, store)
@@ -192,5 +199,18 @@ def build_live_router(store: Any = None) -> APIRouter:
         if not cleared:
             raise _fail(404, "NOT_FOUND")
         return {"cleared": True}
+
+    @router.post("/chats/{key}/waiting/dismiss")
+    def dismiss_waiting(key: KeyPath, request: Request, live: Live, payload: Payload) -> dict:
+        """Mark a waiting Messenger chat as handled without writing to the customer (a closing
+        "thanks" needs no answer), up to the newest stored message the screen showed
+        (``seen_id``): one stored after it keeps the chat waiting ({"waiting": true}). Audited."""
+        seen_id = _parse(Dismiss, payload).seen_id
+        with _database():
+            result = live.live.dismiss_waiting(key, live.user, seen_id=seen_id,
+                                               client_ip=_address(request))
+        if result is None:
+            raise _fail(404, "NOT_FOUND")
+        return {"key": key, "waiting": bool(result["waiting"])}
 
     return router

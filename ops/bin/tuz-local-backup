@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Nightly dump of the laptop's PostgreSQL (container tuz-postgres-1) to a private folder on
+# this laptop. It protects against a broken or wiped database, NOT against losing the laptop:
+# copy the folder off the machine (external disk or cloud) until the off-host backup in
+# docs/production-runbook.md exists. Files are 0600 and hold customer data and role hashes.
+set -euo pipefail
+umask 077
+dest="${TUZ_BACKUP_DIR:-$HOME/Backups/tuz-postgres}"
+keep="${TUZ_BACKUP_KEEP:-14}"
+container="${TUZ_BACKUP_CONTAINER:-tuz-postgres-1}"
+database="${TUZ_BACKUP_DATABASE:-warehouse_sync}"
+mkdir -p "$dest"
+stamp="$(date +%Y-%m-%d_%H%M)"
+user="$(docker exec "$container" printenv POSTGRES_USER)"
+tmp="$dest/.${database}_${stamp}.dump.partial"
+trap 'rm -f "$tmp" "$dest/.globals_${stamp}.sql.partial"' EXIT
+docker exec "$container" pg_dump -U "$user" -d "$database" -Fc -Z 6 > "$tmp"
+# The archive must be readable before it replaces anything.
+docker exec -i "$container" pg_restore --list < "$tmp" > /dev/null
+docker exec "$container" pg_dumpall -U "$user" --globals-only > "$dest/.globals_${stamp}.sql.partial"
+mv "$tmp" "$dest/${database}_${stamp}.dump"
+mv "$dest/.globals_${stamp}.sql.partial" "$dest/globals_${stamp}.sql"
+# Keep the newest $keep of each kind.
+ls -1t "$dest"/"${database}"_*.dump | tail -n +"$((keep + 1))" | xargs -r rm -f --
+ls -1t "$dest"/globals_*.sql | tail -n +"$((keep + 1))" | xargs -r rm -f --
+echo "backup ok: ${database}_${stamp}.dump $(du -h "$dest/${database}_${stamp}.dump" | cut -f1)"

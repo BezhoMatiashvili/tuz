@@ -255,6 +255,18 @@ class LiveStoreDatabaseTests(unittest.TestCase):
         self.assertEqual(site.delete_customer(PSID, STAFF)["threads"], 1)
         self.assertEqual(worker.purge()["threads"], 0)
 
+    def test_before_0016_alarms_are_still_recorded_and_only_the_pages_say_not_set_up(self):
+        url = self.create_database("live_before16_" + self.suffix)
+        with psycopg.connect(url) as connection:
+            connection.execute(ROLES_SQL)
+            apply_migrations_on_connection(connection, through="0015_live_chats")
+        site = LiveStore(RoleDatabase(url, self.roles["site"]))
+        self.assertEqual((site.ready(), site.pages_ready()), (True, False))
+        worker_db = RoleDatabase(url, self.roles["worker"])
+        worker = LiveStore(worker_db, MetaStore(worker_db))
+        self.assertTrue(worker.usable())
+        self.assertEqual(len(worker.record_turn("messenger", PSID, TurnAlerts((draft(),)))), 1)
+
     def test_a_deletion_that_cannot_reach_the_alarms_fails_instead_of_claiming_success(self):
         url = self.create_database("live_noprivilege_" + self.suffix)
         with psycopg.connect(url) as connection:
@@ -467,20 +479,105 @@ class LiveStoreDatabaseTests(unittest.TestCase):
         self.assertIsNotNone(pulse["stamp"])
         self.assertEqual(pulse["cursor"], {"m": 2, "w": 0})
 
-    def test_a_chat_waits_only_when_its_bot_is_off_and_nobody_answered(self):
+    def test_a_chat_waits_when_nothing_is_going_to_answer_it(self):
+        self.admin_sql("UPDATE garage.meta_settings SET bot_enabled = true, bot_enabled_at = %s",
+                       (at(0),))
         self.say(PSID, "m_1", "customer", 1)
         self.say(PSID, "m_2", "bot", 2)
-        self.say(OTHER_PSID, "m_3", "customer", 3)
-        self.site_chats.set_thread_switch(PSID, False, STAFF)
-        self.assertEqual(self.site.pulse()["waiting"], 0)  # the bot answered before it was off
-        self.say(PSID, "m_4", "customer", 4)
-        self.assertEqual(self.fresh().pulse()["waiting"], 1)  # the other chat's bot is on
-        self.say(PSID, "m_5", "shop", 5)
-        self.assertEqual(self.fresh().pulse()["waiting"], 0)  # staff answered
-        self.say(PSID, "m_6", "customer", 6)
+        self.assertEqual(self.fresh().pulse()["waiting"], 0)  # the bot answered
+        # Three hours unanswered with the bot on: its reply failed or never came.
+        self.say(PSID, "m_3", "customer", 3)
+        self.assertEqual(self.fresh().pulse()["waiting"], 1)
+        # A message of this minute: the bot is about to answer it.
+        self.worker_chats.add_message(OTHER_PSID, "m_4", "customer", datetime.now(UTC),
+                                      page_id=PAGE)
+        self.assertEqual(self.fresh().pulse()["waiting"], 1)
+        # Switched off (or paused) for everyone: every unanswered chat waits at once, and
+        # waiting_at moves with the newest such message.
+        self.admin_sql("UPDATE garage.meta_settings SET bot_enabled = false")
+        pulse = self.fresh().pulse()
+        self.assertEqual(pulse["waiting"], 2)
+        self.assertGreater(pulse["waiting_at"], at(3))
+        self.admin_sql("UPDATE garage.meta_settings SET bot_enabled = true, "
+                       "bot_paused_reason = 'ai_provider'")
+        self.assertEqual(self.fresh().pulse()["waiting"], 2)
+        self.admin_sql("UPDATE garage.meta_settings SET bot_paused_reason = ''")
+        self.assertEqual(self.fresh().pulse()["waiting"], 1)
+        # Off for one chat: that chat waits at once too.
+        self.site_chats.set_thread_switch(OTHER_PSID, False, STAFF)
+        self.assertEqual(self.fresh().pulse()["waiting"], 2)
+        self.say(PSID, "m_5", "shop", 4)  # staff answered
+        self.assertEqual(self.fresh().pulse()["waiting"], 1)
+        # The bot's own age limit does not end the wait: staff can answer for Meta's 24 hours.
+        self.say(PSID, "m_6", "customer", 5)
+        self.admin_sql("UPDATE garage.meta_settings SET max_reply_age_minutes = 60")
+        self.assertEqual(self.fresh().pulse()["waiting"], 2)
+        self.admin_sql("UPDATE garage.meta_settings SET max_reply_age_minutes = 1440")
+        # Past those 24 hours nobody can answer: no alarm.
+        for psid, hours in (("7000000000007777", 23), ("7000000000008888", 25)):
+            self.worker_chats.add_message(psid, f"m_{hours}h", "customer",
+                                          datetime.now(UTC) - timedelta(hours=hours), page_id=PAGE)
+        self.assertEqual(self.fresh().pulse()["waiting"], 3)  # the 23-hour-old one, not the 25
         self.admin_sql("UPDATE garage.messenger_threads SET is_admin = true WHERE psid = %s",
                        (PSID,))
-        self.assertEqual(self.fresh().pulse()["waiting"], 0)  # the owner's own chat never waits
+        self.assertEqual(self.fresh().pulse()["waiting"], 2)  # the owner's own chat never waits
+
+    def test_a_chat_marked_handled_stops_waiting_until_the_customer_writes_again(self):
+        self.say(PSID, "m_1", "customer", 1, "thanks!")
+        self.assertEqual(self.fresh().pulse()["waiting"], 1)  # the bot is off for everyone
+        self.assertTrue(self.site.dismiss_waiting("m-" + PSID, STAFF))
+        self.assertEqual(self.fresh().pulse()["waiting"], 0)
+        self.assertEqual(self.audits()[-1][:3], ("counter", "live.waiting_dismissed", "…1234"))
+        self.worker_chats.add_message(PSID, "m_2", "customer", datetime.now(UTC), page_id=PAGE)
+        self.assertEqual(self.fresh().pulse()["waiting"], 1)  # a new message: waiting again
+        self.assertFalse(self.site.dismiss_waiting("w-" + WEB, STAFF))  # visitors never wait
+        self.assertFalse(self.site.dismiss_waiting("m-7999999999999999", STAFF))
+        self.admin_sql("UPDATE garage.messenger_threads SET is_admin = true WHERE psid = %s",
+                       (PSID,))
+        self.assertFalse(self.site.dismiss_waiting("m-" + PSID, STAFF))  # the owner's own chat
+
+    def stored_id(self, mid: str) -> int:
+        return self.admin_sql("SELECT message_id FROM garage.messenger_messages WHERE mid = %s",
+                              (mid,))[0][0]
+
+    def test_a_message_the_screen_did_not_show_yet_keeps_the_chat_waiting(self):
+        self.say(PSID, "m_1", "customer", 1, "thanks!")
+        shown = self.fresh().chats("waiting")[0]["last_id"]  # what the screen showed
+        self.assertEqual(shown, self.stored_id("m_1"))
+        self.say(PSID, "m_2", "customer", 2, "and one more thing")  # not on the screen yet
+        key = "m-" + PSID
+        self.assertEqual(self.site.dismiss_waiting(key, STAFF, seen_id=shown), {"waiting": True})
+        self.assertEqual(self.fresh().pulse()["waiting"], 1)
+        self.assertEqual(self.audits()[-1][1:], ("live.waiting_dismissed", "…1234",
+                                                 {"newer": True}))
+        self.assertEqual(self.site.dismiss_waiting(key, STAFF, seen_id=self.stored_id("m_2")),
+                         {"waiting": False})
+        self.assertEqual(self.fresh().pulse()["waiting"], 0)
+
+    def test_a_message_stored_late_waits_although_it_was_sent_before_the_mark(self):
+        # The catch-up job and Meta's retries store messages sent a while ago: staff marked the
+        # chat handled after reading m_3, and m_2 (sent before m_3, stored only after the
+        # click) was never on their screen.
+        self.say(PSID, "m_1", "customer", 1, "hello")
+        self.say(PSID, "m_3", "customer", 3, "thanks!")
+        self.assertEqual(self.site.dismiss_waiting("m-" + PSID, STAFF), {"waiting": False})
+        self.assertEqual(self.fresh().pulse()["waiting"], 0)
+        self.say(PSID, "m_2", "customer", 2, "and the price?")
+        self.assertEqual(self.fresh().pulse()["waiting"], 1)
+
+    def test_the_0016_down_script_drops_the_handled_mark_and_up_brings_it_back(self):
+        column = ("SELECT count(*) FROM information_schema.columns WHERE table_schema = 'garage' "
+                  "AND table_name = 'messenger_threads' AND column_name = 'waiting_dismissed_id'")
+        url = self.create_database("live_dismiss_" + self.suffix)
+        with psycopg.connect(url) as connection:
+            connection.execute(ROLES_SQL)
+            apply_migrations_on_connection(connection)
+            self.assertEqual(connection.execute(column).fetchone()[0], 1)
+            folder = Path(__file__).resolve().parents[1] / "migrations"
+            connection.execute((folder / "0016_live_waiting_dismiss.down.sql").read_text())
+            self.assertEqual(connection.execute(column).fetchone()[0], 0)
+            connection.execute((folder / "0016_live_waiting_dismiss.up.sql").read_text())
+            self.assertEqual(connection.execute(column).fetchone()[0], 1)
 
     def fresh(self) -> LiveStore:
         return LiveStore(RoleDatabase(self.url, self.roles["site"]))
@@ -571,7 +668,9 @@ class LiveStoreDatabaseTests(unittest.TestCase):
         self.assertEqual({chat["key"] for chat in self.site.chats("alerts")},
                          {"m-" + PSID, "m-" + OTHER_PSID})  # an open alarm, or stuck
         self.assertEqual([chat["key"] for chat in self.site.chats("off")], ["m-" + OTHER_PSID])
-        self.assertEqual([chat["key"] for chat in self.site.chats("waiting")], ["m-" + OTHER_PSID])
+        # The bot is off for everyone in this test: both unanswered chats wait, newest first.
+        self.assertEqual([chat["key"] for chat in self.site.chats("waiting")],
+                         ["m-" + OTHER_PSID, "m-" + PSID])
         self.assertEqual([chat["key"] for chat in self.site.chats("stuck")], ["m-" + OTHER_PSID])
         self.assertEqual(len(self.site.chats(limit=2)), 2)
         with self.assertRaises(ValueError):
@@ -747,6 +846,49 @@ class LiveStoreDatabaseTests(unittest.TestCase):
         self.assertEqual(rows[("w-" + OTHER_WEB, "needs_staff")]["status"], "open")
         self.assertEqual(self.site.close_failed("web", WEB), 0)
 
+    def test_a_handoff_merged_with_a_later_failure_is_never_closed_by_the_system(self):
+        self.site.raise_alert("web", WEB, draft("needs_staff", "handoff", "talk to a person"))
+        merged = self.site.raise_alert("web", WEB, draft("needs_staff", "failed", "x"))
+        self.assertTrue(merged.changed)
+        self.assertEqual(self.site.close_failed("web", WEB), 0)  # the visitor's next good turn
+        row = self.alert_rows()[0]
+        self.assertEqual((row["status"], row["reason"]), ("open", "handoff"))
+        # The other way round a failure becomes a handoff, even in the same words.
+        self.site.raise_alert("web", OTHER_WEB, draft("needs_staff", "failed", "same words"))
+        upgraded = self.site.raise_alert("web", OTHER_WEB,
+                                         draft("needs_staff", "handoff", "same words"))
+        self.assertTrue(upgraded.changed)
+        self.assertEqual(self.site.close_failed("web", OTHER_WEB), 0)
+
+    def test_failed_website_alarms_nobody_came_back_for_close_after_a_day(self):
+        self.site.raise_alert("web", WEB, draft("needs_staff", "failed", "x"))
+        self.site.raise_alert("web", WEB, draft())  # a part not found stays for the staff
+        self.site.raise_alert("web", OTHER_WEB, draft("needs_staff", "failed", "y"))  # fresh
+        self.worker.raise_alert("messenger", PSID, draft("needs_staff", "failed", "z"))
+        self.admin_sql("UPDATE garage.live_alerts SET updated_at = now() - interval '25 hours' "
+                       "WHERE chat_key <> %s", (OTHER_WEB,))
+        self.assertEqual(self.site.close_stale_failed(24), 1)
+        still = {(row["key"], row["kind"]) for row in self.alert_rows() if row["status"] == "open"}
+        self.assertEqual(still, {("w-" + WEB, "part_not_found"), ("w-" + OTHER_WEB, "needs_staff"),
+                                 ("m-" + PSID, "needs_staff")})
+        self.assertEqual(self.site.close_stale_failed(24), 0)
+
+    def test_marking_done_twice_with_the_same_old_version_is_not_a_conflict(self):
+        raised = self.worker.raise_alert("messenger", PSID, draft())
+        self.site.set_status(raised.alert_id, "done", STAFF, version=1)
+        again = self.site.set_status(raised.alert_id, "done", STAFF, version=1)  # a second person
+        self.assertEqual((again["status"], again["version"]), ("done", 2))
+
+    def test_one_failing_alarm_does_not_lose_the_rest_of_the_turn(self):
+        turn = TurnAlerts((draft("no_such_kind", "", "x"), draft("visit_request", "", "coming")),
+                          "599123456", "call me", "")
+        with self.assertLogs("automotive.live_store", "WARNING"):
+            raised = self.worker.record_turn("messenger", PSID, turn)
+        self.assertEqual(len(raised), 2)  # the visit request and its phone number
+        rows = self.alert_rows()
+        self.assertEqual([(row["kind"], row["phone"]) for row in rows],
+                         [("visit_request", "599123456")])
+
     def test_the_muted_visitors_are_listed_for_the_recorder(self):
         self.site.web_customer(WEB, "a")
         self.site.web_customer(OTHER_WEB, "b")
@@ -879,6 +1021,53 @@ class LiveStoreDatabaseTests(unittest.TestCase):
         self.worker_chats.purge()
         self.assertEqual([row["key"] for row in self.site.list_alerts("all")],
                          ["m-" + OTHER_PSID])
+
+    def test_alarms_the_bots_raise_reach_the_dashboards_pulse_route(self):
+        from fastapi import FastAPI, Request
+        from fastapi.testclient import TestClient
+
+        from automotive.site_live import build_live_router
+
+        app = FastAPI()
+
+        @app.middleware("http")
+        async def signed_in(request: Request, call_next):
+            request.state.site_user = {"username": "counter", "role": "employee",
+                                       "display_name": "Counter"}
+            return await call_next(request)
+
+        app.include_router(build_live_router(self.site))  # the site's own login
+        client = TestClient(app)
+        # Messenger: the worker's record_turn for a visit with a phone number; the chat also
+        # waits (the bot is off for everyone in these tests).
+        self.say(PSID, "m_1", "customer", 1, "I'll come tomorrow, 599123456")
+        self.worker.record_turn("messenger", PSID, TurnAlerts(
+            (draft("visit_request", "", "comes tomorrow"),), "599123456", "x", ""))
+        # Website: the recorder, as a finished turn hands it over, for two visitors.
+        recorder = LiveRecorder(self.site, start=False)
+        ok = {"status": "COMPLETE", "engine_status": "OK", "answer": "…", "cards": []}
+        recorder.turn("visitor-1", "a turbo for a Huracan", {**ok, "outcome": "nothing_found"},
+                      "en")
+        recorder.turn("visitor-2", "a person please", {**ok, "outcome": "handoff", "staff": {
+            "intent": "none", "note": "wants a person", "phone": "", "missing": []}}, "en")
+        recorder.drain()
+        pulse = client.get("/api/admin/live/pulse").json()
+        self.assertEqual(pulse["open"], {"part_not_found": 1, "visit_request": 1,
+                                         "service_booking": 0, "needs_staff": 1, "total": 3})
+        self.assertEqual(pulse["waiting"], 1)
+        self.assertEqual(datetime.fromisoformat(pulse["waiting_at"]), at(1))
+        detail = client.get("/api/admin/live/pulse?detail=1").json()
+        self.assertEqual(detail["waiting_at"], pulse["waiting_at"])
+        self.assertEqual(sorted((item["channel"], item["kind"], item["phone"])
+                                for item in detail["alerts"]["open"]),
+                         [("messenger", "visit_request", "599123456"),
+                          ("web", "needs_staff", None), ("web", "part_not_found", None)])
+
+    def test_the_daily_purge_leaves_website_alarms_to_the_site(self):
+        self.site.raise_alert("web", WEB, draft())
+        self.admin_sql("UPDATE garage.live_alerts SET created_at = now() - interval '400 days'")
+        self.worker_chats.purge()
+        self.assertEqual([row["key"] for row in self.site.list_alerts("all")], ["w-" + WEB])
 
 
 if __name__ == "__main__":

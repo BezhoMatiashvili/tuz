@@ -123,6 +123,23 @@ _KA = {
     "login.unavailable": "შესვლა დროებით მიუწვდომელია.",
     "login.not_configured": "სამართავი პანელი ჯერ არ არის გამართული.",
     "login.staff_only": "მხოლოდ თანამშრომლებისთვის",
+    "seo.parts": "ნაწილები", "seo.parts_h1": "ავტონაწილები მარაგში",
+    "seo.parts_title": "ავტონაწილები მარაგში, ფასებით, თბილისი | Garage 1886",
+    "seo.parts_description": ("{count} დასახელება მარაგშია Garage 1886-ში, საბურთალოზე. "
+                              "აირჩიეთ მარკა და ნახეთ ნაწილები ფასით."),
+    "seo.parts_lead": "აირჩიეთ მარკა და ნახეთ, რა არის მარაგში ახლა და რა ღირს.",
+    "seo.make_h1": "{make} ნაწილები",
+    "seo.make_title": "{make} ნაწილები თბილისში | Garage 1886",
+    "seo.make_title_paged": "{make} ნაწილები თბილისში, გვერდი {page} | Garage 1886",
+    "seo.make_description": ("{make} ნაწილები მარაგში: {count} დასახელება ფასით. "
+                             "Garage 1886, საბურთალო, თბილისი. დაგვირეკეთ ან მობრძანდით."),
+    "seo.make_lead": "მარაგშია {count} დასახელება. სადაც ფასი არ წერია, დაგვირეკეთ.",
+    "seo.models": "მოდელები", "seo.makes": "მარკები", "seo.items": "ნაწილები მარაგში",
+    "seo.prev": "წინა", "seo.next": "შემდეგი", "seo.page_of": "გვერდი {page} / {pages}",
+    "seo.search": "ზუსტი ძიება მოდელით, წლით ან VIN კოდით",
+    "seo.browse": "ნაწილები მარკების მიხედვით", "seo.all_makes": "ყველა მარკა",
+    "seo.updated": "მარაგი განახლდა: {date}", "seo.crumbs": "სად ხართ",
+    "seo.pages": "გვერდები",
     "error.title": "გვერდი ვერ მოიძებნა", "error.home": "მთავარ გვერდზე დაბრუნება",
 }
 
@@ -240,6 +257,23 @@ _EN = {
     "login.unavailable": "Sign-in is unavailable right now.",
     "login.not_configured": "The dashboard has not been set up yet.",
     "login.staff_only": "Staff only",
+    "seo.parts": "Parts", "seo.parts_h1": "Car parts in stock",
+    "seo.parts_title": "Car parts in stock with prices, Tbilisi | Garage 1886",
+    "seo.parts_description": ("{count} items in stock at Garage 1886 in Saburtalo, Tbilisi. "
+                              "Pick a make to see its parts with prices."),
+    "seo.parts_lead": "Pick a make to see what is in stock right now and what it costs.",
+    "seo.make_h1": "{make} parts",
+    "seo.make_title": "{make} parts in Tbilisi | Garage 1886",
+    "seo.make_title_paged": "{make} parts in Tbilisi, page {page} | Garage 1886",
+    "seo.make_description": ("{make} parts in stock: {count} items with prices. "
+                             "Garage 1886, Saburtalo, Tbilisi. Call us or drive in."),
+    "seo.make_lead": "{count} items in stock. Where no price is shown, call us.",
+    "seo.models": "Models", "seo.makes": "Makes", "seo.items": "Parts in stock",
+    "seo.prev": "Previous", "seo.next": "Next", "seo.page_of": "Page {page} of {pages}",
+    "seo.search": "Exact search by model, year or VIN",
+    "seo.browse": "Parts by make", "seo.all_makes": "All makes",
+    "seo.updated": "Stock updated: {date}", "seo.crumbs": "You are here",
+    "seo.pages": "Pages",
     "error.title": "Page not found", "error.home": "Back to the home page",
 }
 

@@ -111,6 +111,8 @@ LATE_SECONDS = 3600
 READY_RETRY_SECONDS = 5.0
 READY_WAIT_SECONDS = 300.0
 JOB_POLL_SECONDS = 10.0
+WAKE_GAP_SECONDS = 60.0  # more wall-clock time than monotonic time: the laptop slept
+WAKE_SETTLE_SECONDS = 20.0  # Wi-Fi comes back a few seconds after a wake-up
 ERROR_RETRY_SECONDS = 1800
 NOT_CONNECTED_RETRY_SECONDS = 60
 # A turn is at most 60 s plus its sends; systemd waits 90 s before it kills a service.
@@ -161,6 +163,9 @@ class Job:
 
 JOBS = (
     Job("subscription", 3600, at_startup=True),
+    # Messages the webhook missed while the laptop slept (meta_catchup), at start, every ten
+    # minutes and right after a wake-up (``_jobs_loop``).
+    Job("catchup", 600, at_startup=True),
     Job("names", 600),
     Job("comments", 600, feature=("automotive.meta_comments", "sync_comments")),
     Job("posts", 3600, feature=("automotive.meta_page_stats", "sync_posts")),
@@ -186,9 +191,15 @@ def _purge(ctx: MetaContext) -> dict:
     return counts
 
 
+def _catchup(ctx: MetaContext) -> dict:
+    from automotive.meta_catchup import sync_missed_messages
+
+    return sync_missed_messages(ctx)
+
+
 BUILT_IN_JOBS: dict[str, Callable[[MetaContext], Any]] = {
-    "subscription": ensure_subscribed, "names": sync_names, "token_health": check,
-    "purge": _purge}
+    "subscription": ensure_subscribed, "catchup": _catchup, "names": sync_names,
+    "token_health": check, "purge": _purge}
 
 
 # -- small pieces ------------------------------------------------------------------------------
@@ -444,6 +455,10 @@ def _summary(name: str, result: Any) -> tuple[int, str]:
             page, app = bool(result.get("page_resubscribed")), bool(
                 result.get("app_resubscribed"))
             return int(page) + int(app), f"page_resubscribed={page} app_resubscribed={app}"
+        if name == "catchup":
+            return _number(result.get("stored")), " ".join(
+                f"{key}={_number(result.get(key))}"
+                for key in ("conversations", "messages", "stored", "claimed"))
         counts = {str(key): _number(value) for key, value in result.items()
                   if isinstance(value, int) and not isinstance(value, bool)}
         return max(0, sum(counts.values())), " ".join(
@@ -470,7 +485,10 @@ def _run_status(result: Any) -> str:
 def _connect_detail(error: ConnectError) -> str:
     meta = error.detail.get("meta") if isinstance(error.detail, Mapping) else None
     if isinstance(meta, Mapping):
-        return f"{error.code} code={meta.get('code')} subcode={meta.get('subcode')}"
+        # The type says "network" when Meta was never reached (Wi-Fi still down after a
+        # wake-up), which is not the same problem as Meta refusing the call.
+        return (f"{error.code} code={meta.get('code')} subcode={meta.get('subcode')} "
+                f"http={meta.get('http_status')} type={meta.get('type')}")
     return str(error.code)
 
 
@@ -606,6 +624,8 @@ class MessengerWorker:
         if isinstance(event, PageEcho):
             return self._echo(event)
         if isinstance(event, ReferralEvent):
+            if self.store.deleted_after(event.psid, event.sent_at):
+                return "ignored: deleted_chat"
             self.store.upsert_thread(event.psid, event.page_id, source=event.referral.channel,
                                      source_ad_id=event.referral.ad_id)
             return "referral"
@@ -618,6 +638,11 @@ class MessengerWorker:
     def _customer(self, psid: str, page_id: str, mid: str, text: str, attachments: Sequence[Any],
                   quick_reply: str, referral: Referral | None, sent_at: datetime,
                   standby: bool) -> str:
+        if self.store.deleted_after(psid, sent_at):
+            # A late copy (the worker was stopped, or Meta retried) of a message sent before
+            # staff deleted this customer's data: nothing is stored or answered, and the chat
+            # is not created again (MetaStore.add_message refuses it as well).
+            return "ignored: deleted_chat"
         thread = self.store.upsert_thread(
             psid, page_id, source=referral.channel if referral else None,
             source_ad_id=referral.ad_id if referral else None)
@@ -733,6 +758,8 @@ class MessengerWorker:
         """An item too large for the inbox, kept as ids only: there are no words to answer, so
         the chat is flagged for the shop to read in the page inbox."""
         if event.psid and event.kind in ("msg", "pb", "echo"):
+            if self.store.deleted_after(event.psid, event.sent_at):
+                return "ignored: deleted_chat"  # a late copy from before "Delete data"
             self.store.upsert_thread(event.psid, event.page_id)
             self.store.flag_attention(event.psid, "oversized_message")
         return "oversized"
@@ -1197,7 +1224,18 @@ class MessengerWorker:
                                          cancel=self._cancel_event(psid))
         finally:
             done.set()
-        self._raise_alerts(psid, result)
+        try:
+            return self._reply_turn(burst, reply_id, reply, channel, settings, choice, result)
+        finally:
+            # After the reply went out (or could not): the customer never waits for the
+            # alarms' database writes, and a reply that cannot be delivered still alarms.
+            self._raise_alerts(psid, result)
+
+    def _reply_turn(self, burst: _Burst, reply_id: int, reply: _Reply, channel: dict,
+                    settings: Mapping[str, Any], choice: Any,
+                    result: Any) -> tuple[dict, dict] | None:
+        """Send what the engine answered (the rest of ``_answer_turn``)."""
+        psid = burst.psid
         # The engine ran: a non-empty status makes the reply count as a turn for the caps.
         reply.engine_status = str(result.engine_status or result.error_code
                                   or str(result.status).upper() or "RAN")[:40]
@@ -1245,9 +1283,9 @@ class MessengerWorker:
 
     def _raise_alerts(self, psid: str, result: Any) -> None:
         """Record what the turn means for the staff (dashboard > Live chats): a part not found, a
-        visit or service request, a handoff, a phone number. Called right after the engine and
-        before anything is sent, so a reply that cannot be delivered still alarms. Never raises
-        and never logs a message or a number."""
+        visit or service request, a handoff, a phone number. Called once the reply is sent or
+        could not be, so a reply that cannot be delivered still alarms and the customer never
+        waits for these writes. Never raises and never logs a message or a number."""
         turn = getattr(result, "alerts", None)
         if self.live is None or not turn:
             return
@@ -1909,7 +1947,17 @@ class MessengerWorker:
             except Exception as error:
                 LOGGER.warning("messenger_jobs_failed error=%s", _error_code(error))
             startup = False
+            wall, steady = time.time(), time.monotonic()
             self._stop.wait(JOB_POLL_SECONDS)
+            # The monotonic clock stands still while the laptop sleeps and the wall clock does
+            # not: a gap between them is a wake-up. Meta has given up on what it could not
+            # deliver meanwhile, so the webhook subscription is checked and the missed messages
+            # are read back at once, once the network had a moment to come back.
+            slept = (time.time() - wall) - (time.monotonic() - steady)
+            if slept > WAKE_GAP_SECONDS:
+                LOGGER.info("messenger_woke slept_s=%d", int(slept))
+                self._stop.wait(WAKE_SETTLE_SECONDS)
+                startup = True
 
     def _dispatch(self, executor: ThreadPoolExecutor | None, function: Callable,
                   *args: Any) -> None:

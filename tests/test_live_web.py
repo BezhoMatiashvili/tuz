@@ -7,6 +7,9 @@ from __future__ import annotations
 import threading
 import time
 import unittest
+from unittest import mock
+
+import psycopg
 
 from automotive.conversations import ConversationStore
 from automotive.live_alerts import AlertDraft, TurnAlerts
@@ -26,7 +29,8 @@ from automotive.site_guard import DailyBudget
 from tests.test_assistant import Script, Search, done, service
 
 SECRET = "private-marker-5d2e"  # gitleaks:allow
-QUIET = ("close_failed", "open_web_alert_counts", "web_muted_keys")
+QUIET = ("close_failed", "close_stale_failed", "open_web_alert_counts", "web_muted_keys")
+NO_WAIT = (0.0, 0.0, 0.0)  # RETRY_DELAYS for tests
 
 
 class Clock:
@@ -90,6 +94,10 @@ class FakeStore:
 
     def web_prune(self, days):
         self._record("web_prune", days)
+
+    def close_stale_failed(self, hours):
+        self._record("close_stale_failed", hours)
+        return 0
 
 
 def turn_payload(**extra) -> dict:
@@ -308,7 +316,56 @@ class RecorderTests(unittest.TestCase):
     def test_old_chats_are_pruned_after_the_retention(self):
         recorder = LiveRecorder(self.store, retention_days=45, start=False, clock=self.clock)
         recorder._prune()
-        self.assertEqual(self.store.calls, [("web_prune", 45)])
+        # The prune also closes the failed alarms of visitors who never came back (a day).
+        self.assertEqual(self.store.calls, [("web_prune", 45), ("close_stale_failed", 24)])
+
+    def test_a_lost_connection_is_tried_again_and_the_message_is_kept(self):
+        attempts = []
+
+        def flaky(key, body, language=""):
+            attempts.append(key)
+            if len(attempts) < 3:
+                raise psycopg.OperationalError("connection lost")
+            self.store.calls.append(("web_customer", key, body, language))
+
+        self.store.web_customer = flaky
+        self.recorder.customer("c", "hello", "en")
+        with mock.patch("automotive.live_web.RETRY_DELAYS", NO_WAIT):
+            self.recorder.drain()
+        self.assertEqual(len(attempts), 3)
+        self.assertEqual(self.recorder.dropped, 0)
+        self.assertEqual(kinds(self.store), ["web_customer"])
+
+    def test_any_other_error_is_not_tried_again(self):
+        self.store.fail_on = {"web_customer"}
+        self.recorder.customer("c", "hello", "en")
+        with mock.patch("automotive.live_web.RETRY_DELAYS", NO_WAIT), \
+                self.assertLogs("automotive.live_web", "WARNING"):
+            self.recorder.drain()
+        self.assertEqual(kinds(self.store), ["web_customer"])  # one attempt
+        self.assertEqual(self.recorder.dropped, 1)
+
+    def test_an_unreachable_database_is_waited_for_but_missing_tables_are_not(self):
+        checks = []
+
+        def usable():
+            checks.append(1)
+            return len(checks) > 2
+
+        self.store.usable = usable
+        self.store.reachable = False  # what LiveStore says while it cannot connect
+        self.recorder.customer("c", "hello", "en")
+        with mock.patch("automotive.live_web.RETRY_DELAYS", NO_WAIT):
+            self.recorder.drain()
+        self.assertEqual((len(checks), kinds(self.store)), (3, ["web_customer"]))
+        # Reachable but without migration 0015: dropped at once, as before.
+        self.store.usable = lambda: False
+        self.store.reachable = True
+        self.recorder.customer("c", "again", "en")
+        with mock.patch("automotive.live_web.RETRY_DELAYS", NO_WAIT), \
+                self.assertLogs("automotive.live_web", "WARNING"):
+            self.recorder.drain()
+        self.assertEqual(self.recorder.dropped, 1)
 
     def test_the_writer_thread_writes_what_is_queued_before_it_stops(self):
         recorder = LiveRecorder(self.store, clock=time.monotonic)

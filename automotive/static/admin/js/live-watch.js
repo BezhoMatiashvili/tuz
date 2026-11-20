@@ -8,12 +8,15 @@
 // messages, the chats they belong to and the alarms, and the page subscribes to it.
 //
 // A new alarm gets a sound, an alarm toast with a link to the chat, and a screen-reader
-// announcement; a phone number arriving gets a softer sound; a reminder ping repeats every
-// minute while any alarm is open. The sound is WebAudio (no audio files, nothing for the CSP to
+// announcement; a phone number arriving gets a softer sound; so does a customer who starts
+// waiting or writes again while waiting; a reminder ping repeats every minute while anything
+// needs a person (an open alarm, a waiting or a stuck chat). A poll that hangs for 10 seconds
+// counts as offline, and an ended session is shown instead of silencing the alarms (app.js
+// shows both on every page). The sound is WebAudio (no audio files, nothing for the CSP to
 // allow); a browser lets it play only after the person has used the page, and until then
 // `soundLocked` says so, for the page to ask for a click.
 
-import { ApiError, isAbort, request } from './api.js';
+import { ApiError, isAbort, leaveForSignIn, request } from './api.js';
 import { h, icon, statusIcon } from './dom.js';
 import {
   alarmEvents, badgeCount, needsAlerts, newestFirst, nextDelay, openTotal, soundFor, toneOf,
@@ -24,6 +27,10 @@ import { announce } from './ui.js';
 const BASE = '/api/admin/live';
 const SOUND_KEY = 'garage.staff.alarm_sound';
 const REMINDER_MS = 60000;
+// A poll that has not answered in this long counts as a failure (the page says it is offline)
+// instead of showing "live" forever on a hung connection.
+const PULSE_TIMEOUT_MS = 10000;
+const SIGNED_OUT_RETRY_MS = 30000; // signed out but kept on the page (unsaved changes)
 const TOAST_MS = { critical: 20000, warning: 14000 };
 const SETUP_CODES = { LIVE_NOT_SET_UP: 'not_set_up', LIVE_NOT_CONFIGURED: 'not_configured' };
 
@@ -47,6 +54,7 @@ const state = {
   done: [], // handled in the last 24 hours (with detail)
   seen: null, // {alerts, waiting, attention} the next answer is compared with
   offline: false,
+  signedOut: false, // the session ended: nothing is heard until the person signs in again
   reason: '', // '', not_set_up or not_configured
   failures: 0,
   updatedAt: null,
@@ -276,7 +284,7 @@ function react(events) {
 function snapshot(extra) {
   return {
     pulse: state.pulse, alerts: state.alerts || [], done: state.done, badge: badgeCount(state.pulse),
-    offline: state.offline, reason: state.reason, soundOn: state.soundOn,
+    offline: state.offline, signedOut: state.signedOut, reason: state.reason, soundOn: state.soundOn,
     soundLocked: state.soundLocked, updatedAt: state.updatedAt, detail: state.detail,
     messages: [], chats: {}, ...extra,
   };
@@ -317,17 +325,20 @@ async function accept(pulse, detailed, signal) {
     alerts = [];
   } else if (alerts === null || needsAlerts(state.pulse, counts)) {
     const answer = await request('GET', `${BASE}/alerts`, {
-      query: { status: 'open', limit: 100 }, signal,
+      query: { status: 'open', limit: 100 }, signal, keepOnSessionEnd: true,
     });
     alerts = newestFirst(answer.alerts || []);
   }
-  const next = { alerts, waiting: counts.waiting, attention: counts.attention };
+  const next = {
+    alerts, waiting: counts.waiting, waiting_at: counts.waiting_at, attention: counts.attention,
+  };
   const events = alarmEvents(state.seen, next, { first: state.seen === null });
   state.seen = next;
   state.pulse = counts;
   state.alerts = alerts;
   state.failures = 0;
   state.offline = false;
+  state.signedOut = false;
   state.reason = '';
   state.updatedAt = new Date();
   react(events);
@@ -335,6 +346,18 @@ async function accept(pulse, detailed, signal) {
 }
 
 function failed(error) {
+  if (error instanceof ApiError && error.status === 401) {
+    // The session ended. Leave for the sign-in page once; a form with unsaved changes may
+    // keep the person here, and then every page says the alarms stopped instead of going quiet.
+    const first = !state.signedOut;
+    state.signedOut = true;
+    state.offline = false;
+    emit();
+    if (first) {
+      leaveForSignIn();
+    }
+    return SIGNED_OUT_RETRY_MS;
+  }
   if (error instanceof ApiError && error.status === 503 && SETUP_CODES[error.code]) {
     state.reason = SETUP_CODES[error.code];
     state.offline = false;
@@ -364,18 +387,30 @@ async function tick() {
   controller = mine;
   const detailed = state.detail;
   let delay = nextDelay({ visible: visible() });
+  let timedOut = false;
+  const deadline = window.setTimeout(() => {
+    timedOut = true;
+    mine.abort();
+  }, PULSE_TIMEOUT_MS);
   try {
     const query = detailed
       ? { detail: 1, after_m: state.cursor.m, after_w: state.cursor.w } : {};
-    const pulse = await request('GET', `${BASE}/pulse`, { query, signal: mine.signal });
+    const pulse = await request('GET', `${BASE}/pulse`, {
+      query, signal: mine.signal, keepOnSessionEnd: true,
+    });
     if (state.running && !mine.signal.aborted) {
       await accept(pulse, detailed, mine.signal);
     }
   } catch (error) {
     // An aborted poll was replaced on purpose (the page opened or closed): that call decides
-    // when the next one happens.
-    delay = isAbort(error) ? null : failed(error);
+    // when the next one happens. One that hung past the deadline is a failure.
+    if (timedOut) {
+      delay = failed(new ApiError(0, 'TIMEOUT'));
+    } else {
+      delay = isAbort(error) ? null : failed(error);
+    }
   } finally {
+    window.clearTimeout(deadline);
     ticking = false;
     if (controller === mine) {
       controller = null;
@@ -414,8 +449,10 @@ export function start() {
   state.soundLocked = isLocked();
   gestures(state.soundLocked);
   document.addEventListener('visibilitychange', onVisibility);
+  // Every minute while anything needs a person: an open alarm, a customer nobody answered, a
+  // chat the bot got stuck in.
   reminder = window.setInterval(() => {
-    if (openTotal(state.pulse) > 0) {
+    if (badgeCount(state.pulse) > 0) {
       play('reminder');
     }
   }, REMINDER_MS);

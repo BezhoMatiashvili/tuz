@@ -136,7 +136,7 @@ class CleanTests(unittest.TestCase):
             row, "not a row", {"days": pair("შაბ", "S" * 41), "time": 9}, {"time": "x"}]))
         self.assertEqual(errors, {"hours.1": "INVALID", "hours.2.days.en": "TOO_LONG",
                                   "hours.2.time": "INVALID", "hours.3.days": "INVALID"})
-        self.assertEqual(cleaned["hours"][0], row)
+        self.assertEqual(cleaned["hours"][0], {**row, "days_code": ""})  # optional field
 
     def test_flags_must_be_real_booleans(self):
         chat = copy.deepcopy(DEFAULT_SECTIONS["chat"])
@@ -531,7 +531,8 @@ class SiteContentTests(unittest.TestCase):
         self.assertEqual(hero["subline"], pair("Sub ka", ""))
         self.assertEqual((contact["phone"], contact["email"]), ("+995 32 212 34 56", ""))
         # In a list the bad cell is emptied and a row with nothing left is dropped.
-        self.assertEqual(contact["hours"], [{"days": pair("ორშ", "Mon"), "time": ""}])
+        self.assertEqual(contact["hours"],
+                         [{"days": pair("ორშ", "Mon"), "time": "", "days_code": ""}])
         self.assertNotIn("x" * 30, repr(snapshot["sections"]))
         self.assertEqual(snapshot["versions"]["hero"], 3)  # still there to be edited
         self.assertNotIn("x" * 30, " ".join(logs.output))

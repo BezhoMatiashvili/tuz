@@ -27,6 +27,7 @@ import {
   sortChats,
   soundFor,
   toneOf,
+  waitingStamp,
 } from '../automotive/static/admin/js/live-model.js';
 
 const tests = [];
@@ -131,6 +132,23 @@ test('later answers give new, phone, update, waiting and stuck events', () => {
   assert.deepEqual(alarmEvents(after, after), []);
   // Fewer waiting chats or fewer alarms is not an alarm.
   assert.deepEqual(alarmEvents(after, { alerts: [], waiting: 0, attention: 0 }), []);
+});
+
+test('a customer who writes again while waiting sounds again, the same count or not', () => {
+  const before = { alerts: [], waiting: 1, waiting_at: at(5), attention: 0 };
+  const again = { alerts: [], waiting: 1, waiting_at: at(9), attention: 0 };
+  assert.deepEqual(alarmEvents(before, again).map((item) => item.type), ['waiting']);
+  assert.deepEqual(alarmEvents(again, again), []); // nothing new
+  // One chat answered and another wrote: one waiting chat still, a newer message.
+  assert.deepEqual(alarmEvents(again, { ...again, waiting_at: at(12) }).map((item) => item.type),
+    ['waiting']);
+  // The newest waiting chat was answered: the stamp goes back, which is not news.
+  assert.deepEqual(alarmEvents(again, { ...again, waiting_at: at(2) }), []);
+  assert.deepEqual(alarmEvents(again, { alerts: [], waiting: 0, waiting_at: null, attention: 0 }),
+    []);
+  assert.equal(waitingStamp({ waiting_at: at(9) }), Date.parse(at(9)));
+  assert.equal(waitingStamp({}), 0);
+  assert.equal(waitingStamp(null), 0);
 });
 
 test('one sound per poll, the most urgent event decides', () => {

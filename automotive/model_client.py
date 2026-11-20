@@ -20,10 +20,11 @@ import httpx
 LOGGER = logging.getLogger(__name__)
 # After the direct account refuses for money, requests go straight to the backup and the
 # direct account is asked again once the wait is over. Each further refusal doubles the
-# wait up to the cap: an account left unfunded costs a few refused requests an hour, and
-# a top-up is in use within RECHECK_MAX_SECONDS, without a restart.
+# wait up to the cap: an account left unfunded costs one refused request an hour (about a
+# third of a second of one customer's turn, measured 2026-11-19), and a top-up is in use
+# within RECHECK_MAX_SECONDS, without a restart.
 RECHECK_SECONDS = 60.0
-RECHECK_MAX_SECONDS = 600.0
+RECHECK_MAX_SECONDS = 3600.0
 # OpenRouter sends nothing, headers included, until the model's first event, and that
 # wait varies: 1.3 s to 7.3 s with the chat's cached prompt (measured 2026-11-11). A turn's
 # 10 s stall limit, right for the direct API, would end the longer waits, so a backup

@@ -7,6 +7,7 @@ and a dashboard. One process serves everything; what a request may reach is deci
 | Path | Who | What |
 |---|---|---|
 | `/`, `/en` | public | landing page (Georgian, English), rendered from editable content |
+| `/parts`, `/parts/{make}`, `/parts/{make}/{model}` (and under `/en`) | public | parts in stock by make and model, rendered on the server for search engines ([garage-seo.md](garage-seo.md)) |
 | `/api/site/parts/*`, `/api/site/vin` | public | part search and VIN decode |
 | `/api/site/chat/*` | public | the parts assistant through a capped facade |
 | `/login` | public, never linked | staff sign-in |
@@ -84,15 +85,17 @@ money reports, not the price list.
 
 Dashboard > **Live chats** (`/admin/live`) is for whoever is at the counter, employee or admin.
 Code: `site_live.py` (routes), `live_store.py` (SQL), `live_alerts.py` (what a turn means),
-`live_web.py` (the website chat's recorder), migration `0015_live_chats`.
+`live_web.py` (the website chat's recorder), migrations `0015_live_chats` and
+`0016_live_waiting_dismiss`.
 
 - **Messages in real time.** What Messenger customers and website visitors wrote, with what the
   bot answered. The page asks `GET /api/admin/live/pulse` every 3 seconds (10 while its tab is
   hidden), so a message shows within about 3 seconds. Messenger text is read from the Messenger
   tables (`garage.messenger_*`); the website chat is written by `LiveRecorder` into
-  `garage.live_web_chats` / `live_web_messages` and kept as long as the website chat log (30
-  days). A website visitor is named by `sha256(conversation id)[:32]`, the key the chat log
-  already uses; the conversation id itself is a bearer secret and is never stored.
+  `garage.live_web_chats` / `live_web_messages` and kept for good (owner's decision,
+  2026-11-20; a lost database connection is retried a few times on the recorder's own thread).
+  A website visitor is named by `sha256(conversation id)[:32]`, the key the chat log already
+  uses; the conversation id itself is a bearer secret and is never stored.
 - **Alarms** (`garage.live_alerts`: one open row per chat and kind; a repeat merges into it, up to
   ten earlier notes are kept). Anyone may mark one done (who and when are stored) or reopen it.
 
@@ -102,11 +105,22 @@ Code: `site_live.py` (routes), `live_store.py` (SQL), `live_alerts.py` (what a t
   | Wants to visit / wants to book service | the model sets `finish.staff.intent` to `visit` or `service`; it asks once for a phone number, and the number the customer types is added to the same alarm and sounds it again |
   | Bot needs a human | the model chose outcome `handoff`; a website turn ended failed or timed out; a phone number arrived with nothing open |
   | Stuck (Messenger) | the chat's existing `needs_attention` flag, with its reason; an employee can clear it |
-  | Waiting (Messenger) | the bot is off **for that chat**, it is not the owner's own chat, and the newest customer message is later than the last bot or shop reply |
+  | Waiting (Messenger) | the newest customer message is later than the last bot or shop reply, younger than 24 hours (Meta's window for the page's reply; the bot's own `max_reply_age_minutes` only limits what the bot answers), it is not the owner's own chat, and nothing will answer it by itself: the bot is off for that chat, off or paused for everyone, or it has said nothing for 3 minutes (a failed or cut-off reply, a message too old for the bot, one the catch-up job found after the laptop slept) |
 
   The model decides what a customer means (`finish.outcome`); this code only reads what the
   engine already validated and checks it against the cards that were actually offered. While the
-  global Messenger switch is off the page shows a banner instead of counting every chat as waiting.
+  global Messenger switch is off (owner's decision, 2026-11-20) every unanswered chat counts as
+  waiting, sounds once and is reminded every minute until someone replies in the Page inbox; a
+  new message in a chat that already waits sounds again. A closing "thanks" needs no answer:
+  the chat's "No reply needed" button (`POST /api/admin/live/chats/{key}/waiting/dismiss`,
+  audited `live.waiting_dismissed`, migration 0016) stops it waiting until the customer writes
+  again. The mark is the newest stored message the screen showed (`seen_id`, the chat's
+  `last_id`): storage order, not send time, so any customer message stored after it keeps the
+  chat waiting, whether it came in before the screen caught up (the page says so) or was sent
+  earlier and stored late by the catch-up job or Meta's retries. A merge never turns a
+  handoff or a
+  phone alarm into a "failed" one, so the system's closing of failed website alarms (when the
+  visitor's bot answers again, or after 24 quiet hours) never closes what a person asked for.
 - **Bot off for one customer**, employee or admin (`PUT /api/admin/live/chats/{key}/bot`). A
   Messenger chat uses its existing per-chat switch, which the worker checks before every send
   (audited as `messenger.chat_off`). A website visitor gets a new flag, which the recorder's
@@ -121,14 +135,18 @@ Code: `site_live.py` (routes), `live_store.py` (SQL), `live_alerts.py` (what a t
   cleared here.
 - **On every dashboard page.** The nav badge, the tab title `(N)` and a chime (WebAudio, no sound
   files) work wherever staff are; a browser lets a page play sound only after one click, so a
-  notice says so until then, and each person can mute the sound in their own browser. An open
-  alarm repeats quietly every minute. If the poll cannot reach the server the page says it is
-  offline: a silent failure would silence the alarms.
-- **Setup.** Migration 0015 comes with `uv run python -m warehouse_sync --migrate`
+  notice says so until then, and each person can mute the sound in their own browser. Anything
+  that needs a person (an open alarm, a waiting or a stuck chat) repeats quietly every minute.
+  If the poll cannot reach the server, or does not answer within 10 seconds, every page says the
+  alarms are offline, and an ended session is shown on every page too (a form with unsaved
+  changes can keep the person on the page): a silent failure would silence the alarms.
+- **Setup.** Migrations 0015 and 0016 come with `uv run python -m warehouse_sync --migrate`
   (`messenger_setup --setup` applies only the Messenger migrations, on purpose). Restart the
-  Messenger worker and the site afterwards. Until the migration is applied every route answers
+  Messenger worker and the site afterwards. Until 0015 is applied every route answers
   `LIVE_NOT_SET_UP`, the page says so, and the worker and the website chat record nothing and
-  work as before; "Delete data" and the daily purge check that the table exists.
+  work as before; "Delete data" and the daily purge check that the table exists. With 0015 but
+  not 0016, alarms and website chats are recorded and only the pages say "not set up"
+  (`LiveStore.ready` / `pages_ready`).
 - **What it shows and keeps.** An alarm holds at most the customer's own words (200 characters),
   a short note the model wrote for the staff and a phone number the customer typed. A Messenger
   customer's alarms go with "Delete data" (which fails, rather than skip them, when the login may
@@ -375,6 +393,8 @@ This change makes the application deployable; it does not deploy it.
    login that has no other role.
 6. Fill in the contact details, opening hours and history in the dashboard, and have a
    native speaker review the Georgian interface strings.
+7. Search engines: the domain redirects, Search Console, the Google Business Profile and
+   the TuzMotors overlap are in [garage-seo.md](garage-seo.md).
 
 ## Verification
 

@@ -305,7 +305,8 @@ class AutomotivePostgresTests(unittest.TestCase):
                 result = runtime.search_products(query, limit=1)
                 self.assertEqual([p["source_product_id"] for p in result["items"]], [expected])
                 self.assertFalse(result["has_more"])
-                self.assertIsNone(result["items"][0]["stock"])
+                # No stock columns in the fixture: both counts are unknown, never "stocked".
+                self.assertEqual(result["items"][0]["stock"], {"store": None, "tuz11": None})
             self.assertEqual(runtime.search_products("' OR TRUE --")["items"], [])
         finally:
             with self.psycopg.connect(self.url) as connection:
@@ -335,7 +336,7 @@ class AutomotivePostgresTests(unittest.TestCase):
             selected = {"make": "Example", "model": "Car", "model_year": 2013}
             result = runtime.vehicle_catalog_candidates(selected)
             self.assertEqual([p["source_product_id"] for p in result["items"]], [ids[0]])
-            self.assertIsNone(result["items"][0]["stock"])
+            self.assertEqual(result["items"][0]["stock"], {"store": None, "tuz11": None})
             self.assertEqual(runtime.vehicle_catalog_candidates(
                 selected, exclude_ids=[ids[0]],
             )["items"], [])
@@ -373,8 +374,11 @@ class AutomotivePostgresTests(unittest.TestCase):
         self.assertEqual(enrichment.get_job(exhausted["job_id"])["error_code"], "retry_exhausted")
         self.assertEqual(len(runtime.search_parts("AB123")["items"]), 2)
         with self.psycopg.connect(self.url) as conn:
+            # A real code change arrives with its source row (migration 0007 indexes
+            # content_hash(source_columns)), so the fixture changes both.
             conn.execute("UPDATE warehouse.warehouse_products SET product_code='NEW123',"
-                         "row_hash=%s WHERE source_product_id='p1'", ("e" * 64,))
+                         "source_columns='{\"column_02\": \"NEW123\"}', row_hash=%s "
+                         "WHERE source_product_id='p1'", ("e" * 64,))
         self.assertEqual(runtime.search_parts("AP104/2")["items"], [])
         self.assertEqual(runtime.search_parts("NEW123")["items"][0]["source_product_id"], "p1")
         with self.psycopg.connect(self.url) as conn:

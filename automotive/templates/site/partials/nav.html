@@ -1,6 +1,8 @@
 {% from "partials/macros.html" import icon, tt with context %}
-{% set sections = [("#parts", t["nav.parts"]), ("#services", t["nav.services"]),
-                   ("#story", t["nav.story"]), ("#visit", t["nav.visit"])] %}
+{# On the landing page the sections are anchors; other pages link to them on the home page. #}
+{% set base = base if base is defined else "" %}
+{% set sections = [(base ~ "#parts", t["nav.parts"]), (base ~ "#services", t["nav.services"]),
+                   (base ~ "#story", t["nav.story"]), (base ~ "#visit", t["nav.visit"])] %}
 <header class="nav" id="top">
   <div class="nav__in wrap">
     <a class="nav__brand" href="{{ home }}" aria-label="Garage 1886, {{ t['nav.home'] }}">

@@ -22,6 +22,18 @@ from automotive.chat import VIN_PATTERN, _redact, engine_name
 from automotive.vin import validate_vin
 
 LOGGER = logging.getLogger(__name__)
+_LIVE_WARNED: dict[str, float] = {}
+LIVE_WARN_EVERY = 60.0
+
+
+def live_warning(code: str, error: BaseException) -> None:
+    """A failure on the Live chats recorder's path. Never the visitor's problem, but staff must
+    hear of it: a recorder that fails loses the website's messages and alarms. One line a
+    minute per kind, the error's class only (never a message, a number or an id)."""
+    now = time.monotonic()
+    if now - _LIVE_WARNED.get(code, -LIVE_WARN_EVERY) >= LIVE_WARN_EVERY:
+        _LIVE_WARNED[code] = now
+        LOGGER.warning("%s error=%s", code, type(error).__name__)
 TERMINAL = {"COMPLETE", "PARTIAL", "FAILED"}
 IDENTITY = ("make", "model", "model_year")
 CONFIGURATION = (*IDENTITY, "engine_code", "displacement_l", "fuel", "fuel_type", "trim",
@@ -632,8 +644,8 @@ class ConversationStore:
             return None
         try:
             return self.live.muted_reply(identifier, self._known_language(identifier, language))
-        except Exception:
-            LOGGER.debug("live_muted_check_skipped")
+        except Exception as error:
+            live_warning("live_muted_check_skipped", error)
             return None
 
     def _known_language(self, identifier: str, language: str) -> str:
@@ -649,14 +661,14 @@ class ConversationStore:
             return
         try:
             self.live.customer(identifier, message, language)
-        except Exception:
-            LOGGER.debug("live_customer_skipped")
+        except Exception as error:
+            live_warning("live_customer_skipped", error)
 
     def _live_turn(self, identifier: str, language: str, message: str, payload: dict) -> None:
         try:
             self.live.turn(identifier, message, payload, language)
-        except Exception:
-            LOGGER.debug("live_turn_skipped")
+        except Exception as error:
+            live_warning("live_turn_skipped", error)
 
     def _canned_turn(self, identifier: str, message: str, language: str, answer: str) -> dict:
         """A turn that is finished the moment it starts: no model is called, the visitor reads
@@ -698,8 +710,8 @@ class ConversationStore:
         self._live_customer(identifier, message, language)
         try:
             self.live.canned(identifier, answer, language)
-        except Exception:
-            LOGGER.debug("live_canned_skipped")
+        except Exception as error:
+            live_warning("live_canned_skipped", error)
         return {"conversation_id": identifier, "turn_id": turn_id, "status": "RUNNING",
                 "language": language, "canned": True}
 

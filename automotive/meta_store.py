@@ -220,9 +220,10 @@ def _outcome(prefix: str, text: Any) -> str:
 
 
 def forgotten_key(subject: str) -> str:
-    """How garage.meta_forgotten names an erased author or comment ('author:<id>' or
-    'comment:<id>'): its SHA-256, so the table never holds the id itself. No key is needed for
-    the two logins to agree, and the rows are dropped after FORGOTTEN_DAYS."""
+    """How garage.meta_forgotten names an erased author, comment or Messenger chat
+    ('author:<id>', 'comment:<id>', 'chat:<psid>'): its SHA-256, so the table never holds the id
+    itself. No key is needed for the two logins to agree, and the rows are dropped after
+    FORGOTTEN_DAYS (longer than the catch-up job ever reads back: meta_catchup.FIRST_DAYS)."""
     return hashlib.sha256(subject.encode("utf-8")).hexdigest()
 
 
@@ -852,6 +853,11 @@ class MetaStore:
         when = _sent_at(sent_at)
         column = {"customer": "last_customer_at", "shop": "last_shop_at", "bot": "last_bot_at"}
         with self.db.transaction() as conn:
+            # A late webhook copy (the worker was stopped) of a message sent before staff
+            # deleted this customer's data: as a duplicate, never stored, never answered.
+            forgotten = forgotten_since(conn, [f"chat:{psid}"]).get(f"chat:{psid}")
+            if forgotten is not None and when <= forgotten:
+                return False
             conn.execute("INSERT INTO garage.messenger_threads (psid, page_id) VALUES (%s, %s) "
                          "ON CONFLICT (psid) DO NOTHING", (psid, page_id))
             row = conn.execute(
@@ -867,6 +873,108 @@ class MetaStore:
                                  "updated_at = now() WHERE psid = %s")
                          .format(sql.Identifier(column[sender])), (when, psid))
         return True
+
+    def add_caught_up(self, psid: str, page_id: str,
+                      messages: Sequence[Mapping[str, Any]]) -> dict:
+        """Store messages the webhook missed (``meta_catchup``), in one transaction (worker).
+
+        Each message is {mid, sender ('customer' or 'shop'), sent_at (a datetime), body,
+        attachments}. One whose mid is stored already is skipped: Graph's message id is the
+        webhook's mid (all 86 stored messages, bot replies and shop echoes included, matched
+        by id on 2026-11-20), and a customer or the shop sending the same words twice within
+        seconds are two messages, both kept. The chat is created when it is new and its
+        last_customer_at / last_shop_at move forward.
+
+        Every customer message stored here that nothing the page wrote came after is claimed
+        as handled for both reply channels (``skipped_old``, error_text "catchup"), so neither
+        a burst nor the start-up recovery turns any of them into a late bot reply, whichever
+        the worker would take as its trigger; the Live page lists the chat as waiting for staff
+        instead. {stored, claimed: claim rows written}."""
+        _digits(psid, "psid")
+        _digits(page_id, "page_id")
+        stored = claimed = 0
+        caught: set[str] = set()  # the customer messages this call stored
+        column = {"customer": "last_customer_at", "shop": "last_shop_at"}
+        with self.db.transaction() as conn:
+            # A customer whose data staff deleted: nothing they wrote before that comes back.
+            forgotten = forgotten_since(conn, [f"chat:{psid}"]).get(f"chat:{psid}")
+            if forgotten is not None:
+                messages = [message for message in messages
+                            if isinstance(message.get("sent_at"), datetime)
+                            and message["sent_at"] > forgotten]
+                if not messages:
+                    return {"stored": 0, "claimed": 0}
+            conn.execute("INSERT INTO garage.messenger_threads (psid, page_id) VALUES (%s, %s) "
+                         "ON CONFLICT (psid) DO NOTHING", (psid, page_id))
+            for message in messages:
+                sender, mid = message.get("sender"), message.get("mid")
+                when = message.get("sent_at")
+                if (sender not in column or not isinstance(mid, str) or not 1 <= len(mid) <= 200
+                        or not isinstance(when, datetime) or when.tzinfo is None):
+                    continue
+                body = str(message.get("body") or "")[:4000]
+                row = conn.execute(
+                    "INSERT INTO garage.messenger_messages (mid, psid, sender, body, attachments, "
+                    "sent_at) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (mid) DO NOTHING "
+                    "RETURNING message_id",
+                    (mid, psid, sender, body, Jsonb(_attachments(message.get("attachments"))),
+                     when)).fetchone()
+                if row is None:
+                    continue
+                stored += 1
+                conn.execute(sql.SQL("UPDATE garage.messenger_threads SET {0} = GREATEST({0}, %s), "
+                                     "updated_at = now() WHERE psid = %s")
+                             .format(sql.Identifier(column[sender])), (when, psid))
+                if sender == "customer":
+                    caught.add(mid)
+            if caught:
+                # Every customer message this call stored that nothing the page wrote came after
+                # (ordered as the worker orders them: sent time, then storage order): whichever
+                # of them the worker would take as a burst's trigger (the newest, either of two
+                # in one second, the newest that is not the owner's command), it is claimed.
+                unanswered = conn.execute(
+                    "SELECT m.mid FROM garage.messenger_messages m WHERE m.psid = %(psid)s "
+                    "AND m.sender = 'customer' AND m.mid = ANY(%(caught)s::text[]) "
+                    "AND NOT EXISTS (SELECT 1 FROM garage.messenger_messages a "
+                    "WHERE a.psid = %(psid)s AND a.sender <> 'customer' "
+                    "AND (a.sent_at, a.message_id) > (m.sent_at, m.message_id)) "
+                    "ORDER BY m.sent_at, m.message_id",
+                    {"psid": psid, "caught": sorted(caught)}).fetchall()
+                for row in unanswered:
+                    for channel in ("messenger", "notice"):
+                        claimed += conn.execute(
+                            "INSERT INTO garage.messenger_replies (channel, psid, trigger_key, "
+                            "trigger_keys, status, error_text, finished_at, duration_ms) "
+                            "VALUES (%s, %s, %s, %s::text[], 'skipped_old', 'catchup', now(), 0) "
+                            "ON CONFLICT (channel, trigger_key) DO NOTHING",
+                            (channel, psid, row["mid"], [row["mid"]])).rowcount
+        return {"stored": stored, "claimed": claimed}
+
+    def deleted_after(self, psid: str, when: datetime | int) -> bool:
+        """Whether staff deleted this customer's data at or after ``when``, Meta's time of a
+        message or event that arrives late (the worker was stopped, or Meta retried): such a
+        copy must not bring the chat back. Worker login."""
+        _digits(psid, "psid")
+        with self.db.transaction() as conn:
+            forgotten = forgotten_since(conn, [f"chat:{psid}"]).get(f"chat:{psid}")
+        return forgotten is not None and _sent_at(when) <= forgotten
+
+    def known_mids(self, mids: Sequence[str]) -> set[str]:
+        """Which of these message ids are stored (both logins): the catch-up's dry run."""
+        wanted = [mid for mid in mids if isinstance(mid, str) and 1 <= len(mid) <= 200][:1000]
+        if not wanted:
+            return set()
+        with self.db.transaction() as conn:
+            rows = conn.execute("SELECT mid FROM garage.messenger_messages WHERE mid = ANY(%s)",
+                                (wanted,)).fetchall()
+        return {row["mid"] for row in rows}
+
+    def last_ok_run(self, job: str) -> datetime | None:
+        """When the newest successful run of a job started (both logins)."""
+        with self.db.transaction() as conn:
+            row = conn.execute("SELECT max(started_at) AS at FROM garage.meta_sync_runs "
+                               "WHERE job = %s AND status = 'ok'", (job,)).fetchone()
+        return row["at"] if row else None
 
     def messages(self, psid: str, limit: int = 50, *, before_id: int | None = None) -> list[dict]:
         """The newest ``limit`` messages of a chat, oldest first (both logins).
@@ -1158,8 +1266,10 @@ class MetaStore:
         # undoing the deletions above, which the privacy page promises.
         with self.db.transaction() as conn:
             if _alerts_deletable(conn):
-                conn.execute("DELETE FROM garage.live_alerts "
-                             "WHERE created_at < now() - make_interval(days => %s)", (days,))
+                # Messenger alarms only: the website's follow its chat log's retention
+                # (``LiveStore.web_prune``, run by the site).
+                conn.execute("DELETE FROM garage.live_alerts WHERE channel = 'messenger' "
+                             "AND created_at < now() - make_interval(days => %s)", (days,))
         return counts
 
     def counts_today(self) -> dict:
@@ -1205,6 +1315,13 @@ class MetaStore:
                                     (psid,)).rowcount
             threads = conn.execute("DELETE FROM garage.messenger_threads WHERE psid = %s",
                                    (psid,)).rowcount
+            # The chat itself is remembered (hashed) as forgotten, so the catch-up job
+            # (meta_catchup) never reads its messages back from the page's conversations.
+            if conn.execute("SELECT to_regclass('garage.meta_forgotten') IS NOT NULL "
+                            "AS ready").fetchone()["ready"]:
+                conn.execute("INSERT INTO garage.meta_forgotten (subject_key) VALUES (%s) "
+                             "ON CONFLICT (subject_key) DO UPDATE SET forgotten_at = now()",
+                             (forgotten_key(f"chat:{psid}"),))
             if _alerts_deletable(conn):  # the alarms may carry the phone number they typed
                 conn.execute("DELETE FROM garage.live_alerts "
                              "WHERE channel = 'messenger' AND chat_key = %s", (psid,))

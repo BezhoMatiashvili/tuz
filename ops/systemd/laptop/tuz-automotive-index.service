@@ -1,0 +1,18 @@
+# systemd USER unit (laptop): queues and runs the parts index job when the catalogue changed
+# (automotive/worker.py, AUTOMOTIVE_ENRICHMENT_DATABASE_URL from .env). Database only, no model.
+[Unit]
+Description=tuz (laptop): parts index refresh
+OnFailure=tuz-notify-failure@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/bezhomatiashvili/Desktop/tuz
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/bezhomatiashvili/Desktop/tuz/.venv/bin/python -m automotive.worker --auto --once
+TimeoutStartSec=50min
+Nice=10
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only

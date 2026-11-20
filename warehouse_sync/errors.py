@@ -19,6 +19,15 @@ class SourceChangedError(SourceProtocolError):
     """Raised when the source changes during an offset-paginated scan."""
 
 
+class SyncInterrupted(Exception):
+    """Raised in the scan when the process is told to stop (SIGTERM, SIGINT, SIGHUP), so the
+    run is recorded as failed instead of staying 'running' for good."""
+
+
+class SyncAlreadyRunning(RuntimeError):
+    """Another synchronisation holds the single-runner lock: this one does nothing."""
+
+
 def failure_code(error: BaseException) -> str:
     """Return a value which is safe to store, log, or include in an alert.
 
@@ -26,6 +35,8 @@ def failure_code(error: BaseException) -> str:
     third-party HTTP library. It must therefore never cross the service
     boundary into PostgreSQL, journald, or alert email.
     """
+    if isinstance(error, SyncInterrupted):
+        return "interrupted"
     if isinstance(error, AuthenticationError):
         return "authentication_rejected"
     if isinstance(error, ConfigurationError):

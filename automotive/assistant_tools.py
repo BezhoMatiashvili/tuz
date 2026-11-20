@@ -23,6 +23,7 @@ from automotive import assistant_prompt as prompt
 from automotive import oil_match
 from automotive.assistant_catalog import CROSS_SHOWN, SearchError
 from automotive.catalog_api import CATEGORY_TERMS
+from automotive.codes import latin
 from automotive.parts_catalog import PartsCatalogService
 
 ROW_COLUMNS = ("id", "name", "vehicle", "brand", "code", "cross_codes", "price", "store",
@@ -171,7 +172,8 @@ def typed_tokens(message: str) -> list[str]:
     """Tokens of a message that could be part numbers: five or more characters with a
     digit. Whether one is a part number is only known once the index has it."""
     found: list[str] = []
-    for token in NUMBER_TOKEN.findall(message.replace("[VIN]", " ")):
+    # Cyrillic look-alike letters typed into a number count as the Latin ones (codes.latin).
+    for token in NUMBER_TOKEN.findall(latin(message).replace("[VIN]", " ")):
         token = token.strip("./-")
         if len(token) >= 5 and any(char.isdigit() for char in token) and token not in found:
             found.append(token)
@@ -512,8 +514,14 @@ class Toolbox:
             rows = self._rows(_row_id(item) for item in matches)
             if rows:
                 found.append({"typed": token, "rows": Table(rows)})
-            elif token in tokens:
-                missing.append(token)
+            else:
+                # A number joined from spaced groups ('1K0 698 151 A') is not named as
+                # missing, but it brings its other revisions as a typed one does; not when it
+                # is only a found number with a word after it ('0986494520 a filter').
+                if token in tokens:
+                    missing.append(token)
+                elif any(plain(token).startswith(plain(item["typed"])) for item in found):
+                    continue
                 other = revisions(token) if callable(revisions) else []
                 rows = self._rows(row_id for row_id, _ in other)
                 if rows:
@@ -762,6 +770,18 @@ class Toolbox:
             entry["rows"] = Table(rows, [[FIELD_NAMES.get(fields.get(str(row.id)), "")]
                                          for row in rows])
             shown.update(str(row.id) for row in rows)
+            if not rows:
+                # The same number in another revision of the maker ('...151D' asked, the
+                # shop carries '...151B'), as the customer's typed numbers get them.
+                revisions = getattr(self.index, "revisions", None)
+                other = revisions(number) if callable(revisions) else []
+                revised = self._rows(row_id for row_id, _ in other
+                                     if str(row_id) not in shown)
+                if revised:
+                    entry["other_revisions"] = {
+                        "carried_as": list(dict.fromkeys(carried for _, carried in other)),
+                        "rows": Table(revised, [["other revision"] for _ in revised])}
+                    shown.update(str(row.id) for row in revised)
             # What the crawled catalogues list for a number is shown, but a list of cars
             # is not a source for this car: `confirmed` rests on car-specific tools only.
             self._crawled(number, hint, entry, shown)

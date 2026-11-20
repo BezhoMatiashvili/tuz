@@ -1,0 +1,29 @@
+# systemd USER unit (laptop): the Garage 1886 site and dashboard on 127.0.0.1:8767
+# (docs/garage-site.md). It replaces the transient unit started with systemd-run, which did
+# not come back after a reboot. Settings come from the repository's private .env, which the
+# process reads itself (automotive/config.py). No secret belongs in this file.
+# Install: install -m 0644 ops/systemd/laptop/garage-site-local.service ~/.config/systemd/user/
+#          systemctl --user daemon-reload && systemctl --user enable --now garage-site-local
+[Unit]
+Description=Garage 1886 site and dashboard (port 8767)
+Documentation=file:///home/bezhomatiashvili/Desktop/tuz/docs/garage-site.md
+
+[Service]
+Type=exec
+WorkingDirectory=/home/bezhomatiashvili/Desktop/tuz
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/bezhomatiashvili/Desktop/tuz/.venv/bin/python -m automotive --port 8767
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+# The chat logs and the provider caches under data/ are the only paths the site writes.
+ReadWritePaths=/home/bezhomatiashvili/Desktop/tuz/data
+# No MemoryDenyWriteExecute: the uv-managed CPython has no PT_GNU_STACK header, so every new
+# thread would fail to start (see garage-messenger.service).
+
+[Install]
+WantedBy=default.target

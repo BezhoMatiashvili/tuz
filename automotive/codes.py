@@ -19,20 +19,38 @@ class PartCode:
     raw_value: str
 
 
+# Cyrillic letters drawn like Latin ones: a part number typed on a Russian keyboard
+# ("1К0698151А") is the same number. They are mapped, never deleted (character normalization,
+# like NFKC; the catalogue's own codes are Latin).
+LOOKALIKES = str.maketrans("АВЕКМНОРСТХУІЈЅавекмнорстхуіјѕ", "ABEKMHOPCTXYIJSabekmhopctxyijs")
+
+
+def latin(value: str) -> str:
+    """NFKC, with Cyrillic look-alike letters written in Latin."""
+    return unicodedata.normalize("NFKC", value or "").translate(LOOKALIKES)
+
+
 def normalize_code(value: str) -> str:
     """Normalize display punctuation, retaining the semantically meaningful slash."""
-    value = unicodedata.normalize("NFKC", value).upper().strip()
+    value = latin(value).upper().strip()
     return re.sub(r"[^A-Z0-9/]+", "", value)
 
 
 def codes_in_text(text: str, limit: int = 60) -> list[str]:
-    """Identifier-shaped strings quoted in prose: 'GDB1916', 'P 50 069', 'A 000 420 30 20'.
+    """Identifier-shaped strings quoted in prose: 'GDB1916', 'P 50 069', 'A 000 420 30 20',
+    'W 712/75', '1K0 698 151 A'.
 
     Only exact warehouse matches are ever used, so a stray candidate costs nothing.
     """
-    tokens = [t.rstrip(".-/") for t in re.findall(r"[A-Za-z0-9][A-Za-z0-9.\-/]*", text or "")]
+    tokens = [t.rstrip(".-/")
+              for t in re.findall(r"[A-Za-z0-9][A-Za-z0-9.\-/]*", latin(text))]
     found: list[str] = []
-    lead, group_part = re.compile(r"[A-Za-z]{0,2}\d{0,4}"), re.compile(r"\d{1,4}")
+    # A spaced number starts with a short lead (letters then digits, 'A 000', or a maker's
+    # three-character prefix such as VAG's '1K0'), goes on in digit groups ('712/75' too) and
+    # may end in an index letter ('1K0 698 151 A'): tried both with and without that letter.
+    lead = re.compile(r"[A-Za-z]{0,2}\d{0,4}|(?=[A-Za-z]*\d)[A-Za-z0-9]{2,4}")
+    group_part = re.compile(r"\d{1,4}(?:/\d{1,3})?")
+    tail = re.compile(r"[A-Za-z]{1,2}")
 
     def add(value: str) -> None:
         key = normalize_code(value)
@@ -54,6 +72,9 @@ def codes_in_text(text: str, limit: int = 60) -> list[str]:
             group.append(following)
         if len(group) > 1:
             add(" ".join(group))
+            after = tokens[index + len(group)] if index + len(group) < len(tokens) else ""
+            if tail.fullmatch(after):
+                add(" ".join([*group, after]))
     return found[:limit]
 
 

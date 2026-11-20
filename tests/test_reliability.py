@@ -46,6 +46,79 @@ class ReliabilityTests(unittest.TestCase):
         repository.finish_run.assert_not_called()
         repository.fail_run.assert_called_once()
 
+    def test_a_stop_signal_records_the_run_as_interrupted(self) -> None:
+        from warehouse_sync.errors import SyncInterrupted
+
+        client = MagicMock()
+        client.fetch_products_page.side_effect = [_html("1"), SyncInterrupted("signal 15")]
+        repository = MagicMock()
+        repository.acquire_single_runner_lock.return_value = True
+        repository.start_run.return_value = 42
+        repository.record_page.return_value = SyncCounters(pages_fetched=1, rows_seen=1)
+        with (
+            patch("warehouse_sync.service.WarehouseClient", return_value=client),
+            patch("warehouse_sync.service.WarehouseRepository", return_value=repository),
+            patch("warehouse_sync.service.time.sleep"),
+        ):
+            with self.assertRaises(SyncInterrupted):
+                sync(_settings())
+        repository.close_abandoned_runs.assert_called_once_with(42)
+        self.assertEqual(repository.fail_run.call_args.args[2], "interrupted")
+        repository.finish_run.assert_not_called()
+
+    def test_a_run_started_with_nohup_keeps_ignoring_a_closed_terminal(self) -> None:
+        import signal
+
+        from warehouse_sync import __main__ as cli
+        from warehouse_sync.errors import SyncInterrupted
+
+        numbers = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)  # all three are put back
+        previous = {number: signal.getsignal(number) for number in numbers}
+        try:
+            signal.signal(signal.SIGHUP, signal.SIG_IGN)  # what nohup leaves behind
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            cli._stop_on_signals(SyncInterrupted)
+            self.assertIs(signal.getsignal(signal.SIGHUP), signal.SIG_IGN)
+            self.assertTrue(callable(signal.getsignal(signal.SIGTERM)))  # systemd's stop
+        finally:
+            for number, handler in previous.items():
+                signal.signal(number, handler)
+
+    def test_a_second_sync_says_so_instead_of_blaming_the_configuration(self) -> None:
+        from warehouse_sync.errors import SyncAlreadyRunning
+
+        client = MagicMock()
+        client.fetch_products_page.return_value = _html("1", pages=1)
+        repository = MagicMock()
+        repository.acquire_single_runner_lock.return_value = False
+        with (
+            patch("warehouse_sync.service.WarehouseClient", return_value=client),
+            patch("warehouse_sync.service.WarehouseRepository", return_value=repository),
+        ):
+            with self.assertRaises(SyncAlreadyRunning):
+                sync(_settings())
+        repository.start_run.assert_not_called()
+
+    def test_the_command_line_names_a_second_sync_and_a_stop(self) -> None:
+        import io
+        from contextlib import redirect_stderr
+
+        from warehouse_sync import __main__ as cli
+        from warehouse_sync.errors import SyncAlreadyRunning, SyncInterrupted
+
+        for error, code, said in ((SyncAlreadyRunning("x"), 3, "already running"),
+                                  (SyncInterrupted("signal 15"), 130, "interrupted")):
+            output = io.StringIO()
+            with (
+                patch("sys.argv", ["warehouse_sync"]),
+                patch("warehouse_sync.config.Settings.load", return_value=_settings()),
+                patch("warehouse_sync.service.sync", side_effect=error),
+                patch.object(cli, "_stop_on_signals"),
+                redirect_stderr(output),
+            ):
+                self.assertEqual(cli.main(), code)
+            self.assertIn(said, output.getvalue())
+
     def test_changed_second_pass_stops_finalization(self) -> None:
         client = MagicMock()
         client.fetch_products_page.side_effect = [

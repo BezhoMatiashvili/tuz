@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import signal
 import sys
 
 
@@ -35,6 +36,20 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _stop_on_signals(error: type[Exception]) -> None:
+    """SIGTERM (systemd's stop and timeout), SIGINT (Ctrl-C) and SIGHUP (a closed terminal)
+    raise ``error`` in the scan, so the run is recorded as failed rather than left running."""
+
+    def stop(signum: int, frame: object) -> None:
+        raise error(f"signal {signum}")
+
+    for name in ("SIGTERM", "SIGINT", "SIGHUP"):
+        number = getattr(signal, name, None)
+        # A run started with nohup keeps ignoring a closed terminal, as before.
+        if number is not None and signal.getsignal(number) is not signal.SIG_IGN:
+            signal.signal(number, stop)
+
+
 def main() -> int:
     args = _parser().parse_args()
     logging.basicConfig(
@@ -49,7 +64,13 @@ def main() -> int:
         load_maintenance_hmac_key,
         load_migration_database_url,
     )
-    from warehouse_sync.errors import AuthenticationError, ConfigurationError, SourceProtocolError
+    from warehouse_sync.errors import (
+        AuthenticationError,
+        ConfigurationError,
+        SourceProtocolError,
+        SyncAlreadyRunning,
+        SyncInterrupted,
+    )
     from warehouse_sync.migrations import apply_migrations
     from warehouse_sync.service import sync
 
@@ -80,7 +101,19 @@ def main() -> int:
             require_source_auth=True,
             require_hmac_key=not args.dry_run,
         )
+        _stop_on_signals(SyncInterrupted)
         result = sync(settings, max_pages=args.max_pages, dry_run=args.dry_run)
+    except SyncInterrupted:
+        print(
+            "SYNC STOPPED: interrupted. The run is recorded as failed; committed pages "
+            "remain saved.",
+            file=sys.stderr,
+        )
+        return 130
+    except SyncAlreadyRunning:
+        print("SYNC SKIPPED: another warehouse synchronisation is already running.",
+              file=sys.stderr)
+        return 3
     except AuthenticationError:
         print("SYNC FAILED: authentication_rejected", file=sys.stderr)
         return 10

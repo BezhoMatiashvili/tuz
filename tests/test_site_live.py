@@ -20,6 +20,7 @@ from tests.test_site_guard import ORIGIN
 PREFIX = "/api/admin/live"
 PSID = "7000000000001234"
 KEY, WEB = "m-" + PSID, "w-" + "a" * 32
+NEWEST_ID = 41  # the newest stored message a screen showed
 NOW = datetime(2026, 11, 16, 12, 0, tzinfo=UTC)
 SECRET = "private-marker-77aa"
 
@@ -52,6 +53,7 @@ class FakeLiveStore:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
         self.there = True
+        self.pages_there = True  # migration 0016's column (only the pages read it)
         self.fail: Exception | None = None
         self.fail_ready: Exception | None = None
         self.alerts = [alert(1), alert(2, status="done", handled_by="boss", handled_at=NOW),
@@ -68,12 +70,15 @@ class FakeLiveStore:
             raise self.fail_ready
         return self.there
 
+    def pages_ready(self) -> bool:
+        return self.ready() and self.pages_there
+
     def pulse(self) -> dict:
         self._call("pulse")
         return {"open": {"part_not_found": 2, "visit_request": 0, "service_booking": 0,
                          "needs_staff": 0, "total": 2},
-                "waiting": 1, "attention": 0, "messenger_bot": "on", "stamp": NOW,
-                "cursor": {"m": 10, "w": 4}}
+                "waiting": 1, "waiting_at": NOW, "attention": 0, "messenger_bot": "on",
+                "stamp": NOW, "cursor": {"m": 10, "w": 4}}
 
     def feed(self, after_m, after_w) -> dict:
         self._call("feed", after_m, after_w)
@@ -127,6 +132,12 @@ class FakeLiveStore:
         self._call("clear_attention", key, actor["username"])
         return key == KEY
 
+    def dismiss_waiting(self, key, actor, *, seen_id=None, client_ip=None) -> dict | None:
+        self._call("dismiss_waiting", key, actor["username"], seen_id)
+        if key != KEY:
+            return None
+        return {"waiting": seen_id is not None and seen_id < NEWEST_ID}
+
 
 class LiveCase(AdminCase):
     """AdminCase with the Live chats section wired to the double (``site={"live": ...}``)."""
@@ -153,6 +164,7 @@ class LiveCase(AdminCase):
             ("GET", f"/chats/{KEY}", None),
             ("PUT", f"/chats/{KEY}/bot", {"enabled": False}),
             ("POST", f"/chats/{KEY}/attention/clear", None),
+            ("POST", f"/chats/{KEY}/waiting/dismiss", None),
         ]
 
 
@@ -217,8 +229,9 @@ class PulseTests(LiveCase):
     async def test_the_plain_pulse_is_counts_and_cursors_only(self):
         response = await self.live("GET", "/pulse", who=self.employee)
         body = response.json()
-        self.assertEqual(set(body), {"now", "open", "waiting", "attention", "messenger_bot",
-                                     "stamp", "cursor"})
+        self.assertEqual(set(body), {"now", "open", "waiting", "waiting_at", "attention",
+                                     "messenger_bot", "stamp", "cursor"})
+        self.assertEqual(body["waiting_at"], NOW.isoformat())  # the page re-chimes on it
         self.assertEqual((body["open"]["total"], body["waiting"], body["cursor"]),
                          (2, 1, {"m": 10, "w": 4}))
         self.assertEqual(self.store.calls, [("ready",), ("pulse",)])  # no message was read
@@ -339,6 +352,31 @@ class ChatTests(LiveCase):
                             "NOT_FOUND")
 
 
+class DismissTests(LiveCase):
+    async def test_staff_mark_a_waiting_chat_handled_and_an_unknown_one_is_404(self):
+        response = await self.live("POST", f"/chats/{KEY}/waiting/dismiss", who=self.employee)
+        self.assertEqual((response.status_code, response.json()),
+                         (200, {"key": KEY, "waiting": False}))
+        self.assertIn(("dismiss_waiting", KEY, "worker", None), self.store.calls)
+        other = "m-7999999999999999"
+        response = await self.live("POST", f"/chats/{other}/waiting/dismiss", who=self.employee)
+        self.assertEqual(response.status_code, 404)
+
+    async def test_what_the_screen_showed_is_passed_on_and_a_newer_message_keeps_it_waiting(self):
+        path = f"/chats/{KEY}/waiting/dismiss"
+        response = await self.live("POST", path, {"seen_id": NEWEST_ID}, who=self.employee)
+        self.assertEqual(response.json(), {"key": KEY, "waiting": False})
+        self.assertIn(("dismiss_waiting", KEY, "worker", NEWEST_ID), self.store.calls)
+        response = await self.live("POST", path, {"seen_id": NEWEST_ID - 1}, who=self.employee)
+        self.assertEqual(response.json(), {"key": KEY, "waiting": True})
+        for bad in ("41", 0, -3, True, 1.5, {"id": 41}):
+            with self.subTest(seen_id=bad):
+                response = await self.live("POST", path, {"seen_id": bad}, who=self.employee)
+                self.assertEqual(response.status_code, 422)
+        response = await self.live("POST", path, {"seen": "2026-11-20"}, who=self.employee)
+        self.assertEqual(response.status_code, 422)  # no other field is taken
+
+
 class AvailabilityTests(LiveCase):
     async def test_without_a_site_database_every_route_says_so_after_the_session_check(self):
         client = self.serve(live={"store": None})
@@ -361,6 +399,13 @@ class AvailabilityTests(LiveCase):
             with self.subTest(method=method, path=path):
                 self.assert_refused(response, 503, "LIVE_NOT_SET_UP")
         self.assertEqual({item[0] for item in self.store.calls}, {"ready"})
+
+    async def test_with_0015_but_not_0016_the_pages_say_not_set_up_too(self):
+        self.store.pages_there = False  # recording still works there (LiveStore.ready)
+        for method, path, body in self.routes():
+            response = await self.live(method, path, body, who=self.employee)
+            with self.subTest(method=method, path=path):
+                self.assert_refused(response, 503, "LIVE_NOT_SET_UP")
 
     async def test_a_database_that_cannot_be_reached_is_a_503_that_leaks_nothing(self):
         self.store.fail_ready = psycopg.OperationalError(SECRET)

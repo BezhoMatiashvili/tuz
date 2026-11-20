@@ -1,0 +1,111 @@
+{% from "partials/macros.html" import icon, tt with context %}
+{% set other = "en" if lang == "ka" else "ka" %}
+{% set display_font = "noto-sans-georgian-xcond-800" if lang == "ka" else "barlow-condensed-800i" %}
+{% set brand = c.brand %}
+{% set hours = brand.hours|selectattr("time")|list %}
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0E0E0F">
+<title>{{ title }}</title>
+<meta name="description" content="{{ description }}">
+<link rel="preload" as="font" type="font/woff2" crossorigin href="{{ asset('site/fonts/' ~ display_font ~ '.woff2') }}">
+<link rel="stylesheet" href="{{ asset('site/css/site.css') }}">
+<link rel="canonical" href="{{ canonical }}">
+<link rel="alternate" hreflang="ka" href="{{ alternates.ka }}">
+<link rel="alternate" hreflang="en" href="{{ alternates.en }}">
+<link rel="alternate" hreflang="x-default" href="{{ alternates.ka }}">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="{{ asset('site/img/favicon.svg') }}" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{{ asset('site/img/apple-touch-icon.png') }}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Garage 1886">
+<meta property="og:title" content="{{ title }}">
+<meta property="og:description" content="{{ description }}">
+<meta property="og:url" content="{{ canonical }}">
+<meta property="og:locale" content="{{ 'ka_GE' if lang == 'ka' else 'en_US' }}">
+<meta property="og:image" content="{{ origin }}{{ asset('site/img/og.jpg') }}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">{{ ld|tojson }}</script>
+</head>
+<body class="sub">
+<a class="skip" href="#main">{{ t["nav.skip"] }}</a>
+{% include "partials/nav.html" %}
+<main id="main" tabindex="-1">
+  <header class="parts__head wall sub__head">
+    <div class="wrap">
+      <nav class="crumbs" aria-label="{{ t['seo.crumbs'] }}">
+        <ol>
+          {% for label, href in crumbs %}
+          <li>{% if loop.last %}<span aria-current="page">{{ label }}</span>{% else %}<a href="{{ href }}">{{ label }}</a>{% endif %}</li>
+          {% endfor %}
+        </ol>
+      </nav>
+      <h1 class="t-h2">{{ heading }}</h1>
+      <p class="t-lead">{{ lead }}</p>
+      <a class="btn btn--primary btn--keyline sub__search" href="{{ search_href }}">{{ icon("magnifying-glass") }}<span>{{ t["seo.search"] }}</span></a>
+    </div>
+  </header>
+  <div class="stripe" aria-hidden="true"></div>
+
+  <div class="wrap sub__body">
+    {% if makes %}
+    <section aria-labelledby="makes-title">
+      <h2 class="t-h3" id="makes-title">{{ t["seo.makes"] }}</h2>
+      <ul class="linkgrid">
+        {% for entry in makes %}
+        <li><a href="{{ entry.href }}"><span>{{ entry.name }}{% if entry.local %} <span class="linkgrid__alt" lang="ka">{{ entry.local }}</span>{% endif %}</span><span class="linkgrid__count">{{ entry.count|num }}</span></a></li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    {% if models %}
+    <section aria-labelledby="models-title">
+      <h2 class="t-h3" id="models-title">{{ t["seo.models"] }}</h2>
+      <ul class="linkgrid">
+        {% for entry in models %}
+        <li><a href="{{ entry.href }}"><span><span class="sr-only">{{ make.name }} </span>{{ entry.name }}</span><span class="linkgrid__count">{{ entry.count|num }}</span></a></li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    {% if items %}
+    <section aria-labelledby="items-title">
+      <h2 class="t-h3" id="items-title">{{ t["seo.items"] }}</h2>
+      {% if note %}<p class="results__note">{{ icon("info") }}<span>{{ note }}</span></p>{% endif %}
+      <ul class="results__list">
+        {% for item in items %}
+        <li class="result"><span class="result__name">{{ item.name }}</span><span class="result__price{% if item.ask %} result__price--ask{% endif %}">{{ item.price }}</span>{% if item.meta %}<span class="result__meta">{{ item.meta }}</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+      {% if pager.pages > 1 %}
+      <nav class="pager" aria-label="{{ t['seo.pages'] }}">
+        {% if pager.prev %}<a class="btn btn--ghost" href="{{ pager.prev }}" rel="prev">{{ t["seo.prev"] }}</a>{% endif %}
+        <span class="pager__at">{{ t["seo.page_of"]|replace("{page}", pager.page)|replace("{pages}", pager.pages) }}</span>
+        {% if pager.next %}<a class="btn btn--ghost" href="{{ pager.next }}" rel="next">{{ t["seo.next"] }}</a>{% endif %}
+      </nav>
+      {% endif %}
+      {% if updated %}<p class="results__hint">{{ t["seo.updated"]|replace("{date}", updated) }}</p>{% endif %}
+    </section>
+    {% endif %}
+
+    <section class="sub__visit" aria-labelledby="visit-title">
+      <h2 class="t-h3" id="visit-title">{{ c.visit.title }}</h2>
+      {% if brand.phone %}<p><a class="visit__phone" href="tel:{{ brand.phone|tel }}">{{ brand.phone }}</a></p>{% endif %}
+      {% if brand.address %}<p>{{ icon("map-pin") }} {{ brand.address }}</p>{% endif %}
+      {% for row in hours %}<p>{{ icon("clock") }} {{ row.days }}: {{ row.time }}</p>{% endfor %}
+    </section>
+  </div>
+</main>
+{% include "partials/footer.html" %}
+<div class="grain" aria-hidden="true"></div>
+<script type="module" src="{{ asset('site/js/site.js') }}"></script>
+</body>
+</html>

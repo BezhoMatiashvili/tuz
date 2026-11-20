@@ -59,8 +59,8 @@ PREFIX = "/api/admin/facebook"
 # Jobs the dashboard may ask the worker to run now (MetaStore.request_job): exactly
 # messenger_worker.JOB_NAMES, which a test pins. Not imported from there, so the site never
 # loads the worker and its engine; a name the worker does not know would be "unknown_job".
-JOBS = ("subscription", "names", "comments", "posts", "page_stats", "ads", "token_health",
-        "purge")
+JOBS = ("subscription", "catchup", "names", "comments", "posts", "page_stats", "ads",
+        "token_health", "purge")
 THREAD_FILTERS = ("all", "attention", "off", "ads", "admin")
 EVENTS_SHOWN = 10
 # Connected, yet nothing from Meta for this long: the tunnel, the receiver or the subscription.

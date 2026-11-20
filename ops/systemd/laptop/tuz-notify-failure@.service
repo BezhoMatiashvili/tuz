@@ -1,0 +1,8 @@
+# systemd USER unit (laptop): desktop alert when a tuz timer job fails. Stands in for the
+# server's e-mail alert (warehouse-sync-alert@.service) until an alert channel is chosen.
+[Unit]
+Description=tuz (laptop): desktop alert for failed %i
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/notify-send -u critical -a tuz "tuz: %i failed" "See: journalctl --user -u %i"

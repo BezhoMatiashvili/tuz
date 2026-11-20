@@ -29,7 +29,7 @@ from psycopg.types.json import Jsonb
 
 from automotive.live_alerts import AlertDraft, TurnAlerts, text, visible
 from automotive.meta_db import MetaDatabase
-from automotive.meta_store import MetaConflict, MetaStore, bot_state
+from automotive.meta_store import MetaConflict, MetaStore, bot_state, mask_psid
 
 LOGGER = logging.getLogger(__name__)
 
@@ -48,11 +48,31 @@ PULSE_SECONDS = 1.5  # the counts every open dashboard asks for are computed onc
 READY_SECONDS = 300.0
 NOT_READY_SECONDS = 30.0
 
-# A Messenger customer waits for staff when the bot is switched off for their chat and their newest
-# message is later than the newest answer, the bot's or the shop's. (The global switch is a banner.)
-WAITING = ("(NOT t.bot_enabled AND NOT t.is_admin AND t.last_customer_at IS NOT NULL "
-           "AND t.last_customer_at > GREATEST(COALESCE(t.last_shop_at, '-infinity'::timestamptz), "
-           "COALESCE(t.last_bot_at, '-infinity'::timestamptz)))")
+# A Messenger customer waits for staff when their newest message is later than the newest answer
+# (the bot's or the shop's), is younger than the reply window (the dashboard's
+# max_reply_age_minutes, 24 hours by default: Meta's standard messaging window, after which the
+# page cannot answer anyway), and nothing is going to answer it by itself: the bot is switched off
+# for this chat, switched off or paused for everyone, or it has said nothing for BOT_GRACE_SECONDS
+# (a reply that failed or was cut off, a message too old for the bot, one the catch-up job found
+# after the laptop slept). Constants only: no value ever reaches this text.
+BOT_GRACE_SECONDS = 180
+# Meta's window for a reply from the page: past it staff can no longer answer, so the chat stops
+# waiting. Not the bot's max_reply_age_minutes, which only limits what the bot itself answers.
+REPLY_WINDOW_HOURS = 24
+_SETTING = "(SELECT {} FROM garage.meta_settings WHERE settings_id = 1)"
+WAITING = (  # constants only (see above): no value ever reaches this text
+    "(NOT t.is_admin AND t.last_customer_at IS NOT NULL "  # nosec B608
+    "AND t.last_customer_at > GREATEST(COALESCE(t.last_shop_at, '-infinity'::timestamptz), "
+    "COALESCE(t.last_bot_at, '-infinity'::timestamptz)) "
+    f"AND t.last_customer_at > now() - make_interval(hours => {REPLY_WINDOW_HOURS}) "
+    # Staff marked it handled (a closing "thanks" needs no answer), until a customer message is
+    # stored after the newest one their screen showed: storage order, so also one sent earlier
+    # but stored late (migration 0016; LiveStore.dismiss_waiting).
+    "AND (t.waiting_dismissed_id IS NULL OR EXISTS (SELECT 1 FROM garage.messenger_messages d "
+    "WHERE d.psid = t.psid AND d.sender = 'customer' AND d.message_id > t.waiting_dismissed_id)) "
+    "AND (NOT t.bot_enabled OR NOT COALESCE(" + _SETTING.format("bot_enabled") + ", FALSE) "
+    "OR COALESCE(" + _SETTING.format("bot_paused_reason") + ", '') <> '' "
+    f"OR t.last_customer_at < now() - make_interval(secs => {BOT_GRACE_SECONDS})))")
 OPEN_ALERT = ("EXISTS (SELECT 1 FROM garage.live_alerts a WHERE a.channel = '{channel}' "
               "AND a.chat_key = {key} AND a.status = 'open')")
 MESSENGER_CHATS = (
@@ -62,6 +82,9 @@ MESSENGER_CHATS = (
     "t.attention_reason, t.first_seen_at, t.source, last.sender AS last_sender, "
     "left(last.body, 120) AS last_body, "
     "COALESCE(last.sent_at, t.first_seen_at) AS last_at, "  # nosec B608
+    # The newest stored message (storage order): what "No reply needed" says the screen showed.
+    "(SELECT max(s.message_id) FROM garage.messenger_messages s WHERE s.psid = t.psid) "
+    "AS last_id, "
     + WAITING + " AS waiting, "
     "COALESCE((SELECT array_agg(a.kind ORDER BY a.kind) FROM garage.live_alerts a "
     "WHERE a.channel = 'messenger' AND a.chat_key = t.psid AND a.status = 'open'), "
@@ -159,6 +182,7 @@ def _messenger_chat(row: Mapping[str, Any]) -> dict:
             "attention_reason": row["attention_reason"] or "", "waiting": bool(row["waiting"]),
             "alerts": list(row["alerts"] or []), "last_sender": row["last_sender"] or "",
             "last_body": row["last_body"] or "", "last_at": row["last_at"],
+            "last_id": row["last_id"],  # what "No reply needed" sends back (``seen_id``)
             "first_seen_at": row["first_seen_at"], "source": row["source"] or ""}
 
 
@@ -169,7 +193,7 @@ def _web_chat(row: Mapping[str, Any]) -> dict:
             "bot_enabled": row["bot_enabled"], "version": row["version"],
             "needs_attention": False, "attention_reason": "", "waiting": False,
             "alerts": list(row["alerts"] or []), "last_sender": row["last_sender"] or "",
-            "last_body": row["last_body"] or "", "last_at": row["last_at"],
+            "last_body": row["last_body"] or "", "last_at": row["last_at"], "last_id": None,
             "first_seen_at": row["started_at"], "source": ""}
 
 
@@ -211,36 +235,65 @@ class LiveStore:
         self.db = db
         self.meta = meta or MetaStore(db)
         self._lock = threading.Lock()
-        self._ready: tuple[bool, float] | None = None
+        self._ready: tuple[tuple[bool, bool], float] | None = None
         self._pulse: tuple[float, dict] | None = None
+        self._reachable = True  # what usable() last saw, so an outage is logged once
 
     # -- is the migration in place ---------------------------------------------------------------
 
     def ready(self) -> bool:
-        """Whether migration 0015's tables exist. A yes is kept five minutes and a no thirty
-        seconds, so a page asking every few seconds costs one query a minute. Raises when the
-        database cannot be reached."""
+        """Whether migration 0015's tables exist: all that recording alarms, website chats and
+        the bot switches needs. A yes is kept five minutes and a no thirty seconds, so a page
+        asking every few seconds costs one query a minute. Raises when the database cannot be
+        reached."""
+        return self._levels()[0]
+
+    def pages_ready(self) -> bool:
+        """``ready`` and migration 0016's column, which the Live pages read (``WAITING``):
+        without it the pages say "not set up" instead of every query failing, while alarms and
+        website chats are still recorded."""
+        tables, column = self._levels()
+        return tables and column
+
+    def _levels(self) -> tuple[bool, bool]:
         now = time.monotonic()
         with self._lock:
             if self._ready is not None and now < self._ready[1]:
                 return self._ready[0]
         with self.db.transaction() as conn:
-            there = bool(conn.execute(
+            row = conn.execute(
                 "SELECT to_regclass('garage.live_alerts') IS NOT NULL "
                 "AND to_regclass('garage.live_web_chats') IS NOT NULL "
-                "AND to_regclass('garage.live_web_messages') IS NOT NULL AS there"
-            ).fetchone()["there"])
+                "AND to_regclass('garage.live_web_messages') IS NOT NULL AS tables, "
+                "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = "
+                "'garage' AND table_name = 'messenger_threads' "
+                "AND column_name = 'waiting_dismissed_id') AS dismiss").fetchone()
+        levels = (bool(row["tables"]), bool(row["dismiss"]))
         with self._lock:
-            self._ready = (there, now + (READY_SECONDS if there else NOT_READY_SECONDS))
-        return there
+            self._ready = (levels, now + (READY_SECONDS if all(levels) else NOT_READY_SECONDS))
+        return levels
 
     def usable(self) -> bool:
-        """``ready`` for code that must never fail a customer's turn: False on any error."""
+        """``ready`` for code that must never fail a customer's turn: False on any error. The
+        log says when the database stops and starts answering, not on every call (the website
+        recorder asks every few seconds)."""
         try:
-            return self.ready()
+            there = self.ready()
         except Exception as error:
-            LOGGER.warning("live_store_unavailable %s", type(error).__name__)
+            if self._reachable:
+                LOGGER.warning("live_store_unavailable %s", type(error).__name__)
+            self._reachable = False
             return False
+        if not self._reachable:
+            LOGGER.info("live_store_available")
+        self._reachable = True
+        return there
+
+    @property
+    def reachable(self) -> bool:
+        """False while the last ``usable`` could not reach the database (not merely a database
+        without migration 0015): the website recorder then waits and tries again."""
+        return self._reachable
 
     def _changed(self) -> None:
         with self._lock:
@@ -269,7 +322,7 @@ class LiveStore:
         phone = draft.phone or None
         with self.db.transaction() as conn:
             row = conn.execute(
-                "SELECT alert_id, version, summary, items, occurrences, phone, updated_at "
+                "SELECT alert_id, version, reason, summary, items, occurrences, phone, updated_at "
                 "FROM garage.live_alerts WHERE channel = %s AND chat_key = %s AND kind = %s "
                 "AND status = 'open' FOR UPDATE", (channel, chat_key, draft.kind)).fetchone()
             if row is None:
@@ -292,7 +345,13 @@ class LiveStore:
                 return RaisedAlert(made["alert_id"], True, True, bool(phone), made["version"])
             repeated = _same(row["summary"], summary)
             phone_new = bool(phone) and phone != row["phone"]
-            if repeated and not phone_new:
+            # A failed turn never takes the place of what a person asked for: a handoff or a
+            # phone number merged with a later failure stays a handoff (``close_failed`` closes
+            # only alarms that are nothing but failures). A failure that turns into a handoff
+            # does change the reason, even in the same words.
+            reason = (row["reason"] if draft.reason == "failed" and row["reason"] not in
+                      ("", "failed") else draft.reason)
+            if repeated and not phone_new and reason == row["reason"]:
                 return RaisedAlert(row["alert_id"], False, False, False, row["version"])
             items = list(row["items"] or [])
             occurrences = row["occurrences"]
@@ -314,7 +373,7 @@ class LiveStore:
                 "phone = COALESCE(%s::text, phone), "
                 "phone_at = CASE WHEN %s THEN now() ELSE phone_at END, updated_at = now(), "
                 "version = version + 1 WHERE alert_id = %s RETURNING version",
-                (draft.reason, kept, Jsonb(items), occurrences, text(draft.car_label, 80),
+                (reason, kept, Jsonb(items), occurrences, text(draft.car_label, 80),
                  phone, phone_new, row["alert_id"])).fetchone()
         self._changed()
         return RaisedAlert(row["alert_id"], False, True, phone_new, made["version"])
@@ -371,10 +430,24 @@ class LiveStore:
         the owner's own chat (testing the bot from their account): nobody could open its alarm."""
         if channel == "messenger" and self._admin_thread(chat_key):
             return []
-        raised = [self.raise_alert(channel, chat_key, draft) for draft in turn.drafts]
+        # Each alarm and the phone number are written on their own: one that fails must not
+        # take the visit request and the number of the same turn down with it.
+        raised: list[RaisedAlert] = []
+        for draft in turn.drafts:
+            try:
+                made = self.raise_alert(channel, chat_key, draft)
+            except Exception as error:
+                LOGGER.warning("live_alert_failed kind=%s error=%s", draft.kind,
+                               type(error).__name__)
+                continue
+            if made is not None:
+                raised.append(made)
         if turn.phone:
-            raised.extend(self.attach_phone(channel, chat_key, turn.phone, turn.message,
-                                            turn.car_label))
+            try:
+                raised.extend(self.attach_phone(channel, chat_key, turn.phone, turn.message,
+                                                turn.car_label))
+            except Exception as error:
+                LOGGER.warning("live_alert_failed kind=phone error=%s", type(error).__name__)
         return raised
 
     # -- reading alarms --------------------------------------------------------------------------
@@ -417,7 +490,10 @@ class LiveStore:
                     "WHERE alert_id = %s FOR UPDATE", (alert_id,)).fetchone()
                 if current is None:
                     return None
-                if version is not None and current["version"] != version:
+                # Two people marking the same alarm done (or a repeat merging into it while one
+                # clicks) is not a conflict: the result is what both wanted.
+                if (version is not None and current["version"] != version
+                        and current["status"] != status):
                     raise MetaConflict("alert")
                 if current["status"] != status:
                     if status == "done":
@@ -462,6 +538,10 @@ class LiveStore:
                 "WHERE t.needs_attention AND NOT t.is_admin) AS attention, "
                 "(SELECT count(*) FROM garage.messenger_threads t WHERE " + WAITING +
                 ") AS waiting, "  # nosec B608
+                # The newest waiting message: a second message in a chat that was already
+                # waiting moves it, so the page sounds again although the count did not move.
+                "(SELECT max(t.last_customer_at) FROM garage.messenger_threads t WHERE "
+                + WAITING + ") AS waiting_at, "  # nosec B608
                 "(SELECT COALESCE(max(message_id), 0) FROM garage.messenger_messages) AS m, "
                 "(SELECT COALESCE(max(message_id), 0) FROM garage.live_web_messages) AS w"
             ).fetchone()
@@ -471,7 +551,8 @@ class LiveStore:
                         "needs_staff": 0}
         open_by_kind.update({row["kind"]: int(row["n"]) for row in kinds})
         result = {"open": {**open_by_kind, "total": sum(open_by_kind.values())},
-                  "waiting": int(counts["waiting"]), "attention": int(counts["attention"]),
+                  "waiting": int(counts["waiting"]), "waiting_at": counts["waiting_at"],
+                  "attention": int(counts["attention"]),
                   "messenger_bot": bot_state(settings) if settings else "unknown",
                   "stamp": stamp, "cursor": {"m": int(counts["m"]), "w": int(counts["w"])}}
         with self._lock:
@@ -629,6 +710,37 @@ class LiveStore:
         self._changed()
         return {"key": key, "bot_enabled": row["bot_enabled"], "version": row["version"]}
 
+    def dismiss_waiting(self, key: str, actor: Any, *, seen_id: int | None = None,
+                        client_ip: str | None = None) -> dict | None:
+        """Staff mark a waiting Messenger chat as handled without writing to the customer (a
+        closing "thanks" needs no answer). The mark is ``seen_id``, the newest stored message
+        their screen showed (a chat's ``last_id``), or else the newest stored now: storage
+        order, not send time. Any customer message stored after it keeps or makes the chat
+        waiting, whatever its send time: one that came in before the screen caught up (then the
+        answer is {"waiting": True}) or one stored late by the catch-up job or Meta's retries.
+        Never the owner's own chat; audited. None when there is no such chat (or a website key:
+        a visitor never waits)."""
+        parsed = parse_key(key)
+        if parsed is None or parsed[0] != "messenger":
+            return None
+        with self.db.transaction() as conn:
+            row = conn.execute(
+                "UPDATE garage.messenger_threads t SET waiting_dismissed_id = LEAST("
+                "COALESCE((SELECT max(m.message_id) FROM garage.messenger_messages m "
+                "WHERE m.psid = t.psid), 0), COALESCE(%s::bigint, 9223372036854775807)), "
+                "updated_at = now() WHERE t.psid = %s AND NOT t.is_admin "
+                "RETURNING EXISTS (SELECT 1 FROM garage.messenger_messages d "
+                "WHERE d.psid = t.psid AND d.sender = 'customer' "
+                "AND d.message_id > t.waiting_dismissed_id) AS newer",
+                (seen_id, parsed[1])).fetchone()
+            if row is None:
+                return None
+            self.meta.audit(actor, "live.waiting_dismissed", mask_psid(parsed[1]),
+                            {"newer": True} if row["newer"] else {},
+                            client_ip=client_ip, connection=conn)
+        self._changed()
+        return {"waiting": bool(row["newer"])}
+
     def clear_attention(self, key: str, actor: Any, *, client_ip: str | None = None) -> bool:
         """Clear a Messenger chat's "needs attention" flag (there is no automatic clearing)."""
         parsed = parse_key(key)
@@ -724,6 +836,23 @@ class LiveStore:
                 "handled_at = now(), updated_at = now(), version = version + 1 "
                 "WHERE channel = %s AND chat_key = %s AND kind = 'needs_staff' "
                 "AND reason = 'failed' AND status = 'open'", (channel, chat_key)).rowcount
+        if closed:
+            self._changed()
+        return closed
+
+    def close_stale_failed(self, hours: int = 24) -> int:
+        """Website "failed" alarms of visitors who never came back are closed by the system once
+        nothing happened on them for ``hours``: a visitor's conversation is forgotten after ten
+        idle minutes, so nobody can answer them, and left open they would fill the board's room
+        for new alarms after an outage. Alarms that are more than failures (a handoff, a phone
+        number) keep their own reason and are never closed here."""
+        with self.db.transaction() as conn:
+            closed = conn.execute(
+                "UPDATE garage.live_alerts SET status = 'done', handled_by = 'system', "
+                "handled_at = now(), updated_at = now(), version = version + 1 "
+                "WHERE channel = 'web' AND kind = 'needs_staff' AND reason = 'failed' "
+                "AND status = 'open' AND updated_at < now() - make_interval(hours => %s)",
+                (max(1, int(hours)),)).rowcount
         if closed:
             self._changed()
         return closed

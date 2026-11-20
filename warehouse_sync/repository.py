@@ -127,10 +127,21 @@ class WarehouseRepository:
             ).fetchone()
         counters.rows_deactivated = int(row["deactivated"])
 
+    def close_abandoned_runs(self, current_run_id: int, window: int = 50) -> None:
+        """Runs a process that died without a word left 'running' (SIGKILL, power loss, a
+        lost connection) are closed as failed 'abandoned'. Called while this process holds
+        the single-runner lock, so none of them is still alive. The writer may not read the
+        runs table, so the ``window`` ids before this run are tried in turn: for a run that
+        finished, fail_sync_run changes nothing."""
+        with self._connection.transaction():
+            for run_id in range(max(1, current_run_id - window), current_run_id):
+                self._connection.execute(
+                    "SELECT warehouse.fail_sync_run(%s, 0, 0, 0, 0, 0, 'abandoned')", (run_id,))
+
     def fail_run(self, run_id: int, counters: SyncCounters, failure: str) -> None:
         with self._connection.transaction():
             self._connection.execute(
-                "SELECT warehouse.fail_sync_run(%s, %s, %s, %s, %s, %s)",
+                "SELECT warehouse.fail_sync_run(%s, %s, %s, %s, %s, %s, %s)",
                 (
                     run_id,
                     counters.pages_fetched,

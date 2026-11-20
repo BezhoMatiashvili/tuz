@@ -265,6 +265,9 @@ class FakeStore:
             row["engine_state"] = copy.deepcopy(thread["engine_state"])
         return row
 
+    def deleted_after(self, psid, when) -> bool:
+        return psid in getattr(self, "deleted", ())
+
     def upsert_thread(self, psid, page_id, *, customer_name=None, conversation_id=None,
                       source=None, source_ad_id=None) -> dict:
         self._hit("upsert_thread")
@@ -1460,7 +1463,9 @@ class JobTests(WorkerCase):
                 return value
             return run
 
-        values = {"names": {"conversations": 4, "updated": 2}, "comments": 3, "posts": 5,
+        values = {"catchup": {"conversations": 2, "messages": 7, "stored": 3, "claimed": 2,
+                              "known": 0},
+                  "names": {"conversations": 4, "updated": 2}, "comments": 3, "posts": 5,
                   "page_stats": 1, "ads": [{"id": 1}, {"id": 2}],
                   "subscription": {"page_id": PAGE, "page_resubscribed": True,
                                    "app_resubscribed": False},
@@ -1479,6 +1484,8 @@ class JobTests(WorkerCase):
         self.assertEqual(self.worker.run_jobs(startup=True), {name: "ok" for name in JOB_NAMES})
         runs = self.runs()
         self.assertEqual(runs["names"], ("ok", 2, "conversations=4 updated=2"))
+        self.assertEqual(runs["catchup"],
+                         ("ok", 3, "conversations=2 messages=7 stored=3 claimed=2"))
         self.assertEqual(runs["subscription"],
                          ("ok", 1, "page_resubscribed=True app_resubscribed=False"))
         self.assertEqual(runs["token_health"], ("ok", 2, "tokens=2 broken=1 warn=1"))
@@ -1488,12 +1495,57 @@ class JobTests(WorkerCase):
         self.assertEqual(self.store.purged, [365])
         self.assertEqual(self.worker.run_jobs(), {})
         self.clock.advance(601)
-        self.assertEqual(self.worker.run_jobs(), {"names": "ok", "comments": "ok"})
-        self.assertEqual(self.worker.run_jobs(startup=True), {"subscription": "ok"})
+        self.assertEqual(self.worker.run_jobs(),
+                         {"catchup": "ok", "names": "ok", "comments": "ok"})
+        self.assertEqual(self.worker.run_jobs(startup=True),
+                         {"subscription": "ok", "catchup": "ok"})
         for job in ("ads", "ads", "nonsense"):
             self.store.request(job)
         self.assertEqual(self.worker.run_jobs(), {"ads": "ok", "nonsense": "skipped"})
         self.assertEqual(self.runs()["nonsense"], ("skipped", 0, "unknown_job"))
+
+    def test_a_wake_up_runs_the_start_up_jobs_again_once_the_network_had_a_moment(self):
+        moved = {"wall": 0.0, "steady": 0.0}
+        passes: list[bool] = []
+
+        class Stop:
+            """The worker's stop event; each wait is time passing (the first one asleep)."""
+
+            def __init__(self) -> None:
+                self.flag = False
+                self.waits: list[float] = []
+
+            def is_set(self) -> bool:
+                return self.flag
+
+            def set(self) -> None:
+                self.flag = True
+
+            def wait(self, seconds: float) -> bool:
+                self.waits.append(seconds)
+                moved["wall"] += 3600 if len(self.waits) == 1 else seconds  # slept an hour
+                moved["steady"] += seconds  # the monotonic clock stands still while asleep
+                return self.flag
+
+        stop = Stop()
+        worker = self.make_worker()
+        worker._stop = stop
+
+        def run_jobs(*, startup: bool = False) -> dict:
+            passes.append(startup)
+            if len(passes) == 3:
+                stop.set()
+            return {}
+
+        worker.run_jobs = run_jobs
+        clock = SimpleNamespace(time=lambda: 1_000_000.0 + moved["wall"],
+                                monotonic=lambda: 5_000.0 + moved["steady"])
+        with mock.patch("automotive.messenger_worker.time", clock), \
+                self.assertLogs("automotive.messenger_worker", "INFO") as logs:
+            worker._jobs_loop()
+        self.assertEqual(passes, [True, True, False])  # start, the wake-up, then as usual
+        self.assertEqual(stop.waits, [10.0, 20.0, 10.0, 10.0])  # 20 s for Wi-Fi after waking
+        self.assertIn("messenger_woke slept_s=3590", "\n".join(logs.output))
 
     def test_a_feature_jobs_own_status_and_codes_reach_its_run(self):
         from automotive.meta_sync import SyncCount

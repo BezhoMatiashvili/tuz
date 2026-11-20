@@ -40,6 +40,10 @@ const liveApi = {
   setBot: (key, enabled, version) => request('PUT', `${BASE}/chats/${part(key)}/bot`,
     { body: version ? { enabled, version } : { enabled } }),
   clearAttention: (key) => request('POST', `${BASE}/chats/${part(key)}/attention/clear`),
+  // ``seenId``: the newest stored message the screen showed; one stored after it keeps the
+  // chat waiting, whatever its send time.
+  dismissWaiting: (key, seenId) => request('POST', `${BASE}/chats/${part(key)}/waiting/dismiss`,
+    { body: seenId ? { seen_id: seenId } : {} }),
 };
 
 // The section's own error codes; everything else is described by api.js.
@@ -237,6 +241,7 @@ export function mountView(root, ctx, params) {
     const reason = state.setup || snap.reason;
     const bot = snap.pulse ? snap.pulse.messenger_bot : '';
     mount(el.banners,
+      snap.signedOut ? notice('critical', t('live.signed_out')) : null,
       reason ? notice('warning', t(`live.${reason}`)) : null,
       snap.offline ? notice('critical', t('live.offline')) : null,
       !reason && (bot === 'off' || bot === 'paused')
@@ -430,6 +435,33 @@ export function mountView(root, ctx, params) {
           small: true, iconName: 'check', dataset: { key: `stuck-clear-${chat.key}` },
           onClick: (event) => clearStuck(chat, event.currentTarget),
         })));
+  }
+
+  async function dismissWaiting(chat, trigger) {
+    const restore = busy(trigger);
+    try {
+      // last_id: the newest stored message this screen showed.
+      const result = await liveApi.dismissWaiting(chat.key, chat.last_id);
+      if (result && result.waiting) {
+        restore();  // a newer message came in first: it still waits, and shows on the refresh
+        toast(t('live.handled_newer'), 'warning');
+      } else {
+        toast(t('live.handled_marked'));
+        if (state.detail && state.detail.chat && state.detail.chat.key === chat.key) {
+          state.detail.chat = { ...state.detail.chat, waiting: false };
+        }
+        state.chats = state.chats.map((item) => (item.key === chat.key
+          ? { ...item, waiting: false } : item));
+      }
+      watch.refresh();
+    } catch (error) {
+      restore();
+      toast(describe(error), 'critical');
+    }
+    if (alive) {
+      keep(drawDetail);
+      keep(drawList);
+    }
   }
 
   async function clearStuck(chat, trigger) {
@@ -657,6 +689,11 @@ export function mountView(root, ctx, params) {
         chat.alerts && chat.alerts.length ? chip(t('live.chip.alarm'), 'critical') : null,
         chat.needs_attention ? chip(t('fb.chip.attention'), 'critical') : null,
         chat.waiting ? chip(t('live.chip.waiting'), 'warning') : null),
+      // A closing "thanks" needs no answer: staff say so, and it waits again on a new message.
+      chat.waiting && chat.channel === 'messenger' ? button(t('live.handled_mark'), {
+        small: true, iconName: 'check', dataset: { key: 'dismiss-waiting' },
+        onClick: (event) => dismissWaiting(chat, event.currentTarget),
+      }) : null,
       botSwitch(chat, 0),
       ctx.isAdmin && chat.channel === 'messenger' ? h('div', {}, h('a', {
         class: 'btn btn--ghost btn--small', href: `/admin/facebook/chats/${chat.key.slice(2)}`,
@@ -838,8 +875,8 @@ export function mountView(root, ctx, params) {
     const d = state.detail;
     return {
       tools: signature([snap.offline, snap.soundOn]),
-      banners: signature([snap.offline, snap.reason, state.setup, snap.soundOn, snap.soundLocked,
-        snap.pulse ? snap.pulse.messenger_bot : '']),
+      banners: signature([snap.offline, snap.signedOut, snap.reason, state.setup, snap.soundOn,
+        snap.soundLocked, snap.pulse ? snap.pulse.messenger_bot : '']),
       alarms: signature([snap.alerts, snap.done, snap.pulse ? snap.pulse.waiting : 0,
         state.stuck, [...state.fresh], snap.offline, snap.pulse === null]),
       list: signature([state.status, state.chats, state.key]),
@@ -855,6 +892,8 @@ export function mountView(root, ctx, params) {
     state.snap = snap;
     if (snap.reason) {
       state.setup = snap.reason;
+    } else if (snap.pulse) {
+      state.setup = ''; // a good answer: the migration is there now (applied while open)
     }
     if (previous.pulse) {
       for (const alert of snap.alerts) {

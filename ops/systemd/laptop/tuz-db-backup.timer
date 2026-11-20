@@ -1,0 +1,9 @@
+[Unit]
+Description=tuz (laptop): nightly database backup
+
+[Timer]
+OnCalendar=*-*-* 02:17:00 Asia/Tbilisi
+Persistent=true
+
+[Install]
+WantedBy=timers.target

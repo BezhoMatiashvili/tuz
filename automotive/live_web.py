@@ -6,7 +6,8 @@ needs a human), and lets staff switch the bot off for one visitor. This module i
 half of that. It is built to be harmless to the chat:
 
 - every database write happens on one background thread, behind a bounded queue; when the queue
-  is full or the tables are missing the record is dropped and counted, never waited for;
+  is full or the tables are missing the record is dropped and counted, never waited for; a lost
+  database connection is tried again a few times on that thread (``RETRY_DELAYS``);
 - the one question a visitor's message asks, "is the bot switched off for this visitor", is
   answered from a set the writer thread refreshes every few seconds: the request never touches
   the database, and a database that cannot be reached leaves the last set in place (the bot
@@ -34,12 +35,21 @@ from collections import OrderedDict, deque
 from collections.abc import Callable, Mapping
 from typing import Any
 
+import psycopg
+
 from automotive.live_alerts import OK_STATUSES, AlertDraft, TurnAlerts, text, turn_alerts
 from automotive.live_store import LiveStore, web_key
 
 LOGGER = logging.getLogger(__name__)
 
 QUEUE_SIZE = 500
+# A write that lost the database connection is tried again after these pauses (the writer's own
+# thread waits, never a visitor): the website messages are kept for good, so a short outage or a
+# database restart must not lose them. Any other error is not retried. In the rare case where the
+# commit went through and only its acknowledgement was lost, a message is stored twice; that is
+# accepted (a duplicate line on the staff's screen) over losing one.
+RETRY_DELAYS = (0.5, 1.5, 4.0)
+STALE_FAILED_HOURS = 24  # an open "failed" website alarm nothing happened on is closed after this
 PRUNE_SECONDS = 6 * 3600.0
 MUTE_REFRESH_SECONDS = 3.0  # how often the writer thread reads which visitors are muted
 # New alarms one address may cause in an hour, and how many of each group the board holds open.
@@ -84,6 +94,11 @@ def _offered(cards: Any) -> list[dict]:
     return shown
 
 
+def _transient(error: BaseException) -> bool:
+    """A lost or refused database connection: worth trying the same write again."""
+    return isinstance(error, psycopg.OperationalError | psycopg.InterfaceError)
+
+
 def _noisy(draft: AlertDraft) -> bool:
     """An alarm a visitor or an outage can produce in numbers, as opposed to one that matters
     most (a visit or service request, a handoff, a phone number)."""
@@ -108,7 +123,7 @@ class LiveRecorder:
         self._addresses: OrderedDict[str, str] = OrderedDict()
         self._spent: dict[tuple[str, bool], deque] = {}
         self._muted: frozenset[str] = frozenset()
-        self._logged: dict[str, float] = {}
+        self._logged: dict[tuple, float] = {}
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.dropped = 0
@@ -171,31 +186,47 @@ class LiveRecorder:
     def _note(self, line: str, *values: Any) -> None:
         """At most one log line a minute per kind: a problem repeats on every message."""
         now = self._clock()
+        key = (line, *map(str, values))  # another error type is another line
         with self._lock:
-            if now - self._logged.get(line, -LOG_EVERY) < LOG_EVERY:
+            if now - self._logged.get(key, -LOG_EVERY) < LOG_EVERY:
                 return
-            self._logged[line] = now
+            self._logged[key] = now
         LOGGER.warning(line, *values)
 
     def _attempt(self, action: Callable[[], Any]) -> bool:
-        """One write that may fail without taking the others of the same turn with it."""
-        try:
-            action()
-            return True
-        except Exception as error:
-            self.dropped += 1
-            self._note("live_web_write_failed error=%s", type(error).__name__)
-            return False
+        """One write that may fail without taking the others of the same turn with it. A lost
+        connection is tried again after ``RETRY_DELAYS``; any other error is not."""
+        for delay in (*RETRY_DELAYS, None):
+            try:
+                action()
+                return True
+            except Exception as error:
+                if delay is None or not _transient(error) or self._stop.is_set():
+                    self.dropped += 1
+                    self._note("live_web_write_failed error=%s", type(error).__name__)
+                    return False
+            self._stop.wait(delay)
+        return False
+
+    def _ready(self) -> bool:
+        """Whether the tables are there to write to. While the database cannot be reached (as
+        opposed to 0015 not being applied) the check is tried again after ``RETRY_DELAYS``."""
+        for delay in (*RETRY_DELAYS, None):
+            try:
+                if self.store.usable():
+                    return True
+            except Exception as error:
+                self._note("live_web_write_failed error=%s", type(error).__name__)
+                return False
+            if delay is None or getattr(self.store, "reachable", True) or self._stop.is_set():
+                return False
+            self._stop.wait(delay)
+        return False
 
     def _write(self, item: tuple) -> None:
-        try:
-            if not self.store.usable():
-                self.dropped += 1
-                self._note("live_web_not_ready")
-                return
-        except Exception as error:
+        if not self._ready():
             self.dropped += 1
-            self._note("live_web_write_failed error=%s", type(error).__name__)
+            self._note("live_web_not_ready")
             return
         if item[0] == "customer":
             _, key, body, language = item
@@ -211,6 +242,9 @@ class LiveRecorder:
         try:
             if self.store.usable():
                 self.store.web_prune(self.retention_days)
+                # Visitors who never came back after a failed turn: nobody can answer them,
+                # and their alarms must not fill the board's room for new ones.
+                self.store.close_stale_failed(STALE_FAILED_HOURS)
         except Exception as error:
             self._note("live_web_prune_failed error=%s", type(error).__name__)
 

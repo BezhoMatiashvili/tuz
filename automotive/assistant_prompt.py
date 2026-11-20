@@ -816,8 +816,11 @@ def turn_context(*, message: str, audience: str, language: str, limits: dict,
                  staff_form: dict | None = None, typed_numbers: list[dict] | None = None,
                  rows: dict | None = None, sources: dict | None = None,
                  reply_language: str = "", phone: str = "",
-                 earlier_typed_numbers: dict | None = None) -> dict[str, Any]:
-    """The JSON object of one turn. Empty parts are left out; the order is fixed."""
+                 earlier_typed_numbers: dict | None = None,
+                 stock_note: str = "") -> dict[str, Any]:
+    """The JSON object of one turn. Empty parts are left out; the order is fixed.
+    ``stock_note`` says how old the shop's stock figures are, only when they are older than
+    the rules' stale hours (nothing is added while they are current)."""
     context: dict[str, Any] = {"customer_message": message}
     if reply_language:
         context["reply_language"] = reply_language
@@ -826,7 +829,7 @@ def turn_context(*, message: str, audience: str, language: str, limits: dict,
         ("your_question", question), ("tapped_option", tapped),
         ("your_suggestions", suggestions), ("vin", vin), ("staff_form", staff_form),
         ("typed_numbers", typed_numbers), ("earlier_typed_numbers", earlier_typed_numbers),
-        ("rows", rows), ("outside_sources", sources),
+        ("stock_note", stock_note), ("rows", rows), ("outside_sources", sources),
         ("phone", phone),
     )
     context.update({key: value for key, value in optional if value})

@@ -24,9 +24,11 @@ from __future__ import annotations
 import hashlib
 import heapq
 import html
+import logging
 import os
 import re
 import threading
+import time
 import unicodedata
 import weakref
 from array import array
@@ -50,6 +52,8 @@ from automotive.stock import (
     parse_count,
 )
 
+LOGGER = logging.getLogger(__name__)
+
 COLUMNS = ["id", "name", "vehicle", "brand", "code", "cross_codes", "price", "store",
            "warehouse"]
 MAX_LIMIT = 60
@@ -67,7 +71,8 @@ _REVISION_TAIL = re.compile(r"[A-Z]{0,2}")
 REVISION_BASE = 8
 # A brake pad's FMSI number written with its plate number (`D1107-8212`): the D-number alone
 # is how the pad is known, so it finds the row too, after rows that carry it exactly.
-_FMSI_PLATE = re.compile(r"(D\d{3,4})-\d{3,5}[A-Z]?", re.I)
+# The dash may be any of the dashes catalogue cells are written with (hyphen, en dash, minus).
+_FMSI_PLATE = re.compile(r"(D\d{3,4})[-‐‑–—−]\d{3,5}[A-Z]?", re.I)
 NEAR_ROWS = 10  # rows of a result found under a spelling one letter away
 # A short word of the names goes with a letter that part numbers end in when a tenth of its
 # rows' numbers end in it, five times as often as in the whole catalogue.
@@ -1393,3 +1398,28 @@ def index_for(catalog_store: Any, names_path: Path | str | None = None) -> Catal
             index.read_as(readings)
         index.names_stamp = stamp
         return index
+
+
+def prepare_index(catalog: Any, names_path: Path | str | None = None) -> CatalogIndex:
+    """Build a snapshot's index before anybody reads it: the catalogue store runs this on its
+    refresh thread before it installs a new snapshot (``CatalogStore.on_load``), so no
+    customer's turn builds the index (seconds for the whole warehouse) or waits on the lock
+    while another one does. The build itself holds no lock; ``index_for`` then finds it."""
+    stamp = None if names_path is None else _names_stamp(names_path)
+    with _INDEXES_LOCK:
+        ready = _INDEXES.get(catalog)
+    if ready is not None and (stamp is None or stamp == ready.names_stamp):
+        return ready
+    started = time.monotonic()
+    readings: dict[str, str] = {}
+    if stamp is not None and names_path:
+        from automotive.assistant_names import load
+
+        readings = load(names_path)
+    index = CatalogIndex.from_items(catalog.items, catalog.rules, readings)
+    index.names_stamp = stamp
+    with _INDEXES_LOCK:
+        index = _INDEXES.setdefault(catalog, index)
+    LOGGER.info("assistant_index_built items=%d seconds=%.1f", len(catalog.items),
+                time.monotonic() - started)
+    return index

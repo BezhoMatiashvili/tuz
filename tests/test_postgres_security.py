@@ -59,6 +59,36 @@ class PostgresPrivilegeTests(unittest.TestCase):
             with self.assertRaises(errors.InsufficientPrivilege):
                 connection.execute("DELETE FROM warehouse.warehouse_products")
 
+    def test_a_failed_run_is_recorded_and_runs_left_behind_are_closed(self) -> None:
+        from psycopg.conninfo import make_conninfo
+
+        from warehouse_sync.models import SyncCounters
+        from warehouse_sync.repository import WarehouseRepository
+
+        assert ADMIN_DATABASE_URL is not None
+        writer = make_conninfo(ADMIN_DATABASE_URL, options="-c role=warehouse_sync_writer")
+        repository = WarehouseRepository(writer, b"k" * 32)
+        try:
+            left = repository.start_run(3)  # its process died without a word (power loss)
+            failed = repository.start_run(3)
+            # Until 2026-11-20 this call always failed (one placeholder short), so every
+            # failed sync stayed 'running' for good.
+            repository.fail_run(failed, SyncCounters(pages_fetched=2, rows_seen=9),
+                                "interrupted")
+            current = repository.start_run(3)
+            repository.close_abandoned_runs(current)
+            with psycopg.connect(ADMIN_DATABASE_URL) as connection:
+                rows = {row[0]: row[1:] for row in connection.execute(
+                    "SELECT run_id, status, failure_reason, pages_fetched "
+                    "FROM warehouse.warehouse_sync_runs WHERE run_id = ANY(%s)",
+                    ([left, failed, current],)).fetchall()}
+            self.assertEqual(rows[failed], ("failed", "interrupted", 2))
+            self.assertEqual(rows[left], ("failed", "abandoned", 0))
+            self.assertEqual(rows[current][0], "running")  # its own run is left alone
+            repository.fail_run(current, SyncCounters(), "sync_error")
+        finally:
+            repository.close()
+
     def test_writer_can_only_write_through_scoped_functions(self) -> None:
         with self._writer_connection() as connection:
             run_id = connection.execute("SELECT warehouse.start_sync_run(1)").fetchone()[0]

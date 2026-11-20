@@ -89,8 +89,13 @@ export function diffAlerts(prev, next) {
   return { added, updated, closed };
 }
 
+/** When the newest message of a waiting chat arrived (the pulse's `waiting_at`), 0 if none. */
+export function waitingStamp(snap) {
+  return (snap && Date.parse(snap.waiting_at || '')) || 0;
+}
+
 /**
- * The events a new answer holds, from two snapshots {alerts, waiting, attention}. `first`:
+ * The events a new answer holds, from two snapshots {alerts, waiting, waiting_at, attention}. `first`:
  * there is no earlier snapshot (the page was just opened), so open alarms count as one
  * event instead of one each.
  */
@@ -107,7 +112,10 @@ export function alarmEvents(before, after, { first = false } = {}) {
   for (const item of updated) {
     events.push({ type: item.phone ? 'phone' : 'update', alert: item.alert });
   }
-  if (asCount(now.waiting) > asCount(before.waiting)) {
+  // A chat that starts waiting, or a new message in one that already waits (the newest waiting
+  // message moved although the count did not).
+  const newer = asCount(now.waiting) > 0 && waitingStamp(now) > waitingStamp(before);
+  if (asCount(now.waiting) > asCount(before.waiting) || newer) {
     events.push({ type: 'waiting', count: asCount(now.waiting) });
   }
   if (asCount(now.attention) > asCount(before.attention)) {

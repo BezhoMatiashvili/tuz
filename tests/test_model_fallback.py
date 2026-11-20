@@ -410,17 +410,17 @@ class BillingFallbackTests(unittest.TestCase):
             "api.anthropic.com", "openrouter.ai",
             "api.anthropic.com", "openrouter.ai"])
 
-    def test_the_wait_doubles_to_ten_minutes_and_refusals_together_start_one_wait(self):
+    def test_the_wait_doubles_to_an_hour_and_refusals_together_start_one_wait(self):
         from automotive.model_client import _Funding
 
         funding, now, waits = _Funding(), [0.0], []
         with patch("automotive.model_client.time.monotonic", side_effect=lambda: now[0]):
-            for _ in range(6):
+            for _ in range(8):
                 wait, _first = funding.refused()
                 waits.append(wait)
                 self.assertEqual(funding.refused()[0], wait)  # refused at the same moment
                 now[0] += wait
-        self.assertEqual(waits, [60, 120, 240, 480, 600, 600])
+        self.assertEqual(waits, [60, 120, 240, 480, 960, 1920, 3600, 3600])
 
     def test_the_switch_and_the_return_are_logged_once_without_secrets(self):
         client = self.chat().assistant_client()

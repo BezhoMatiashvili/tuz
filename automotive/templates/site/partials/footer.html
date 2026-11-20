@@ -6,10 +6,14 @@
       <img src="{{ asset('site/img/logo-full.svg') }}" width="248" height="100" alt="" loading="lazy" decoding="async">
     </a>
     <nav class="footer__nav" aria-label="{{ tt('footer.nav', t['nav.menu']) }}">
-      <a href="#parts">{{ t["nav.parts"] }}</a>
-      <a href="#services">{{ t["nav.services"] }}</a>
-      <a href="#story">{{ t["nav.story"] }}</a>
-      <a href="#visit">{{ t["nav.visit"] }}</a>
+      {% set base = base if base is defined else "" %}
+      <a href="{{ base }}#parts">{{ t["nav.parts"] }}</a>
+      {% if parts_index is defined and parts_index %}
+      <a href="{{ parts_index }}">{{ tt("seo.browse", t["nav.parts"]) }}</a>
+      {% endif %}
+      <a href="{{ base }}#services">{{ t["nav.services"] }}</a>
+      <a href="{{ base }}#story">{{ t["nav.story"] }}</a>
+      <a href="{{ base }}#visit">{{ t["nav.visit"] }}</a>
       <a href="{{ alternates[other] }}" hreflang="{{ other }}" lang="{{ other }}">{{ t["nav.language"] }}</a>
     </nav>
     {# The year comes from the server; the page script fills it in if an older process

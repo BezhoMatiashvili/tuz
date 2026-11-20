@@ -55,6 +55,11 @@ class RockAutoAdapter(SourceAdapter):
     hosts = frozenset({"www.rockauto.com"})
     parser_version = "1"
     note = "Aftermarket listings per vehicle and part type, with OE and replaced numbers."
+    # At the default 5 s pace the site stopped answering this address after ~620 pages
+    # (2026-11-09). Its robots.txt sets no crawl delay; this pace and cap keep well below
+    # that rate. The circuit breaker still pauses the source if it stops answering again.
+    min_delay = 30.0
+    daily_budget = 1500
 
     def seeds(self) -> list[Link]:
         return [Link("https://www.rockauto.com/en/catalog/", "root", priority=0)]

@@ -1,0 +1,23 @@
+# systemd USER unit (laptop): closing the lid no longer suspends the laptop while the owner is
+# logged in, so Meta's webhooks keep arriving (docs/garage-messenger.md, "Keep the laptop
+# awake"). It holds logind's "handle-lid-switch" block inhibitor; polkit grants that to the
+# user's own processes while their graphical session exists (allow_active / allow_inactive), so
+# no root is needed. Before anybody logs in after a reboot it cannot take the lock and retries
+# every 30 s; the root drop-in in the docs covers that case too. Suspend from the power menu
+# still sleeps (on purpose: the person asked for it).
+# Install: install -m 0644 ops/systemd/laptop/garage-keep-awake.service ~/.config/systemd/user/
+#          systemctl --user daemon-reload && systemctl --user enable --now garage-keep-awake
+# Check:   systemd-inhibit --list | grep "Garage 1886"
+[Unit]
+Description=Garage 1886: closing the lid keeps the laptop awake (logind lid inhibitor)
+Documentation=file:///home/bezhomatiashvili/Desktop/tuz/docs/garage-messenger.md
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/systemd-inhibit --what=handle-lid-switch --mode=block "--who=Garage 1886" "--why=The Messenger bot and its webhook must stay online" /usr/bin/sleep infinity
+Restart=always
+RestartSec=30
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

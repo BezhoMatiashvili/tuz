@@ -36,20 +36,9 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="{{ t['hero.art_alt'] }}">
 <meta name="twitter:card" content="summary_large_image">
-{% if c.brand.phone or c.brand.address %}
-{% set ld = {"@context": "https://schema.org", "@type": "AutoRepair", "name": "Garage 1886",
-             "url": canonical, "image": origin ~ asset("site/img/og.jpg"),
-             "description": c.seo.description} %}
-{% if c.brand.phone %}{% set _ = ld.update({"telephone": c.brand.phone}) %}{% endif %}
-{% if c.brand.email %}{% set _ = ld.update({"email": c.brand.email}) %}{% endif %}
-{% if c.brand.address %}
-{% set _ = ld.update({"address": {"@type": "PostalAddress", "streetAddress": c.brand.address,
-                                  "addressCountry": "GE"}}) %}
-{% endif %}
-{% if c.brand.map_url %}{% set _ = ld.update({"hasMap": c.brand.map_url}) %}{% endif %}
-{% set profiles = [c.brand.facebook, c.brand.instagram, c.brand.tiktok]|select|list %}
-{% if profiles %}{% set _ = ld.update({"sameAs": profiles}) %}{% endif %}
-<script type="application/ld+json">{{ ld|tojson }}</script>
+{# Built in automotive/site_seo.py from what the dashboard stores. #}
+{% if business_ld is defined and business_ld %}
+<script type="application/ld+json">{{ business_ld|tojson }}</script>
 {% endif %}
 </head>
 <body data-chat="{{ 'on' if chat_on else 'off' }}">

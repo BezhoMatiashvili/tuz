@@ -7,7 +7,7 @@ import { h, icon, mount } from './dom.js';
 import * as watch from './live-watch.js';
 import { getLang, onLangChange, otherLang, setLang, t } from './strings.js';
 import {
-  adminOnly, busy, card, confirmDialog, emptyState, errorState, pageHead, toastError,
+  adminOnly, busy, card, confirmDialog, emptyState, errorState, notice, pageHead, toastError,
 } from './ui.js';
 import * as account from './views/account.js';
 import * as audit from './views/audit.js';
@@ -55,6 +55,8 @@ let guard = null; // set by the view on screen: () => true while it holds unsave
 let position = 0;
 let restoring = false;
 let leaving = false; // the person already agreed to drop unsaved changes for the next move
+let alertBar = null; // alarm problems on every page but Live (which shows its own banners)
+let alertSignature = '';
 
 function pathOf(url) {
   return (url.pathname.replace(/\/+$/, '') || '/admin') + url.search;
@@ -138,10 +140,36 @@ function drawShell() {
   tabbar.setAttribute('aria-label', t('nav.main'));
 }
 
+/** What stops the alarms from being heard, on whatever page staff are: the server cannot be
+ * reached, the session ended (a form with unsaved changes kept the person here), or the
+ * browser blocks the sound while something needs a person. The Live page says it itself. */
+function drawAlertBar() {
+  if (!alertBar) {
+    return;
+  }
+  const snap = watch.getState();
+  const onLive = Boolean(current && current.route && current.route.view === live);
+  const items = onLive ? [] : [
+    snap.signedOut ? 'signed_out' : '',
+    !snap.signedOut && snap.offline ? 'offline' : '',
+    !snap.signedOut && !snap.offline && snap.soundOn && snap.soundLocked && snap.badge > 0
+      ? 'sound_blocked' : '',
+  ].filter(Boolean);
+  const signature = `${getLang()}|${items.join(',')}`;
+  if (signature === alertSignature) {
+    return; // unchanged: drawing it again would announce it again
+  }
+  alertSignature = signature;
+  mount(alertBar, ...items.map((item) => notice(item === 'sound_blocked' ? 'warning' : 'critical',
+    t(`live.${item}`))));
+}
+
 function buildShell() {
   sidebar = h('aside', { class: 'sidebar' });
   main = h('main', { class: 'main', id: 'main', tabindex: '-1' });
   tabbar = h('nav', { class: 'tabbar' });
+  alertBar = h('div', { class: 'shell-alerts' });
+  document.body.appendChild(alertBar);
   const skip = h('a', { class: 'skip', href: '#main', text: t('nav.skip') });
   skip.addEventListener('click', (event) => {
     event.preventDefault();
@@ -205,6 +233,7 @@ function render(moveFocus) {
   current = { route, handle: null };
   drawShell();
   setTitle(route);
+  drawAlertBar();
   mount(main);
   if (!route) {
     mount(main, pageHead(t('notfound.title')), card({}, emptyState({
@@ -323,6 +352,7 @@ function toggleLanguage() {
 onLangChange(() => {
   drawShell();
   setTitle(current ? current.route : null);
+  drawAlertBar();
   if (current && current.handle) {
     current.handle.redraw();
   } else {
@@ -355,6 +385,7 @@ async function start() {
       paintBadges();
       setTitle(current ? current.route : null);
     }
+    drawAlertBar();
   });
   watch.start();
   window.addEventListener('popstate', onPopState);

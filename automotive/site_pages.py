@@ -210,6 +210,10 @@ class Pages:
         self.assets = assets or Assets()
         self.chat_available = chat_available
         self.public_origin = public_origin.rstrip("/")
+        # Links the landing page shows to the parts pages (set by automotive.site_seo).
+        self.landing_links: Any = lambda language, **_: {
+            "parts_makes": [], "parts_index": "", "business_ld": None}
+        self.sitemap_xml: Any = None
         self.environment = Environment(
             loader=FileSystemLoader(str(TEMPLATES)), autoescape=True,
             undefined=StrictUndefined, trim_blocks=True, lstrip_blocks=True, auto_reload=True)
@@ -262,7 +266,8 @@ class Pages:
             in_stock=data["inStock"], chat_on=chat_on, data=data,
             year=time.localtime().tm_year,
             canonical=origin + ("/" if language == "ka" else "/en"),
-            alternates={"ka": origin + "/", "en": origin + "/en"})
+            alternates={"ka": origin + "/", "en": origin + "/en"},
+            **self.landing_links(language, view=view, origin=origin))
 
     def simple(self, request: Request, template: str, language: str = "ka",
                **context: Any) -> Response:
@@ -333,6 +338,9 @@ def build_pages_router(pages: Pages, media: MediaCache) -> APIRouter:
     @router.get("/sitemap.xml")
     def sitemap(request: Request) -> Response:
         origin = pages.public_origin or str(request.base_url).rstrip("/")
+        if pages.sitemap_xml is not None:
+            return Response(pages.sitemap_xml(request), media_type="application/xml",
+                            headers={"x-site-cache": "short"})
         urls = "".join(f"<url><loc>{origin}{path}</loc></url>" for path in ("/", "/en"))
         return Response(
             '<?xml version="1.0" encoding="UTF-8"?>'

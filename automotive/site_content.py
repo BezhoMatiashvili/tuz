@@ -20,6 +20,10 @@ LANGUAGES = ("ka", "en")
 PHONE = r"^\+?[0-9][0-9 ()-]{5,23}$"
 HTTPS_URL = r"^https://[a-z0-9][a-z0-9.-]*(?::443)?(?:[/?#][^\s\\<>\"']*)?$"
 EMAIL = r"^[^@\s<>\"']{1,64}@[a-z0-9][a-z0-9.-]{1,80}\.[a-z]{2,24}$"
+POSTAL_CODE = r"^[0-9]{4,6}$"
+GEO = r"^-?[0-9]{1,2}\.[0-9]{3,8}, ?-?[0-9]{1,3}\.[0-9]{3,8}$"
+_DAY = "(?:mo|tu|we|th|fr|sa|su)"
+DAY_CODES = rf"^{_DAY}(?:-{_DAY})?(?:, ?{_DAY}(?:-{_DAY})?)*$"
 CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f  ]")
 
 
@@ -56,10 +60,17 @@ SECTIONS: dict[str, Section] = {
         _text("whatsapp", "WhatsApp ნომერი", "WhatsApp number", 24, pattern=PHONE),
         _text("email", "ელფოსტა", "Email", 120, pattern=EMAIL),
         _i18n("address", "მისამართი", "Address", 160),
+        # The next three only feed what search engines read (structured data), never the page.
+        _i18n("city", "ქალაქი", "City", 60),
+        _text("postal_code", "საფოსტო ინდექსი", "Postal code", 10, pattern=POSTAL_CODE),
+        _text("geo", "კოორდინატები Google-ისთვის (განედი, გრძედი)",
+              "Coordinates for Google (latitude, longitude)", 40, pattern=GEO),
         _text("map_url", "რუკის ბმული (https)", "Map link (https)", 300, pattern=HTTPS_URL),
         Field("hours", "list", ("სამუშაო საათები", "Opening hours"), items=7, fields=(
             _i18n("days", "დღეები", "Days", 40),
             _text("time", "საათები", "Hours", 40),
+            _text("days_code", "დღეები Google-ისთვის, მაგ. Mo-Sa", "Days for Google, e.g. Mo-Sa",
+                  40, pattern=DAY_CODES),
         )),
         _text("facebook", "Facebook (https)", "Facebook (https)", 300, pattern=HTTPS_URL),
         _text("instagram", "Instagram (https)", "Instagram (https)", 300, pattern=HTTPS_URL),
@@ -129,7 +140,8 @@ def _pair(ka: str, en: str) -> dict[str, str]:
 
 DEFAULT_SECTIONS: dict[str, dict] = {
     "brand": {"phone": "", "whatsapp": "", "email": "", "address": _pair("", ""),
-              "map_url": "", "hours": [], "facebook": "", "instagram": "", "tiktok": "",
+              "city": _pair("", ""), "postal_code": "", "geo": "", "map_url": "", "hours": [],
+              "facebook": "", "instagram": "", "tiktok": "",
               "currency": "₾"},
     "hero": {
         "title": _pair("მეტი, ვიდრე ფარეხი.", "More than a garage."),
@@ -180,14 +192,16 @@ DEFAULT_SECTIONS: dict[str, dict] = {
         "note": _pair("დაგვირეკეთ, მოგვწერეთ ან პირდაპირ მობრძანდით.",
                       "Call, message or just drive in."),
     },
+    # What Google shows as the result's title and snippet: the shop's services, its
+    # neighbourhood and city, which is what people type ("ავტოსერვისი საბურთალო").
     "seo": {
-        "title": _pair("Garage 1886 | ავტოსერვისი და ნაწილები",
-                       "Garage 1886 | Auto service and parts"),
+        "title": _pair("Garage 1886 | ავტოსერვისი და ავტონაწილები, საბურთალო, თბილისი",
+                       "Garage 1886 | Car service and auto parts in Saburtalo, Tbilisi"),
         "description": _pair(
-            "ავტოსერვისი, დიაგნოსტიკა, ძრავის სამუშაოები და სათადარიგო ნაწილები. "
-            "მოძებნეთ ნაწილი VIN კოდით ან მანქანით და ნახეთ ფასი.",
-            "Car service, diagnostics, engine work and spare parts. "
-            "Search parts by VIN or by car and see the price."),
+            "ავტოსერვისი და ავტონაწილები ქავთარაძის 17-ში, საბურთალოზე: დიაგნოსტიკა, "
+            "ზეთის შეცვლა, მუხრუჭები, სავალი ნაწილი, ძრავი. ნაწილების მარაგი და ფასები ონლაინ.",
+            "Car service and auto parts at 17 Kavtaradze St, Saburtalo, Tbilisi: diagnostics, "
+            "oil changes, brakes, suspension, engine work. Parts stock and prices online."),
     },
     "chat": {
         "enabled": True,

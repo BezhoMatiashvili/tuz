@@ -11,14 +11,14 @@ import os
 import re
 import time
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import anthropic
 import httpx
 
-from automotive import assistant_prompt
+from automotive import assistant_prompt, stock
 from automotive.api import ConversationTurn, clamp_turn
 from automotive.assistant_tools import (
     FILTER_GROUPS,
@@ -990,6 +990,19 @@ class ToolTests(unittest.TestCase):
         # The fake repository has no database behind it.
         self.assertIn("could not be read", content["note"])
 
+    def test_lookup_codes_brings_the_same_number_in_another_revision(self):
+        rows = [*ROWS, row("p7", "30040000", FRONT, "VAG WV", "SATO", "PN0001",
+                           "CX0001/7QX445566B", "185", "2", "0")]
+        content, is_error = self.one("lookup_codes", {"numbers": ["7QX445566D"],
+                                                     "vehicle_hint": ""},
+                                     settings={"rows": rows})
+        self.assertFalse(is_error)
+        (entry,) = content["numbers"]
+        self.assertEqual(entry["other_revisions"]["carried_as"], ["7QX445566B"])
+        self.assertEqual([(item[4], item[-1]) for item in entry["other_revisions"]["rows"]],
+                         [("PN0001", "other revision")])
+        self.assertNotIn("note", entry)  # a row was found, in another revision
+
     def test_lookup_codes_adds_what_crawled_catalogues_say(self):
         class Crawled:
             def lookup(self, code, brand=None, limit=50):
@@ -1751,9 +1764,13 @@ class WarmTests(unittest.TestCase):
         self.assertIn("CATALOGUE GUIDE", request["system"][1]["text"])
         self.assertEqual(request["messages"], [{"role": "user", "content": "warm"}])
         self.assertNotIn("stream", request)
-        # After the cache's lifetime it is read again.
-        chat.assistant_state[chat.settings.assistant_model or chat.settings.anthropic_model][
-            "used_at"] -= assistant.WARM_SECONDS + 1
+        state = chat.assistant_state[chat.settings.assistant_model or chat.settings.anthropic_model]
+        # The cache is kept an hour: four quiet minutes are not its end...
+        state["used_at"] -= assistant.WARM_SECONDS + 1
+        chat.prepare()
+        self.assertEqual(len(calls), 1)
+        # ...but near the end of the hour it is read again.
+        state["used_at"] -= assistant.WARM_SECONDS_1H
         chat.prepare()
         self.assertEqual(len(calls), 2)
 
@@ -1771,11 +1788,41 @@ class WarmTests(unittest.TestCase):
             "cache_creation_input_tokens": 35_000, "cache_creation_1h_input_tokens": 35_000})
         self.assertIsNone(assistant.warm_usage(chat, "another-model"))
         # A request that failed left no count.
-        chat.assistant_state[model]["used_at"] -= assistant.WARM_SECONDS + 1
+        chat.assistant_state[model]["used_at"] -= assistant.WARM_SECONDS_1H + 1
         self.reply = anthropic.APIConnectionError(request=REQUEST)
         chat.prepare()
         self.assertEqual(len(calls), 2)
         self.assertIsNone(assistant.warm_usage(chat, model))
+
+    def test_a_refusal_teaches_the_warm_up_what_the_turns_learn_and_the_rest_is_logged(self):
+        assistant, chat, calls = self.chat()
+        replies = [anthropic.BadRequestError(  # OpenRouter's backend, measured 2026-11-20
+            "The compiled grammar is too large, which would cause performance issues. "
+            "Simplify your tool schemas or reduce the number of strict tools.",
+            response=httpx.Response(400, request=REQUEST), body=None)]
+
+        def create(**request):
+            calls.append(request)
+            if replies:
+                raise replies.pop(0)
+            return says(stop="max_tokens", usage=None)
+
+        chat._assistant_client = SimpleNamespace(messages=SimpleNamespace(create=create))
+        chat.prepare()
+        self.assertEqual(len(calls), 2)  # asked again without strict tools, at once
+        self.assertTrue(any("strict" in tool for tool in calls[0]["tools"]))
+        self.assertFalse(any("strict" in tool for tool in calls[1]["tools"]))
+        model = chat.settings.assistant_model or chat.settings.anthropic_model
+        self.assertTrue(chat.assistant_state[model]["no_strict"])  # the turns send the same
+        # A refusal that teaches nothing ends the warm-up, with the provider's own words.
+        chat.assistant_state[model]["used_at"] -= assistant.WARM_SECONDS_1H + 1
+        replies.append(anthropic.BadRequestError(
+            "prompt is too long", response=httpx.Response(400, request=REQUEST), body=None))
+        with self.assertLogs("automotive.assistant", "INFO") as logs:
+            chat.prepare()
+        self.assertEqual(len(calls), 3)
+        self.assertIn("assistant_warm_skipped BadRequestError status=400 said=prompt is too long",
+                      "\n".join(logs.output))
 
     def test_a_turn_counts_as_reading_it_and_a_failure_is_only_logged(self):
         _, chat, calls = self.chat()
@@ -2215,6 +2262,29 @@ class FailureTests(unittest.TestCase):
         self.assertEqual((broken["status"], broken["diagnostics"]["error"]),
                          ("DATA_UNAVAILABLE", "KeyError"))
         self.assertTrue(broken["answer"])
+
+    def test_the_model_hears_how_old_the_stock_is_only_once_it_is_old(self):
+        script = Script(done())
+        run(service(script), "ხუნდები")
+        self.assertNotIn("stock_note", context_of(script.requests[0]))  # current: nothing
+        script = Script(done())
+        chat = service(script)
+        chat.catalog_store.current().observed_at = NOW - timedelta(hours=40)
+        run(chat, "ხუნდები")
+        self.assertEqual(context_of(script.requests[0])["stock_note"],
+                         "stock figures last checked 40 hours ago; they may have changed "
+                         "since, so availability needs the shop's confirmation")
+
+    def test_a_card_without_a_database_ages_with_the_snapshot(self):
+        class Down(Repository):
+            def get_product(self, product_id):
+                raise OSError("no route")
+
+        chat = service(Script(done(products=[product("r1")])), repository=Down())
+        chat.catalog_store.current().observed_at = NOW - timedelta(hours=40)
+        card = run(chat, "ხუნდები", dialogue={"memory": KNOWN})["cards"][0]
+        # A week-old snapshot is not shown as in stock because the database is down.
+        self.assertEqual(card["availability_status"], stock.UNKNOWN)
 
     def test_a_card_without_a_database_shows_the_snapshot(self):
         class Down(Repository):

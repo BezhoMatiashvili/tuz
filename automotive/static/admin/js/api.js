@@ -44,13 +44,19 @@ export function isAbort(error) {
  * so callers do not flash an error while the browser navigates. A note for the sign-in
  * page says why we arrived, so it shows its form instead of sending us straight back. */
 function sessionEnded() {
+  leaveForSignIn();
+  return new Promise(() => {});
+}
+
+/** Go to the sign-in page, saying why. A form with unsaved changes may keep the person here
+ * (the browser asks first), so a caller that must keep running uses `keepOnSessionEnd`. */
+export function leaveForSignIn() {
   try {
     window.sessionStorage.setItem(ENDED_KEY, String(Date.now()));
   } catch {
     // Without storage the sign-in page simply checks the session itself.
   }
   window.location.assign(LOGIN_URL);
-  return new Promise(() => {});
 }
 
 function detailOf(payload) {
@@ -86,7 +92,10 @@ async function refreshCsrf() {
 }
 
 /**
- * options: body (sent as JSON), raw + type (sent as is), signal, query (object).
+ * options: body (sent as JSON), raw + type (sent as is), signal, query (object),
+ * keepOnSessionEnd (an ended session throws ApiError 401 SESSION_ENDED instead of leaving
+ * for the sign-in page with a promise that never settles: for the alarm poller, which must
+ * keep running and say so when a form with unsaved changes keeps the person on the page).
  * Resolves with the parsed JSON, or null for an empty response.
  */
 export async function request(method, path, options = {}, retried = false) {
@@ -136,6 +145,9 @@ export async function request(method, path, options = {}, retried = false) {
   const { code, fields } = detailOf(payload);
   // A wrong current password is also a 401; it is an answer, not an ended session.
   if (response.status === 401 && code !== 'INVALID_CREDENTIALS') {
+    if (options.keepOnSessionEnd) {
+      throw new ApiError(401, 'SESSION_ENDED');
+    }
     return sessionEnded();
   }
   if (response.status === 403 && code === 'CSRF_REQUIRED' && unsafe && !retried) {

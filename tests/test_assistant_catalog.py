@@ -16,6 +16,7 @@ import threading
 import unittest
 import weakref
 from datetime import UTC, datetime
+from unittest import mock
 
 from automotive import assistant_catalog, stock
 from automotive.assistant_catalog import COLUMNS, CatalogIndex, Row, SearchError, index_for
@@ -1058,6 +1059,23 @@ class SharedIndexTests(unittest.TestCase):
         self.assertEqual(len(second), 9)
         self.assertIs(index_for(store), second)
         self.assertEqual(second.search(make_terms=["TOYOTA"])["total"], 0)
+
+    def test_an_index_prepared_before_the_swap_is_the_one_every_turn_reads(self):
+        from automotive import assistant_catalog
+
+        catalog = Catalog.from_rows(ROWS)
+        with self.assertLogs("automotive.assistant_catalog", "INFO") as logs:
+            prepared = assistant_catalog.prepare_index(catalog, "")
+        self.assertIn("assistant_index_built items=", "\n".join(logs.output))
+        store = CatalogStore("")
+        store.replace(catalog)
+        builds = []
+        original = CatalogIndex.from_items
+        with mock.patch.object(CatalogIndex, "from_items",
+                               side_effect=lambda *a, **k: builds.append(1) or original(*a, **k)):
+            self.assertIs(index_for(store, ""), prepared)  # the first turn builds nothing
+            self.assertIs(assistant_catalog.prepare_index(catalog, ""), prepared)
+        self.assertEqual(builds, [])
 
     def test_each_store_has_its_own_index_and_the_rules_of_its_catalogue(self):
         strict, plain = CatalogStore(""), CatalogStore("")

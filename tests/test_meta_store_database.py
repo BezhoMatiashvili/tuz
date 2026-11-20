@@ -602,6 +602,36 @@ class MetaStoreDatabaseTests(unittest.TestCase):
             (comment_id, author, body, minutes_ago, "sent" if replied_psid else "",
              replied_psid))
 
+    def test_two_caught_up_messages_in_one_second_are_claimed_where_the_worker_looks(self):
+        same = datetime.now(UTC).replace(microsecond=0) - timedelta(minutes=20)
+        result = self.worker.add_caught_up(PSID, PAGE, [
+            {"mid": "m_a", "sender": "customer", "sent_at": same, "body": "first"},
+            {"mid": "m_b", "sender": "customer", "sent_at": same, "body": "second"}])
+        self.assertEqual(result, {"stored": 2, "claimed": 4})  # both, on both channels
+        trigger = self.worker.unanswered_customer_messages(PSID)[-1]["mid"]  # the worker's pick
+        claims = self.admin_sql("SELECT DISTINCT trigger_key FROM garage.messenger_replies "
+                                "ORDER BY 1")
+        self.assertEqual(claims, [("m_a",), ("m_b",)])
+        self.assertIn((trigger,), claims)
+        self.assertIs(self.worker.deleted_after(PSID, same), False)  # never deleted
+
+    def test_a_late_webhook_copy_from_before_a_deletion_never_brings_the_chat_back(self):
+        worker, site = self.worker, self.site
+        old = datetime.now(UTC) - timedelta(minutes=30)
+        self.assertTrue(worker.add_message(PSID, "m_1", "customer", old, page_id=PAGE))
+        site.delete_customer(PSID, ADMIN)
+        # The worker was stopped: an unprocessed webhook copy of a message sent before the
+        # deletion is stored as a duplicate would be (False), and the chat stays deleted.
+        self.assertFalse(worker.add_message(PSID, "m_0", "customer", old, page_id=PAGE))
+        self.assertTrue(worker.deleted_after(PSID, old))
+        self.assertFalse(worker.deleted_after(PSID, datetime.now(UTC) + timedelta(seconds=5)))
+        self.assertEqual(self.admin_sql("SELECT psid FROM garage.messenger_threads"), [])
+        # What the customer writes afterwards starts a new chat, as before.
+        self.assertTrue(worker.add_message(PSID, "m_2", "customer", datetime.now(UTC),
+                                           page_id=PAGE))
+        self.assertEqual(self.admin_sql("SELECT mid FROM garage.messenger_messages"),
+                         [("m_2",)])
+
     def test_delete_customer_also_erases_their_comments_and_keeps_them_out(self):
         worker, site = self.worker, self.site
         worker.add_message(PSID, "m_1", "customer", at(1), page_id=PAGE, body="hello")
@@ -616,18 +646,20 @@ class MetaStoreDatabaseTests(unittest.TestCase):
         self.assertEqual(self.admin_sql("SELECT comment_id FROM garage.meta_comments"),
                          [("555_1003",)])
         self.assertEqual(self.audits()[-1][2:], ("messenger.customer_deleted", "…1234", removed))
-        # What keeps them out names nobody: hashes of the author and of the two comments.
+        # What keeps them out names nobody: hashes of the author, of the two comments and of the
+        # chat (the Messenger catch-up job never reads its messages back).
         kept = self.admin_sql("SELECT subject_key, forgotten_at FROM garage.meta_forgotten")
         self.assertEqual(sorted(row[0] for row in kept),
                          sorted(forgotten_key(subject) for subject in (
-                             f"author:{AUTHOR}", "comment:555_1001", "comment:555_1002")))
+                             f"author:{AUTHOR}", "comment:555_1001", "comment:555_1002",
+                             f"chat:{PSID}")))
         for raw in (AUTHOR, "555_1001", "555_1002", PSID):
             self.assertNotIn(raw, str(kept))
         # Either login can read when each was forgotten; the backfill and webhooks ask this.
         with worker.db.transaction() as connection:
             found = forgotten_since(connection, [f"author:{AUTHOR}", "comment:555_1002",
-                                                 f"author:{OTHER_AUTHOR}"])
-        self.assertEqual(set(found), {f"author:{AUTHOR}", "comment:555_1002"})
+                                                 f"author:{OTHER_AUTHOR}", f"chat:{PSID}"])
+        self.assertEqual(set(found), {f"author:{AUTHOR}", "comment:555_1002", f"chat:{PSID}"})
         # A second request later moves the moment forward.
         self.admin_sql("UPDATE garage.meta_forgotten SET forgotten_at = now() - interval '2 days'")
         self.add_comment("555_1004", AUTHOR, 1, PSID)
@@ -646,7 +678,8 @@ class MetaStoreDatabaseTests(unittest.TestCase):
         self.admin_sql("UPDATE garage.meta_forgotten SET forgotten_at = now() - interval "
                        "'32 days' WHERE subject_key = %s", (forgotten_key("comment:555_1001"),))
         self.assertEqual(self.worker.purge()["forgotten"], 1)
-        self.assertEqual(len(self.admin_sql("SELECT 1 FROM garage.meta_forgotten")), 1)
+        # The author's and the chat's are younger and stay.
+        self.assertEqual(len(self.admin_sql("SELECT 1 FROM garage.meta_forgotten")), 2)
 
     def test_before_0014_is_applied_a_deletion_leaves_comments_and_nothing_fails(self):
         url = self.create_database("meta_before_" + self.suffix)

@@ -77,4 +77,16 @@
       <div class="results__body"></div>
     </div>
   </div>
+  {# Plain links, so search engines reach the parts pages; the search above needs a script. #}
+  {% if parts_makes is defined and parts_makes %}
+  <nav class="wrap parts__browse" aria-labelledby="browse-title">
+    <h3 class="t-h3" id="browse-title">{{ tt("seo.browse", t["nav.parts"]) }}</h3>
+    <ul class="linkgrid">
+      {% for entry in parts_makes %}
+      <li><a href="{{ entry.href }}"><span>{{ entry.name }}</span><span class="linkgrid__count">{{ entry.count|num }}</span></a></li>
+      {% endfor %}
+    </ul>
+    <a class="parts__all" href="{{ parts_index }}">{{ tt("seo.all_makes", t["nav.parts"]) }}{{ icon("arrow-right") }}</a>
+  </nav>
+  {% endif %}
 </section>

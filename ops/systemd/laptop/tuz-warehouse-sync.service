@@ -1,0 +1,21 @@
+# systemd USER unit (laptop): the read-only warehouse catalogue sync, from the repository's
+# .env (warehouse_sync/config.py). Laptop stand-in for ops/systemd/warehouse-sync.service.
+# Install: cp ops/systemd/laptop/* ~/.config/systemd/user/ && systemctl --user daemon-reload
+#          systemctl --user enable --now tuz-warehouse-sync.timer
+[Unit]
+Description=tuz (laptop): read-only warehouse catalogue sync
+OnFailure=tuz-notify-failure@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/bezhomatiashvili/Desktop/tuz
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/bezhomatiashvili/Desktop/tuz/.venv/bin/python -m warehouse_sync
+# A full sync reads 1317 pages and took 30-40 minutes so far.
+TimeoutStartSec=2h
+Nice=10
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only

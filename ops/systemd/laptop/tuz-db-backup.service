@@ -1,0 +1,14 @@
+# systemd USER unit (laptop): nightly local dump of the PostgreSQL container (ops/bin/tuz-local-backup).
+[Unit]
+Description=tuz (laptop): nightly local database backup
+OnFailure=tuz-notify-failure@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/bezhomatiashvili/Desktop/tuz/ops/bin/tuz-local-backup
+TimeoutStartSec=1h
+Nice=10
+IOSchedulingClass=idle
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes

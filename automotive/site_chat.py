@@ -25,7 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from automotive import chat_contract
 from automotive.chat import VIN_PATTERN
-from automotive.conversations import ConversationError, ConversationStore
+from automotive.conversations import ConversationError, ConversationStore, live_warning
 from automotive.replies import make_name
 from automotive.site_auth import ip_key, wide_key
 from automotive.site_strings import STRINGS
@@ -433,8 +433,8 @@ class PublicChat:
         if live is not None:
             try:
                 live.seen(identifier, address)  # for the hourly cap on one address's alarms
-            except Exception:
-                LOGGER.debug("live_address_skipped")
+            except Exception as error:
+                live_warning("live_address_skipped", error)
         try:
             tapped = ({"choice": choice}
                       if choice is not None and _takes_choice(self.store.submit) else {})
@@ -544,6 +544,15 @@ def build_public_chat(settings: Any, chat_service: Any, repository: Any, vin_ser
         maximum=40, chat_log=chat_log, live=live)
     # A visitor's conversation: the assistant engine gives it none of the shop's own numbers.
     store.audience = "public"
+    # The assistant's index over each new catalogue snapshot is built on the snapshot's own
+    # refresh thread before it is installed: no visitor's turn builds it or waits for it.
+    engine_settings = getattr(chat_service, "settings", settings)
+    if (str(getattr(engine_settings, "chat_engine", "") or "") == "assistant"
+            and callable(getattr(catalog_store, "on_load", None))):
+        from automotive.assistant_catalog import prepare_index
+
+        names = str(getattr(engine_settings, "assistant_names_path", "") or "")
+        catalog_store.on_load(lambda catalog: prepare_index(catalog, names))
     # One address may use an eighth of the day's allowance, so emptying it takes several.
     chat = PublicChat(store, catalog_store, daily,
                       per_address_daily=max(10, int(getattr(daily, "limit", 320)) // 8))

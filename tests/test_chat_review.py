@@ -28,7 +28,7 @@ from automotive.conversations import ConversationStore
 NOW = 1_800_000_000.0
 DAY = datetime.fromtimestamp(NOW).strftime("%Y-%m-%d")
 VIN = "1HGCM82633A004352"
-SECRET = "fixture-private-key-0123456789"
+SECRET = "fixture-private-key-0123456789"  # gitleaks:allow (a test marker, not a key)
 # What the assistant engine records about a turn that showed nothing and asked nothing.
 SILENT = {"engine": "assistant", "asked": None, "outcome": "nothing_found"}
 ASKED = {"engine": "assistant", "asked": "Which engine?", "outcome": "asked"}

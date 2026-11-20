@@ -193,8 +193,24 @@ variable (`journalctl --user -u garage-messenger -n 20`). Fill it in `.env`, the
 `systemctl --user restart garage-messenger`.
 
 Keep the laptop awake while it is plugged in: turn off Settings → Power → Automatic
-Suspend. Closing the lid still suspends it, even on power, unless logind is told otherwise
-(`HandleLidSwitchExternalPower=ignore`, a root setting in `/etc/systemd/logind.conf.d/`).
+Suspend. Closing the lid suspends it, even on power, unless logind is told otherwise. While it
+sleeps, Meta's deliveries fail and are dropped after about two hours (the `catchup` job reads
+them back later, but nobody is alerted meanwhile).
+
+The user unit `ops/systemd/laptop/garage-keep-awake.service` (installed and enabled
+2026-11-20) holds logind's lid inhibitor while the owner is logged in, without root: check it
+with `systemd-inhibit --list | grep "Garage 1886"`. Before anybody logs in after a reboot it
+cannot take the lock (polkit), so for that case too, once, as root:
+
+    sudo mkdir -p /etc/systemd/logind.conf.d
+    printf '[Login]\nHandleLidSwitch=ignore\nHandleLidSwitchExternalPower=ignore\nHandleLidSwitchDocked=ignore\n' \
+      | sudo tee /etc/systemd/logind.conf.d/50-garage-lid.conf
+    sudo systemctl reload systemd-logind
+
+Check with `busctl get-property org.freedesktop.login1 /org/freedesktop/login1
+org.freedesktop.login1.Manager HandleLidSwitch` (it answers `s "ignore"`). Suspend from the
+power menu still sleeps: don't use it on this laptop. (`reload` re-reads the setting without
+ending anybody's session: logind supports it on this systemd, 259.)
 
 ### 5. Publish the app (Live)
 
@@ -442,7 +458,8 @@ them on the Status tab under Background jobs:
 
 | Job | Every | What it does |
 |---|---|---|
-| `subscription` | 1 hour, and at start | Repairs the page's webhook subscription, and the app's when it is inactive, points elsewhere or lacks a field. |
+| `subscription` | 1 hour, at start and after a wake-up | Repairs the page's webhook subscription, and the app's when it is inactive, points elsewhere or lacks a field. |
+| `catchup` | 10 min, at start and after a wake-up | Messages the webhook missed (`automotive/meta_catchup.py`): Meta retries a delivery for about two hours, so what customers wrote while the laptop slept longer never arrived (measured 2026-11-20: 44 of 109 customer messages of one week). Reads the conversations updated since an hour before its last good run (at most 30 days back; the very first run: since the page was connected, and a later reconnect never shortens the window) and stores each message not stored yet, except those of a chat whose data was deleted. It never answers: every customer message it stores that nobody answered is claimed as handled (`messenger_replies` status `skipped_old`, error_text `catchup`, both channels), so whichever one the worker would take as a trigger (two in one second, the owner's command) gets no late reply, and the Live page shows the chat as waiting for staff. When that customer writes again, the bot's answer reads the earlier unanswered messages too. A run that hits its page limits (500 conversations, 300 messages a chat: far above this page's volume) keeps what it read and ends as `error` `Truncated`, so the window is never marked done; the next run reads newest first and stops at the same place, so if this ever shows, raise `MAX_CONVERSATION_PAGES` / `MAX_MESSAGE_PAGES` in `automotive/meta_catchup.py`. |
 | `names` | 10 min | Customers' names and conversation ids. |
 | `comments` | 10 min | Comments of the last 30 days, for the list only. These are never auto-answered. |
 | `posts` | 1 hour | Posts and their reactions, comments, shares and views. |
@@ -451,7 +468,9 @@ them on the Status tab under Background jobs:
 | `token_health` | 6 hours | Asks Meta whether the stored tokens still work. |
 | `purge` | 1 day | Retention (see [Data](#data-retention-and-deleting-a-customers-data)). |
 
-Run now (Background jobs) asks the worker to run a job at its next pass.
+Run now (Background jobs) asks the worker to run a job at its next pass. A wake-up from sleep
+(the wall clock jumped past the monotonic clock) runs the start-up jobs again 20 seconds later,
+once Wi-Fi is back.
 
 ## Costs
 
@@ -656,17 +675,21 @@ dates too.
    its engine state, its reply attempts and the customer's stored comments: those the bot
    answered into this chat, and every other comment of the same Facebook author. Their
    hashed ids go to `meta_forgotten`, so the comment backfill and late webhooks never store
-   those comments again. A comment the customer writes later is stored as usual. Nothing is
-   touched on Facebook: the conversation stays in Messenger, and comments stay on Facebook.
-3. Its webhook copies go with the 7-day purge. The dashboard's login may not delete them.
+   those comments again. The chat's hashed id goes there too (`chat:<psid>`), so the
+   `catchup` job never reads its earlier messages back from the Page's conversations. A
+   comment or message the customer writes later is stored as usual. Nothing is touched on
+   Facebook: the conversation stays in Messenger, and comments stay on Facebook.
+3. Its webhook copies go with the 7-day purge. The dashboard's login may not delete them, but
+   a copy the worker had not handled yet (it was stopped) or one Meta sends again changes
+   nothing: a message or ad referral sent before the deletion ends as `ignored: deleted_chat`,
+   and neither the chat nor its messages come back (`MetaStore.deleted_after`, checked in
+   `MetaStore.add_message` too).
 
 **Not covered yet:**
 
 - Comments of a customer that are not linked to their chat. The link is made when the bot
   answers a comment privately. Their comments can only be found by name in the Comments
   tab, and the dashboard cannot delete a single stored comment.
-- Webhook copies the worker has not handled yet, for example while it is stopped. When it
-  starts again it stores those messages, and the chat comes back. Delete it again then.
 - The engine state of a customer who writes again. It keeps up to 12 earlier exchanges.
   Delete data removes it, with the messages, which are otherwise kept for good.
 - The privacy page names Meta, OpenRouter and Anthropic. A VIN a customer sends is also

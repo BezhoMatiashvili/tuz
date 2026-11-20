@@ -29,6 +29,7 @@ from automotive.site_meta_activity import build_meta_activity_router
 from automotive.site_meta_admin import build_meta_admin_router
 from automotive.site_pages import MediaCache, Pages, build_pages_router
 from automotive.site_repository import SiteDatabaseNotConfigured, SiteRepository
+from automotive.site_seo import PartsPages, build_seo_router
 
 LOGGER = logging.getLogger(__name__)
 LOOPBACK = {"localhost", "127.0.0.1", "::1"}
@@ -147,7 +148,10 @@ def install_site(app: FastAPI, settings: Any, *, repository: Any, vin_service: A
 
     # An empty router whose only job is to carry the lifespan into the application.
     app.include_router(APIRouter(lifespan=lifespan))
+    parts_pages = PartsPages(pages)
+    pages.landing_links, pages.sitemap_xml = parts_pages.landing_links, parts_pages.sitemap
     app.include_router(build_pages_router(pages, media))
+    app.include_router(build_seo_router(parts_pages))
     app.include_router(build_catalog_router(
         catalog_store, vin_service,
         _paced(getattr(settings, "site_vin_daily_decodes", 200))))

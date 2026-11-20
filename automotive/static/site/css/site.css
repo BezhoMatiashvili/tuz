@@ -2802,3 +2802,131 @@ main:focus {
 @media (prefers-reduced-motion: no-preference) {
   html { scroll-behavior: smooth; }
 }
+
+/* ------------------------------------------------- parts pages for search engines */
+
+/* The landing page's make links under the part search, and the same grid on the parts
+   pages. Plain links, so they work and are crawled without the search script. */
+.parts__browse {
+  display: grid;
+  gap: 16px;
+  padding-bottom: var(--section);
+}
+
+/* The search keeps its own bottom space only when no make links follow it. */
+.parts__body:has(+ .parts__browse) {
+  padding-bottom: 8px;
+}
+
+.linkgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr));
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.linkgrid a {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-700);
+  background: var(--ink-900);
+  color: var(--paper-50);
+  font-weight: 600;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.linkgrid a:hover {
+  border-color: var(--paper-300);
+}
+
+.linkgrid__alt,
+.linkgrid__count {
+  color: var(--paper-500);
+  font-weight: 400;
+}
+
+.linkgrid__count {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.parts__all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: start;
+  min-height: 44px;
+  color: var(--paper-50);
+  font-weight: 600;
+}
+
+.sub__search {
+  justify-self: start;
+  max-width: calc(100% - 5px); /* room for the button's offset shadow */
+  margin-top: 8px;
+  padding-block: 10px;
+  white-space: normal;
+  text-align: left;
+}
+
+.sub__body {
+  display: grid;
+  gap: 48px;
+  padding-block: 40px var(--section);
+}
+
+.sub__body section {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.sub__body .results__list {
+  padding: 0;
+  list-style: none;
+}
+
+.sub__visit p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--paper-300);
+}
+
+.crumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9375rem;
+}
+
+.crumbs li + li::before {
+  content: "/";
+  padding-inline: 8px;
+  opacity: 0.7;
+}
+
+.crumbs a {
+  color: inherit;
+}
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding-right: 5px;
+}
+
+.pager__at {
+  color: var(--paper-300);
+  font-variant-numeric: tabular-nums;
+}

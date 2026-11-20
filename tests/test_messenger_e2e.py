@@ -170,6 +170,9 @@ class FakeGraph:
         self.server: ThreadingHTTPServer | None = None
         self.thread: threading.Thread | None = None
         self.base = ""
+        # What the page's one conversation holds (the catch-up job reads it back).
+        self.conversation_updated = "2026-11-11T10:00:00+0000"
+        self.conversation_messages: list[dict] = []
 
     def start(self) -> None:
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), _GraphHandler)
@@ -192,6 +195,8 @@ class FakeGraph:
             self.unknown.clear()
             self.refused.clear()
             self.mids = itertools.count(1)
+            self.conversation_updated = "2026-11-11T10:00:00+0000"
+            self.conversation_messages = []
 
     def answer(self, method: str, raw_path: str, values: dict) -> tuple[int, dict]:
         prefix = f"/{VERSION}/"
@@ -237,10 +242,12 @@ class FakeGraph:
                               "active": True, "fields": [{"name": name, "version": VERSION}
                                                          for name in SUBSCRIBED_FIELDS]}]}
         if path == f"{PAGE}/conversations":
-            return {"data": [{"id": "t_10001", "updated_time": "2026-11-11T10:00:00+0000",
+            return {"data": [{"id": "t_10001", "updated_time": self.conversation_updated,
                               "participants": {"data": [
                                   {"id": PSID, "name": "ნინო"},
                                   {"id": PAGE, "name": "Garage • ფარეხი 1886"}]}}]}
+        if path == "t_10001/messages":
+            return {"data": list(self.conversation_messages)}
         if path == PAGE:
             return {"id": PAGE, "name": "Garage • ფარეხი 1886", "followers_count": 157,
                     "fan_count": 150}
@@ -814,14 +821,17 @@ class MessengerEndToEndTests(unittest.TestCase):
         before = self.rows("SELECT COALESCE(max(run_id), 0) AS id FROM garage.meta_sync_runs")
         jobs = MessengerWorker(self.ctx, self.engine)  # the real job functions
         results = {name: jobs.run_job(name, requested=True) for name in JOB_NAMES}
-        self.assertEqual(results, {"subscription": "ok", "names": "ok", "comments": "ok",
-                                   "posts": "ok", "page_stats": "ok", "ads": "skipped",
-                                   "token_health": "ok", "purge": "ok"})
+        self.assertEqual(results, {"subscription": "ok", "catchup": "ok", "names": "ok",
+                                   "comments": "ok", "posts": "ok", "page_stats": "ok",
+                                   "ads": "skipped", "token_health": "ok", "purge": "ok"})
         runs = {row["job"]: (row["status"], row["records"], row["detail"]) for row in self.rows(
             "SELECT job, status, records, detail FROM garage.meta_sync_runs "
             "WHERE run_id > %s ORDER BY run_id", (before[0]["id"],))}
         self.assertEqual(runs["ads"], ("skipped", 0, "no_ads_token"))  # SyncCount reaches it
         self.assertEqual(runs["names"], ("ok", 1, "conversations=1 updated=1"))
+        # The page's only conversation is older than its connection: nothing to read back.
+        self.assertEqual(runs["catchup"],
+                         ("ok", 0, "conversations=0 messages=0 stored=0 claimed=0"))
         self.assertEqual(runs["subscription"],
                          ("ok", 0, "page_resubscribed=False app_resubscribed=False"))
         self.assertEqual(runs["token_health"], ("ok", 1, "tokens=1 broken=0 warn=0"))
@@ -841,6 +851,131 @@ class MessengerEndToEndTests(unittest.TestCase):
         self.assertTrue(requested)
         self.assertTrue(all("access_token=[redacted]" in line and "input_token=[redacted]" in line
                             for line in requested))
+
+    def test_a_message_the_webhook_missed_is_stored_and_never_answered(self):
+        self.worker.stop(15)
+        self.bot_on()
+        self.execute("UPDATE garage.meta_settings SET bot_enabled_at = now() - interval '1 hour'")
+        self.execute("UPDATE garage.meta_page SET connected_at = now() - interval '1 hour'")
+        now = datetime.now(UTC)
+
+        def stamp(moment: datetime) -> str:
+            return moment.strftime("%Y-%m-%dT%H:%M:%S+0000")
+
+        # The laptop slept: Meta never delivered these, but the conversation holds them
+        # (older than the five minutes catch-up leaves to the webhook).
+        self.graph.conversation_updated = stamp(now)
+        self.graph.conversation_messages = [  # newest first, as Meta lists them
+            {"id": "m_cu_2", "created_time": stamp(now - timedelta(minutes=12)),
+             "from": {"id": PSID, "name": "ნინო"}, "message": "ამორტიზატორი გაქვთ?"},
+            # The same words a second earlier: another message, kept too (measured: 39 such).
+            {"id": "m_cu_2a", "created_time": stamp(now - timedelta(minutes=12, seconds=1)),
+             "from": {"id": PSID, "name": "ნინო"}, "message": "ამორტიზატორი გაქვთ?"},
+            {"id": "m_cu_1", "created_time": stamp(now - timedelta(minutes=15)),
+             "from": {"id": PAGE, "name": "Garage • ფარეხი 1886"}, "message": "გამარჯობა"},
+        ]
+        jobs = MessengerWorker(self.ctx, self.engine)  # the real job functions
+        self.assertEqual(jobs.run_job("catchup", requested=True), "ok")
+        self.assertEqual([tuple(row.values()) for row in self.rows(
+            "SELECT mid, sender FROM garage.messenger_messages ORDER BY sent_at")],
+            [("m_cu_1", "shop"), ("m_cu_2a", "customer"), ("m_cu_2", "customer")])
+        self.assertEqual([tuple(row.values()) for row in self.rows(
+            "SELECT channel, status, error_text FROM garage.messenger_replies "
+            "WHERE trigger_key = 'm_cu_2' ORDER BY channel")],
+            [("messenger", "skipped_old", "catchup"), ("notice", "skipped_old", "catchup")])
+        run = self.rows("SELECT records, detail FROM garage.meta_sync_runs "
+                        "WHERE job = 'catchup' ORDER BY run_id DESC LIMIT 1")[0]
+        self.assertEqual((run["records"], run["detail"]),
+                         (3, "conversations=1 messages=3 stored=3 claimed=4"))
+        # A rerun reads them again and stores nothing twice.
+        self.assertEqual(jobs.run_job("catchup", requested=True), "ok")
+        self.assertEqual(len(self.rows("SELECT mid FROM garage.messenger_messages")), 3)
+        # A restart's recovery looks at the chat again (its newest message is a customer's and
+        # young enough): the claim stops it, so no late bot reply goes out.
+        restarted = MessengerWorker(self.ctx, self.engine, quiet_seconds=QUIET)
+        self.assertEqual(restarted.recover(), 1)
+        self.assertEqual(restarted._burst(PSID), "duplicate")
+        self.assertEqual((self.graph.sends(), self.engine.calls), ([], []))
+        # "Delete data" erases the chat, and the next run never reads it back.
+        self.site.delete_customer(PSID, ACTOR)
+        self.assertEqual(jobs.run_job("catchup", requested=True), "ok")
+        self.assertEqual(self.rows("SELECT mid FROM garage.messenger_messages"), [])
+        self.assertEqual(self.rows("SELECT psid FROM garage.messenger_threads"), [])
+
+    def test_two_caught_up_messages_in_one_second_never_get_a_late_reply(self):
+        self.worker.stop(15)
+        self.bot_on()
+        self.execute("UPDATE garage.meta_settings SET bot_enabled_at = now() - interval '1 hour'")
+        self.execute("UPDATE garage.meta_page SET connected_at = now() - interval '1 hour'")
+        now = datetime.now(UTC)
+        same = (now - timedelta(minutes=12)).strftime("%Y-%m-%dT%H:%M:%S+0000")
+        self.graph.conversation_updated = now.strftime("%Y-%m-%dT%H:%M:%S+0000")
+        self.graph.conversation_messages = [  # newest first, as Meta lists them; whole seconds
+            {"id": "m_t_b", "created_time": same, "from": {"id": PSID, "name": "x"},
+             "message": "second"},
+            {"id": "m_t_a", "created_time": same, "from": {"id": PSID, "name": "x"},
+             "message": "first"}]
+        jobs = MessengerWorker(self.ctx, self.engine)
+        self.assertEqual(jobs.run_job("catchup", requested=True), "ok")
+        self.assertEqual([row["mid"] for row in self.rows(
+            "SELECT mid FROM garage.messenger_messages ORDER BY sent_at, message_id")],
+            ["m_t_a", "m_t_b"])  # their true order
+        restarted = MessengerWorker(self.ctx, self.engine, quiet_seconds=QUIET)
+        restarted.recover()
+        restarted._burst(PSID)
+        self.assertEqual((self.graph.sends(), self.engine.calls), ([], []))
+
+    def test_the_owners_own_chat_gets_no_late_reply_after_a_caught_up_command(self):
+        self.worker.stop(15)
+        self.ctx.store.upsert_thread(PSID, PAGE)
+        self.site.set_admin(PSID, True, ACTOR)
+        self.bot_on()
+        self.execute("UPDATE garage.meta_settings SET bot_enabled_at = now() - interval '1 hour'")
+        self.execute("UPDATE garage.meta_page SET connected_at = now() - interval '1 hour'")
+        now = datetime.now(UTC)
+
+        def stamp(moment: datetime) -> str:
+            return moment.strftime("%Y-%m-%dT%H:%M:%S+0000")
+
+        self.graph.conversation_updated = stamp(now)
+        self.graph.conversation_messages = [  # newest first: a question, then a command
+            {"id": "m_adm_2", "created_time": stamp(now - timedelta(minutes=12)),
+             "from": {"id": PSID}, "message": "#bot status"},
+            {"id": "m_adm_1", "created_time": stamp(now - timedelta(minutes=13)),
+             "from": {"id": PSID}, "message": "hello, brake pads for a Prius?"}]
+        jobs = MessengerWorker(self.ctx, self.engine)
+        self.assertEqual(jobs.run_job("catchup", requested=True), "ok")
+        restarted = MessengerWorker(self.ctx, self.engine, quiet_seconds=QUIET)
+        restarted.recover()
+        restarted._burst(PSID)
+        self.assertEqual((self.graph.sends(), self.engine.calls), ([], []))
+
+    def test_a_late_oversized_copy_from_before_a_deletion_never_brings_the_chat_back(self):
+        import psycopg
+
+        old = datetime.now(UTC) - timedelta(minutes=3)
+        self.ctx.store.add_message(PSID, "m_o1", "customer", old, page_id=PAGE, body="hi")
+        self.site.delete_customer(PSID, ACTOR)
+        marker = {"_oversized": True, "_bytes": 70000, "_kind": "msg",
+                  "ids": {"sender": PSID, "recipient": PAGE,
+                          "timestamp": int(old.timestamp() * 1000), "mid": "m_o0"}}
+        key = "msg:" + hashlib.sha256(b"late-oversized-copy").hexdigest()
+        with psycopg.connect(self.url) as connection:
+            connection.execute(
+                "INSERT INTO garage.meta_inbox (event_key, field, page_id, payload) "
+                "VALUES (%s, 'messaging', %s, %s::jsonb)", (key, PAGE, json.dumps(marker)))
+        self.assertEqual(self.wait_outcomes(1), ["ignored: deleted_chat"])
+        self.assertEqual(self.rows("SELECT psid FROM garage.messenger_threads"), [])
+
+    def test_a_late_copy_from_before_a_deletion_never_brings_the_chat_back(self):
+        old = datetime.now(UTC) - timedelta(minutes=3)
+        self.ctx.store.add_message(PSID, "m_p1", "customer", old, page_id=PAGE, body="hi")
+        self.site.delete_customer(PSID, ACTOR)
+        self.say("late copy", mid="m_p0", sent=old)  # an unprocessed webhook copy, or a retry
+        self.assertEqual(self.wait_outcomes(1), ["ignored: deleted_chat"])
+        self.assertEqual(self.rows("SELECT psid FROM garage.messenger_threads"), [])
+        self.assertEqual(self.rows("SELECT mid FROM garage.messenger_messages"), [])
+        self.assertEqual((self.graph.sends(), self.engine.calls), ([], []))
 
 
 if __name__ == "__main__":

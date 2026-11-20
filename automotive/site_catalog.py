@@ -332,10 +332,10 @@ class Catalog:
             matched = [item for item in matched if wanted_text(item)]
         return matched
 
-    def search(self, *, make: str | None = None, model: str | None = None,
-               year: int | None = None, query: str = "", brand: str | None = None,
-               page: int = 1) -> dict:
-        """Available items only, in-store first. Each item is name, fits, brand and price."""
+    def listing(self, *, make: str | None = None, model: str | None = None,
+                year: int | None = None, query: str = "",
+                brand: str | None = None) -> list[Item]:
+        """Every available match in the order the search shows them, without pages."""
         matched = self._filter(self.available, make=make, model=model, year=year,
                                query=query, brand=brand)
         # Two stock lines that read identically to a customer are shown once, where the
@@ -343,7 +343,13 @@ class Catalog:
         unique: dict[tuple, Item] = {}
         for item in matched:
             unique.setdefault((item.name, item.model, item.brand, item.price or None), item)
-        rows = list(unique.values())
+        return list(unique.values())
+
+    def search(self, *, make: str | None = None, model: str | None = None,
+               year: int | None = None, query: str = "", brand: str | None = None,
+               page: int = 1) -> dict:
+        """Available items only, in-store first. Each item is name, fits, brand and price."""
+        rows = self.listing(make=make, model=model, year=year, query=query, brand=brand)
         page = max(1, page)
         start = (page - 1) * PAGE_SIZE
         return {"items": [item.public() for item in rows[start:start + PAGE_SIZE]],
@@ -377,23 +383,56 @@ SNAPSHOT_SQL = """SELECT source_product_id, product_code, product_name, product_
     source_columns->>'column_12' AS stock_tuz11
     FROM warehouse.warehouse_products WHERE is_active"""
 SNAPSHOT_COLUMNS = (PRICE_COLUMN, STORE_COLUMN, TUZ11_COLUMN)
-FINGERPRINT_SQL = ("SELECT count(*), max(last_observed_at), max(last_changed_at) "
+# What says the catalogue changed (the number of products, the newest content change), and when
+# the sync last looked (which moves on every page of every sync and needs no reload).
+FINGERPRINT_SQL = ("SELECT count(*), max(last_changed_at), max(last_observed_at) "
                    "FROM warehouse.warehouse_products WHERE is_active")
+# A sync commits page by page for half an hour: edits to existing products reload the snapshot
+# at most this often (a product added or gone reloads at once). Syncs run twice a day.
+MIN_RELOAD_SECONDS = 600.0
 
 
 class CatalogStore:
     """Holds the current Catalog and rebuilds it off the request path when the sync moves."""
 
     def __init__(self, database_url: str, rules: Rules | None = None, *,
-                 poll_seconds: float = 120.0) -> None:
+                 poll_seconds: float = 120.0,
+                 min_reload_seconds: float = MIN_RELOAD_SECONDS) -> None:
         self.database_url = (database_url or "").strip()
         self.rules = rules or Rules()
         self.poll_seconds = poll_seconds
+        self.min_reload_seconds = min_reload_seconds
         self._catalog = EMPTY
         self._fingerprint: Any = None
+        self._loaded_at = 0.0
+        self._hooks: list[Any] = []
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.loaded = False
+
+    def on_load(self, hook: Any) -> None:
+        """``hook(catalog)`` runs on the refresh thread for each new snapshot before it is
+        installed (the assistant builds its search index there, so no customer's turn waits
+        for it). A snapshot that is already loaded gets it on a thread of its own."""
+        self._hooks.append(hook)
+        if self.loaded:
+            threading.Thread(target=self._prepare, args=(self._catalog, (hook,)),
+                             name="site-catalog-prepare", daemon=True).start()
+
+    def _prepare(self, catalog: Catalog, hooks: Any = None) -> None:
+        for hook in list(self._hooks if hooks is None else hooks):
+            try:
+                hook(catalog)
+            except Exception as error:  # the snapshot is installed all the same
+                LOGGER.warning("site_catalog_prepare_failed %s", type(error).__name__)
+
+    def _observe(self, observed: Any) -> None:
+        """The sync looked at the products again without changing them: only the snapshot's
+        age moves (the freshness the site and the bot show), no reload."""
+        current = self._catalog
+        if isinstance(observed, datetime) and current is not EMPTY and (
+                current.observed_at is None or observed > current.observed_at):
+            current.observed_at = observed
 
     def current(self) -> Catalog:
         return self._catalog
@@ -408,13 +447,20 @@ class CatalogStore:
             return False
         with psycopg.connect(self.database_url, connect_timeout=5) as conn:
             conn.execute("SELECT set_config('statement_timeout', '20000', false)")
-            fingerprint = conn.execute(FINGERPRINT_SQL).fetchone()
-            if self.loaded and fingerprint == self._fingerprint:
+            count, changed, observed = conn.execute(FINGERPRINT_SQL).fetchone()
+            fingerprint = (count, changed)
+            if self.loaded and self._fingerprint is not None and (
+                    fingerprint == self._fingerprint or (
+                        count == self._fingerprint[0]
+                        and time.monotonic() - self._loaded_at < self.min_reload_seconds)):
+                self._observe(observed)
                 return False
             with conn.cursor(row_factory=dict_row) as cursor:
                 rows = cursor.execute(SNAPSHOT_SQL).fetchall()
-        self._catalog = Catalog.from_rows(rows, self.rules)
-        self._fingerprint, self.loaded = fingerprint, True
+        catalog = Catalog.from_rows(rows, self.rules)
+        self._prepare(catalog)  # before anyone can read it
+        self._catalog = catalog
+        self._fingerprint, self.loaded, self._loaded_at = fingerprint, True, time.monotonic()
         return True
 
     def _run(self) -> None:

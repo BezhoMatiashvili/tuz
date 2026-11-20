@@ -89,7 +89,9 @@ STALL_SECONDS = 10.0
 CONNECT_SECONDS = 5.0
 # The provider keeps the instructions, the guide and the tools ready for five minutes after
 # they were last read. A conversation that opens later than this has them read again first.
-WARM_SECONDS = 240.0
+WARM_SECONDS = 240.0  # the five-minute cache: warm again after four quiet minutes
+WARM_SECONDS_1H = 3300.0  # the one-hour cache: after 55 quiet minutes
+WARM_ATTEMPTS = 4  # each refusal teaches one setting the model will not take
 WARM_TIMEOUT = 20.0
 DASHES = re.compile("[\u2010-\u2015\u2212]")
 EPHEMERAL = {"type": "ephemeral"}
@@ -554,20 +556,7 @@ class AssistantTurn:
                 break
             except anthropic.BadRequestError as exc:
                 said = str(getattr(exc, "message", "") or exc).casefold()
-                if forced and "tool_choice" in said:
-                    state["auto_only"] = True
-                elif quiet and ("thinking" in said or "reasoning" in said):
-                    # First the lowest setting the model names, then its own default.
-                    # OpenRouter says "Reasoning is mandatory" where Anthropic says thinking.
-                    state["thinks" if quiet == "between_tools" else "no_disabled"] = True
-                elif effort and ("output_config" in said or "effort" in said):
-                    state["no_effort"] = True
-                elif "strict" in said and not state.get("no_strict"):
-                    state["no_strict"] = True  # The executors check every argument anyway.
-                elif "ttl" in said and "cache" in said and self.cache_ttl == "1h" \
-                        and not state.get("no_ttl"):
-                    state["no_ttl"] = True  # Kept the default five minutes from now on.
-                else:
+                if not self._learn(said, state, forced, quiet, effort):
                     raise
         self.usage["model_requests"] += 1
         state["used_at"] = time.monotonic()
@@ -580,6 +569,29 @@ class AssistantTurn:
             "tool_choice": "any" if forced else "auto", "effort": effort or None,
             "thinking": quiet or None, **timing, **counts})
         return response
+
+    def _learn(self, said: str, state: dict, forced: bool, quiet: str, effort: str) -> bool:
+        """What a refused request says this model will not take, remembered for every later
+        request of the process, the cache warm-up included. True when it is worth asking
+        again without it."""
+        if forced and "tool_choice" in said:
+            state["auto_only"] = True
+        elif quiet and ("thinking" in said or "reasoning" in said):
+            # First the lowest setting the model names, then its own default.
+            # OpenRouter says "Reasoning is mandatory" where Anthropic says thinking.
+            state["thinks" if quiet == "between_tools" else "no_disabled"] = True
+        elif effort and ("output_config" in said or "effort" in said):
+            state["no_effort"] = True
+        elif ("strict" in said or "grammar" in said) and not state.get("no_strict"):
+            # The executors check every argument anyway. OpenRouter's backend refuses the
+            # strict tools as "the compiled grammar is too large ... strict tools".
+            state["no_strict"] = True
+        elif "ttl" in said and "cache" in said and self.cache_ttl == "1h" \
+                and not state.get("no_ttl"):
+            state["no_ttl"] = True  # Kept the default five minutes from now on.
+        else:
+            return False
+        return True
 
     def _arguments(self, request: dict, state: dict,
                    first: bool) -> tuple[dict, bool, str, str]:
@@ -615,28 +627,44 @@ class AssistantTurn:
         cache without writing anything. Skipped while they were read within the cache's
         lifetime. Best effort: a failure costs the first message a few seconds, no more."""
         state = self._model_state()
-        if time.monotonic() - state.get("used_at", -WARM_SECONDS) < WARM_SECONDS:
+        # The provider keeps the prompt for the cache's lifetime: warm again only near its end.
+        lifetime = WARM_SECONDS_1H if self.cache_ttl == "1h" and not state.get("no_ttl") \
+            else WARM_SECONDS
+        if time.monotonic() - state.get("used_at", -lifetime) < lifetime:
             return False
         client = self._client()
         if client is None:
             return False
         state["used_at"] = time.monotonic()
-        arguments, _, _, _ = self._arguments({
-            "system": prompt.system_blocks(self.redact(str(index.guide() or "")),
-                                           self.cache_ttl),
-            "tools": tool_definitions(self.cache_ttl),
-            "messages": [{"role": "user", "content": "warm"}]}, state, False)
-        # Nothing is written, so nothing can be forced; the settings that are part of the
-        # cached prompt (thinking, effort) stay as the turns send them.
-        arguments.update(max_tokens=0, tool_choice={"type": "auto"})
-        state.pop("warm_usage", None)
-        try:
-            response = client.messages.create(**arguments, timeout=WARM_TIMEOUT)
-        except (anthropic.APIError, RuntimeError, OSError) as exc:
-            LOGGER.info("assistant_warm_skipped %s", type(exc).__name__)
-            return False
-        state["warm_usage"] = token_counts(getattr(response, "usage", None))
-        return True
+        # A refusal teaches what this model will not take (strict tools on OpenRouter, a
+        # thinking setting), exactly as a turn learns it: the warm-up is then asked again,
+        # and it caches the very tools and settings the turns send.
+        for _ in range(WARM_ATTEMPTS):
+            arguments, _, quiet, effort = self._arguments({
+                "system": prompt.system_blocks(self.redact(str(index.guide() or "")),
+                                               self.cache_ttl),
+                "tools": tool_definitions(self.cache_ttl),
+                "messages": [{"role": "user", "content": "warm"}]}, state, False)
+            # Nothing is written, so nothing can be forced; the settings that are part of
+            # the cached prompt (thinking, effort) stay as the turns send them.
+            arguments.update(max_tokens=0, tool_choice={"type": "auto"})
+            state.pop("warm_usage", None)
+            try:
+                response = client.messages.create(**arguments, timeout=WARM_TIMEOUT)
+            except anthropic.BadRequestError as exc:
+                said = str(getattr(exc, "message", "") or exc)
+                if self._learn(said.casefold(), state, False, quiet, effort):
+                    continue
+                LOGGER.info("assistant_warm_skipped %s status=%s said=%s", type(exc).__name__,
+                            exc.status_code, self.redact(" ".join(said.split()))[:200])
+                return False
+            except (anthropic.APIError, RuntimeError, OSError) as exc:
+                LOGGER.info("assistant_warm_skipped %s status=%s", type(exc).__name__,
+                            getattr(exc, "status_code", None))
+                return False
+            state["warm_usage"] = token_counts(getattr(response, "usage", None))
+            return True
+        return False
 
     def _send(self, client: Any, arguments: dict) -> tuple[Any, dict]:
         """A kept connection the server closed while idle fails at once, and so do an
@@ -926,8 +954,25 @@ class AssistantTurn:
                 typed_tokens(self.message),
                 codes_in_text(self.message.replace("[VIN]", " "), limit=8)),
             earlier_typed_numbers=self._earlier_numbers(),
+            stock_note=self._stock_note(),
             rows=self.toolbox.table(
                 [product for product in dict.fromkeys(known) if product][:KNOWN_ROWS]))
+
+    def _snapshot_time(self) -> Any:
+        """When the sync last looked at the catalogue snapshot the search reads."""
+        store = getattr(self.service, "catalog_store", None)
+        current = getattr(store, "current", None)
+        return getattr(current(), "observed_at", None) if callable(current) else None
+
+    def _stock_note(self) -> str:
+        """The stock figures' age, for the model, once they are older than the rules allow
+        to call them current: the rows still show the last known quantities, and the cards
+        then ask the customer to check with the shop. Nothing while they are current."""
+        age = stock.age_hours(self._snapshot_time())
+        if age is None or age <= self.rules.stale_hours:
+            return ""
+        return (f"stock figures last checked {int(age)} hours ago; they may have changed "
+                "since, so availability needs the shop's confirmation")
 
     def _earlier_numbers(self) -> dict | None:
         """The rows of part numbers the customer typed in earlier messages of this chat: in a
@@ -1374,7 +1419,10 @@ class AssistantTurn:
                        "original_code": row.code,
                        "duplicate_code": "/".join(map(str, row.cross_codes or ())),
                        "brand": row.brand}
-            counts, observed = {"store": row.store, "tuz11": row.warehouse}, None
+            # Its age is the snapshot's: a database that cannot be read must not make week-old
+            # quantities look current (the 13 h warning and the 25 h "ask the shop" apply).
+            counts, observed = {"store": row.store, "tuz11": row.warehouse}, \
+                self._snapshot_time()
             status = "PROVISIONAL"
         price = row.price if isinstance(row.price, int | float) and row.price > 0 else None
         product.update(price=price, currency="GEL" if price is not None else None,
