@@ -4,14 +4,30 @@ FMSI stems). Only exact catalogue matches are ever used, so these are lookups, n
 
 from __future__ import annotations
 
+import time
 import unittest
 
 from automotive.assistant_catalog import _FMSI_PLATE
 from automotive.assistant_tools import typed_tokens
-from automotive.codes import codes_in_text, latin, normalize_code
+from automotive.codes import codes_in_text, latin, normalize_code, parse_codes
 
 
 class CodeTests(unittest.TestCase):
+    def test_a_long_run_of_spaces_is_split_in_linear_time(self):
+        # A customer can send one (CodeQL py/polynomial-redos): it took 7 s for 100,000.
+        for text in ("A1" + " " * 100_000 + "B2", "A1" + " " * 100_000 + "/x B2",
+                     "A1" + " \n" * 50_000 + " / B2"):
+            started = time.perf_counter()
+            codes = parse_codes(text)
+            self.assertLess(time.perf_counter() - started, 0.5)
+            self.assertEqual((codes[0].normalized, codes[-1].normalized), ("A1", "B2"))
+        # Spaced slashes still separate codes, and a compact one stays inside its code.
+        self.assertEqual([code.original for code in parse_codes("AP104/2  /  W712, 1K0 / 2")],
+                         ["AP104/2", "W712", "1K0", "2"])
+        # A run with a line break in it before the slash is one separator, as the regex was.
+        self.assertEqual([code.original for code in parse_codes("03 115 \r / 562")],
+                         ["03 115", "562"])
+
     def test_cyrillic_look_alikes_are_the_latin_letters(self):
         self.assertEqual(latin("1К0698151А"), "1K0698151A")
         self.assertEqual(normalize_code("1к0 698 151 а"), "1K0698151A")

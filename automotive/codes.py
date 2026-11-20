@@ -78,6 +78,42 @@ def codes_in_text(text: str, limit: int = 60) -> list[str]:
     return found[:limit]
 
 
+_SEPARATOR = re.compile(r"[,;|\n\r()\[\]]")
+_SPACE_BEFORE_SLASH = re.compile(r"\s/")
+
+
+def _separated(value: str) -> list[str]:
+    """Exactly ``re.split(r"[,;|\\n\\r()\\[\\]]|\\s+/\\s+", value)``, in linear time. As a
+    regex the spaced slash was tried again at every space of a long run, so a customer's message
+    full of spaces cost quadratic time (CodeQL py/polynomial-redos: 7 s for 100,000). A spaced
+    slash matches at a space exactly when the run of spaces it begins ends in "/" and another
+    space, so knowing where each run ends answers every position at once. Without a space
+    before any "/" (nearly every product field) there is no spaced slash: the plain split."""
+    if not _SPACE_BEFORE_SLASH.search(value):
+        return _SEPARATOR.split(value)
+    length = len(value)
+    run_end = [length] * (length + 1)  # where the run of spaces starting here ends
+    for index in range(length - 1, -1, -1):
+        run_end[index] = run_end[index + 1] if value[index].isspace() else index
+    chunks: list[str] = []
+    start = index = 0
+    while index < length:
+        char = value[index]
+        if char in ",;|\n\r()[]":  # the regex tries these first
+            chunks.append(value[start:index])
+            start = index = index + 1
+            continue
+        end = run_end[index]
+        if (char.isspace() and end + 1 < length and value[end] == "/"
+                and value[end + 1].isspace()):
+            chunks.append(value[start:index])
+            start = index = run_end[end + 1]
+            continue
+        index += 1
+    chunks.append(value[start:])
+    return chunks
+
+
 def parse_codes(value: str, *, field: str = "", manufacturer: str = "") -> list[PartCode]:
     """Split explicit combined values and parentheses, without splitting AP104/2.
 
@@ -86,7 +122,7 @@ def parse_codes(value: str, *, field: str = "", manufacturer: str = "") -> list[
     """
     result: list[PartCode] = []
     seen: set[tuple[str, str]] = set()
-    chunks = re.split(r"[,;|\n\r()\[\]]|\s+/\s+", value)
+    chunks = _separated(value)
     for chunk in chunks:
         chunk = chunk.strip()
         if not chunk:
