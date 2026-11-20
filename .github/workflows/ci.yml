@@ -69,7 +69,7 @@ jobs:
       # Code scanning is not available for this private repository on the Free plan, so the
       # results are not uploaded there (that call failed every run): the analysis still runs,
       # and its SARIF is kept as an artifact to read or open in an editor.
-      - uses: github/codeql-action/analyze@b7b84b636b4f90c9b31da1bc5f72bfadd5b31410 # v3
+      - uses: github/codeql-action/analyze@d2aacf54c2fbc910db8d7ec338fdb54ea48c692d # v3
         with:
           upload: never
           output: codeql-results
