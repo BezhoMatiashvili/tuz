@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from parts_crawler.sources.base import SourceAdapter
 from parts_crawler.sources.catcar import CatCarAdapter
+from parts_crawler.sources.jnbk import JnbkAdapter
 from parts_crawler.sources.mann import MannAdapter
 from parts_crawler.sources.mann_api import MannApiAdapter
 from parts_crawler.sources.ngk import NgkAdapter
@@ -14,7 +15,7 @@ from parts_crawler.sources.rockauto import RockAutoAdapter
 ADAPTERS: dict[str, type[SourceAdapter]] = {
     adapter.name: adapter for adapter in (
         RockAutoAdapter, MannAdapter, MannApiAdapter, NgkAdapter, CatCarAdapter,
-        RealOemAdapter, PartsouqAdapter,
+        RealOemAdapter, PartsouqAdapter, JnbkAdapter,
     )
 }
 

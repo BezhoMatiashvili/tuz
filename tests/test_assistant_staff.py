@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from unittest.mock import patch
 
 from automotive.assistant import NO_STAFF
 from automotive.assistant_tools import STAFF_INTENTS, tool_definitions
@@ -132,6 +133,26 @@ class StaffTests(unittest.TestCase):
         self.assertEqual([(d.kind, d.phone) for d in alerts.drafts],
                          [("visit_request", "599123456")])
         self.assertEqual(alerts.phone, "599123456")
+
+    def test_after_hours_a_part_not_found_asks_for_a_number_for_the_morning(self):
+        def missing_filter():
+            return Script(done(reply="ფილტრი ვერ ვიპოვე.", outcome="nothing_found",
+                               staff=staff(note="oil filter, Camry 2015", missing=["oil filter"])))
+
+        with patch("automotive.shop_hours.is_open", return_value=False):
+            night = public(missing_filter(), "ზეთის ფილტრი Camry 2015", KNOWN)
+        self.assertEqual(night["memory"]["phone"], "asked")  # the reply asked for one
+        with patch("automotive.shop_hours.is_open", return_value=True):
+            day = public(missing_filter(), "ზეთის ფილტრი Camry 2015", KNOWN)
+            found = public(Script(done()), "გამარჯობა", KNOWN)
+        self.assertEqual(day["memory"]["phone"], "")  # in the day the staff answer it
+        self.assertEqual(found["memory"]["phone"], "")
+        with patch("automotive.shop_hours.is_open", return_value=False):
+            nothing_missing = public(Script(done()), "გამარჯობა", KNOWN)
+            given = public(missing_filter(), "ზეთის ფილტრი Camry 2015",
+                           {**KNOWN, "phone": "on_file"})
+        self.assertEqual(nothing_missing["memory"]["phone"], "")
+        self.assertEqual(given["memory"]["phone"], "on_file")  # a number on file stays
 
     def test_the_next_turn_is_told_whether_a_phone_was_asked_or_given(self):
         first_script = Script(visit())

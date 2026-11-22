@@ -1,0 +1,2 @@
+DROP VIEW automotive.oil_research_specification_matches;
+ALTER TABLE automotive.oil_vehicle_research DROP COLUMN allows_manufacturer_specification;

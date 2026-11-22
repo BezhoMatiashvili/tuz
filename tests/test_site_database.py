@@ -36,7 +36,9 @@ META_TABLES = ("meta_inbox", "meta_settings", "meta_page", "meta_tokens", "messe
                "meta_images", "meta_posts", "meta_ad_accounts", "meta_ads", "meta_ad_daily",
                "meta_sync_runs", "meta_job_requests", "meta_forgotten",
                # Migration 0015 (Live chats); tests/test_live_store_database.py covers them.
-               "live_alerts", "live_web_chats", "live_web_messages")
+               "live_alerts", "live_web_chats", "live_web_messages",
+               # Migration 0019 (Prompts); tests/test_llm_prompts_database.py covers them.
+               "llm_prompts", "llm_prompt_history")
 # Shaped like a stored hash; these tests never verify a password.
 HASH = "scrypt$15$8$3$Zml4dHVyZS1zYWx0LTE2Yg$Zml4dHVyZS1kaWdlc3QtMzItYnl0ZXMtbG9uZy0wMDAw"
 HERO = {"title": {"ka": "სათაური", "en": "Headline"}, "subline": {"ka": "ქვე", "en": "Sub"}}

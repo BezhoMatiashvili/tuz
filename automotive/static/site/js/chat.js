@@ -185,9 +185,10 @@ function addTyping() {
 /* -------------------------------------------------------------------- cards */
 
 const cardKey = (card) =>
-  [card.group, card.name, card.brand, card.fits, card.price, card.availability, card.confidence, card.reason].join('\u001f');
+  [card.group, card.name, card.brand, card.fits, card.sap_code, card.price,
+    card.availability, card.confidence, card.reason].join('\u001f');
 
-/** A part: name and price, brand and what it fits, then its availability on a row of its own. */
+/** A part's name, price, catalogue details, SAP code and availability. */
 function cardRow(card) {
   const row = el('li', 'card');
   const availability = STATES.includes(card.availability) ? card.availability : 'unknown';
@@ -197,6 +198,10 @@ function cardRow(card) {
   row.append(el('span', 'card__name', tidy(card.name)), cost);
   const meta = [card.brand, card.fits].filter(Boolean).join(', ');
   if (meta) row.append(el('span', 'card__meta', tidy(meta)));
+  if (card.sap_code) {
+    const label = text('chat.sap_code') || 'SAP: {code}';
+    row.append(el('span', 'card__sap', fill(label, { code: card.sap_code })));
+  }
   // The marker's shape tells the availability as well as its colour does.
   const state = el('span', 'card__state');
   const stock = el('span', 'card__stock', text(`avail.${availability}`) || text('avail.unknown'));

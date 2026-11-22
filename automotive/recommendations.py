@@ -3,15 +3,37 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
+from itertools import product as combinations
 from time import monotonic
 from typing import Any
 
-from automotive.evidence import applies_to, flatten_record, verified_record
+from automotive.evidence import (
+    VEHICLE_KEYS,
+    applies_to,
+    flatten_record,
+    missing_oil_detail,
+    verified_record,
+)
+from automotive.oil_match import normalize_grade
 
 CLARIFICATION = (
     'ზეთის შესარჩევად საჭიროა ზუსტი ძრავის კოდი, მოდელის წელი და შესაბამისი '
     'მწარმოებლის მოთხოვნისა და კონკრეტული პროდუქტის დაშვების დადასტურება.'
 )
+OIL_DPF_REQUIRED = 'Verified oil requirements depend on DPF status.'
+OIL_MARKET_REQUIRED = 'Verified oil requirements depend on the original sales market.'
+
+
+def _approval_code(value: str) -> str:
+    code = ' '.join(value.casefold().split())
+    vw = re.fullmatch(r'vw\s*(\d{3})[. ]?(\d{2})', code)
+    if vw:
+        return f'vw {vw[1]} {vw[2]}'
+    mb = re.fullmatch(r'mb(?:[- ](?:approval|freigabe))?\s*(\d{3})[. ](\d{1,2})', code)
+    if mb:
+        return f'mb {mb[1]}.{mb[2]}'
+    return code
 
 
 def _required(row: dict[str, Any]) -> set[str]:
@@ -27,13 +49,93 @@ def _required(row: dict[str, Any]) -> set[str]:
         return set()
     if any(not isinstance(value, str) or not value.strip() for value in values):
         raise ValueError('Malformed required approvals.')
-    return {value.strip().casefold() for value in values}
+    return {_approval_code(value) for value in values}
 
 
-def _positive_approval(row: dict[str, Any]) -> bool:
+def positive_approval(row: dict[str, Any]) -> bool:
     approval = row.get('approval')
     return (isinstance(approval, str) and bool(approval.strip())
+            and row.get('claim_type', 'approval') == 'approval'
             and ('approved' not in row or row['approved'] is True))
+
+
+def _approval_options(row: dict[str, Any]) -> list[set[str]]:
+    if 'approval_options' not in row:
+        required = _required(row)
+        return [required] if required else []
+    options = row['approval_options']
+    if (any(key in row for key in ('required_approvals', 'approval', 'specification'))
+            or not isinstance(options, list) or not 1 <= len(options) <= 20):
+        raise ValueError('Malformed required approvals.')
+    return [_required({'required_approvals': option}) for option in options]
+
+
+def _active(row: dict) -> bool:
+    return (row.get('review_status') != 'rejected' and not row.get('superseded_by')
+            and not row.get('revoked', False))
+
+
+def _vehicle_requirements(rows: list[dict], vehicle: dict
+                          ) -> tuple[list[dict], list[set[str]], set[str], str]:
+    active = [row for row in rows if row.get('category') == 'engine_oil' and _active(row)]
+    applicable = [row for row in active if applies_to(row, vehicle)]
+    details = {missing_oil_detail(row, vehicle) for row in active if row not in applicable
+               and verified_record(row) and _specific_configuration(row)}
+    for field, message in (('dpf', OIL_DPF_REQUIRED), ('market', OIL_MARKET_REQUIRED)):
+        if field in details:
+            return applicable, [], set(), message
+    try:
+        assertions = [(row, _approval_options(row)) for row in applicable]
+    except ValueError:
+        return applicable, [], set(), 'Applicable oil approval requirements are malformed.'
+    verified = [row for row, options in assertions
+                if options and verified_record(row) and _specific_configuration(row)]
+    if not verified:
+        return applicable, [], set(), 'No applicable verified engine-oil specification exists.'
+    try:
+        signatures = {
+            (frozenset(map(frozenset, options)), frozenset(_viscosities(row)))
+            for row, options in assertions if options
+        }
+    except ValueError:
+        return applicable, [], set(), 'Oil viscosity evidence has an unsupported format.'
+    if len(signatures) > 1:
+        return applicable, [], set(), 'CONFLICTED'
+    return applicable, _approval_options(verified[0]), _viscosities(verified[0]), ''
+
+
+def current_product_approval(row: dict, product: dict) -> bool:
+    key = ('approval_content_fingerprint' if 'approval_content_fingerprint' in row
+           else 'source_fingerprint')
+    fingerprint = product.get(key)
+    return (isinstance(fingerprint, str) and bool(fingerprint)
+            and row.get(key) == fingerprint
+            and str(row.get('product_id', row.get('source_product_id', '')))
+            == str(product.get('source_product_id', '')))
+
+
+def _matching_product(product: dict, approvals: list[dict], vehicle: dict,
+                      options: list[set[str]], viscosities: set[str]) -> dict | None:
+    applicable = [row for row in approvals if _active(row) and applies_to(row, vehicle)
+                  and current_product_approval(row, product)]
+    valid = [row for row in applicable if verified_record(row) and positive_approval(row)]
+    catalog_grade = normalize_grade(product.get('product_name'))
+    if viscosities and ((catalog_grade and catalog_grade not in viscosities)
+                        or not _matches_viscosity(valid, viscosities)):
+        return None
+    denied = {_approval_code(row['approval']) for row in applicable
+              if row.get('approved') is False and isinstance(row.get('approval'), str)}
+    approved = {_approval_code(row['approval']) for row in valid}
+    for required in options:
+        if not required.issubset(approved) or required & denied:
+            continue
+        proof = [row for row in valid if _approval_code(row['approval']) in required]
+        return {
+            'product': product, 'status': 'VERIFIED',
+            'required_approvals': sorted(required), 'evidence': proof,
+            'required_viscosities': sorted(viscosities),
+        }
+    return None
 
 
 class RecommendationService:
@@ -50,79 +152,34 @@ class RecommendationService:
             result['warnings'].append('Exact vehicle and engine identification is incomplete.')
             return result
         rows = [flatten_record(row) for row in self.repository.vehicle_specifications(vehicle)]
-        applicable = [row for row in rows if row.get('category') == 'engine_oil'
-                      and applies_to(row, vehicle) and not row.get('superseded_by')
-                      and row.get('review_status') != 'rejected' and not row.get('revoked', False)]
-        result['evidence'] = rows
-        try:
-            for row in applicable:
-                _required(row)
-        except ValueError:
-            result['warnings'].append('Applicable oil approval requirements are malformed.')
-            return result
-        verified = [row for row in applicable
-                    if verified_record(row) and _required(row) and _specific_configuration(row)]
-        if not verified:
-            result['warnings'].append('No applicable verified engine-oil specification exists.')
-            return result
-        # All surviving sources must agree. A pending contrary assertion blocks eligibility too.
-        try:
-            requirement_sets = {_signature(row) for row in applicable if _required(row)}
-            viscosities = _viscosities(verified[0])
-        except ValueError:
-            result['warnings'].append('Oil viscosity evidence has an unsupported format.')
-            return result
-        if len(requirement_sets) > 1:
+        applicable, options, viscosities, problem = _vehicle_requirements(rows, vehicle)
+        result['evidence'] = applicable
+        if problem == 'CONFLICTED':
             result['status'] = 'CONFLICTED'
             result['warnings'].append(
                 'Applicable sources disagree about required oil approvals or viscosity.',
             )
             return result
-        requirements = _required(verified[0])
-        for product in self.repository.inventory_products():
+        if problem:
+            result['warnings'].append(problem)
+            return result
+        reviewed = [row for row in applicable if verified_record(row)
+                    and _specific_configuration(row)]
+        capacities = {float(value) for row in reviewed
+                      if isinstance(value := row.get('capacity_liters'), int | float)
+                      and not isinstance(value, bool) and 0 < value <= 100}
+        if len(capacities) == 1:
+            result['capacity_liters'] = capacities.pop()
+        for product, approvals in self.repository.oil_approval_products():
             if deadline is not None and monotonic() >= deadline:
                 result['has_more'] = True
                 result['warnings'].append('Oil approval lookup reached the time limit.')
                 break
-            product_id = product.get('source_product_id')
-            if not product_id:
-                continue
-            fingerprint = product.get('source_fingerprint')
-            if not isinstance(fingerprint, str) or not fingerprint:
-                result['warnings'].append(
-                    f'Current inventory fingerprint is unavailable for product {product_id}.',
-                )
-                continue
-            approvals = [flatten_record(row)
-                         for row in self.repository.product_approvals(str(product_id))]
-            valid = [row for row in approvals
-                     if verified_record(row) and _positive_approval(row)
-                     and applies_to(row, vehicle)
-                     and row.get('source_fingerprint') == fingerprint
-                     and str(row.get('product_id', row.get('source_product_id', '')))
-                     == str(product_id)]
-            approved = {row['approval'].strip().casefold() for row in valid}
-            if not requirements.issubset(approved):
-                continue
-            if viscosities and not _matches_viscosity(valid, viscosities):
-                result['warnings'].append(
-                    f'Verified viscosity is missing or unsuitable for product {product_id}.',
-                )
-                continue
-            # Explicit contrary product approval evidence blocks a recommendation.
-            if any(row.get('approved') is False and applies_to(row, vehicle)
-                   and row.get('review_status') != 'rejected'
-                   and not row.get('superseded_by') for row in approvals):
-                result['warnings'].append(
-                    f'Conflicting approval evidence for product {product_id}.',
-                )
-                continue
-            result['items'].append({
-                'product': product, 'status': 'VERIFIED',
-                'required_approvals': sorted(requirements), 'evidence': valid,
-                'required_viscosities': sorted(viscosities),
-            })
-            result['evidence'].extend(valid)
+            item = _matching_product(product, [flatten_record(row) for row in approvals],
+                                     vehicle, options, viscosities)
+            if item is not None:
+                result['items'].append(item)
+                result['evidence'].extend(item['evidence'])
         if result['items']:
             result['status'] = 'VERIFIED'
             result['clarification'] = None
@@ -130,9 +187,83 @@ class RecommendationService:
             result['warnings'].append('No inventory product has all required verified approvals.')
         return result
 
+    def oil_vehicles(self, product_id: str, *, offset: int = 0, limit: int = 50) -> dict:
+        """List evidenced configurations where the same forward match verifies this SKU."""
+        items: list[dict] = []
+        result = {'status': 'INSUFFICIENT_DATA', 'items': items, 'next_offset': None}
+        products = self.repository.oil_approval_products(product_id)
+        if not products:
+            return result
+        product, approvals = products[0]
+        approvals = [flatten_record(row) for row in approvals]
+        approved = {_approval_code(row['approval']) for row in approvals
+                    if (verified_record(row) and positive_approval(row)
+                        and current_product_approval(row, product))}
+        if not approved:
+            return result
+        rows = [flatten_record(row) for row in self.repository.vehicle_specifications()]
+        rows = [row for row in rows if row.get('category') == 'engine_oil']
+        seen = set()
+        matched = 0
+        for row in rows:
+            if not (verified_record(row) and _specific_configuration(row)):
+                continue
+            try:
+                if not any(option.issubset(approved) for option in _approval_options(row)):
+                    continue
+            except ValueError:
+                continue
+            for vehicle in _configurations(row):
+                key = tuple(sorted((name, str(value).casefold())
+                                   for name, value in vehicle.items()))
+                if key in seen:
+                    continue
+                seen.add(key)
+                evidence, options, viscosities, problem = _vehicle_requirements(rows, vehicle)
+                if problem:
+                    continue
+                item = _matching_product(product, approvals, vehicle, options, viscosities)
+                if item is None:
+                    continue
+                result['status'] = 'VERIFIED'
+                if matched >= offset + limit:
+                    result['next_offset'] = offset + limit
+                    return result
+                if matched >= offset:
+                    items.append({**item, 'vehicle': vehicle,
+                                  'evidence': [*evidence, *item['evidence']]})
+                matched += 1
+        return result
 
-def _signature(row: dict[str, Any]) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    return tuple(sorted(_required(row))), tuple(sorted(_viscosities(row)))
+
+def _configurations(row: dict) -> Iterator[dict]:
+    scope = row['applicability']
+    restrictions = row.get('restrictions', {})
+    dimensions = dict(scope)
+    if not isinstance(restrictions, dict):
+        return
+    for key, value in restrictions.items():
+        dimensions.setdefault(key, value)
+    try:
+        start = max(1980, int(scope.get('model_year_from', 1980)),
+                    int(restrictions.get('model_year_from', 1980)))
+        end = min(2100, int(scope.get('model_year_to', 2100)),
+                  int(restrictions.get('model_year_to', 2100)))
+        years = dimensions.get('model_year', range(start, end + 1))
+        if not isinstance(years, list | range):
+            years = [years]
+        dimensions['model_year'] = sorted({int(y) for y in years if start <= int(y) <= end})
+    except (TypeError, ValueError, OverflowError):
+        return
+    options = {key: value if isinstance(value, list) else [value]
+               for key, value in dimensions.items() if key in VEHICLE_KEYS}
+    if not all(all(isinstance(value, str | int | float) and value != ''
+                   for value in values) for values in options.values()):
+        return
+    for values in combinations(*options.values()):
+        vehicle = dict(zip(options, values, strict=True))
+        if applies_to(row, vehicle):
+            yield vehicle
 
 
 def _specific_configuration(row: dict[str, Any]) -> bool:

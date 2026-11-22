@@ -233,6 +233,11 @@ class RecommendationTests(unittest.TestCase):
         self.repository.product_approvals.return_value = [
             evidence(product_id='p1', approval='SPEC-A'),
         ]
+        self.repository.oil_approval_products.side_effect = lambda product_id=None: [
+            (product, self.repository.product_approvals.return_value)
+            for product in self.repository.inventory_products.return_value
+            if product_id is None or product['source_product_id'] == product_id
+        ]
         self.service = RecommendationService(self.repository)
 
     def test_spec_and_actual_product_approval_required(self):
@@ -244,6 +249,31 @@ class RecommendationTests(unittest.TestCase):
             evidence(product_id='p2', approval='SPEC-A'),
         ]
         self.assertEqual(self.service.recommend_oil(VEHICLE)['status'], 'INSUFFICIENT_DATA')
+
+    def test_dpf_scoped_oil_and_capacity_require_the_right_vehicle_and_grade(self):
+        specifications = self.repository.vehicle_specifications.return_value
+        specifications[0].update(approval='SPEC-B')
+        specifications.append(evidence(
+            category='engine_oil', approval='SPEC-A', viscosity='5W-30',
+            capacity_liters=4.5, restrictions={'dpf': True}))
+        specifications[0]['restrictions'] = {'dpf': False}
+        product = self.repository.inventory_products.return_value[0]
+        product['product_name'] = 'Example oil 5W-30 4L'
+        self.repository.product_approvals.return_value[0]['viscosity'] = '5W-30'
+        self.assertEqual(self.service.recommend_oil(VEHICLE)['status'], 'INSUFFICIENT_DATA')
+        self.assertEqual(self.service.recommend_oil({**VEHICLE, 'dpf': False})['items'], [])
+        result = self.service.recommend_oil({**VEHICLE, 'dpf': True})
+        self.assertEqual((result['status'], result['capacity_liters']), ('VERIFIED', 4.5))
+        product['product_name'] = 'Example oil 5W-40 4L'
+        self.assertEqual(self.service.recommend_oil({**VEHICLE, 'dpf': True})['items'], [])
+
+    def test_market_scoped_oil_asks_only_when_the_market_is_missing(self):
+        self.repository.vehicle_specifications.return_value[0]['restrictions'] = {'market': 'EU'}
+        missing = self.service.recommend_oil(VEHICLE)
+        self.assertIn('original sales market', missing['warnings'][0])
+        self.assertEqual(self.service.recommend_oil(
+            {**VEHICLE, 'market': 'Europe'})['status'], 'VERIFIED')
+        self.assertEqual(self.service.recommend_oil({**VEHICLE, 'market': 'US'})['items'], [])
 
     def test_mismatch_or_provisional_or_unknown_engine_returns_insufficient_data(self):
         for approval in (evidence(product_id='p1', approval='SPEC-B'),
@@ -279,6 +309,42 @@ class RecommendationTests(unittest.TestCase):
             'product_code': 'DIFFERENT-OIL', 'brand': 'Other manufacturer',
         }]
         self.assertEqual(self.service.recommend_oil(VEHICLE)['status'], 'INSUFFICIENT_DATA')
+
+    def test_stable_approval_survives_stock_change_and_reverse_lookup_uses_same_gate(self):
+        product = self.repository.inventory_products.return_value[0]
+        product.update(source_fingerprint='b' * 64, approval_content_fingerprint='c' * 64)
+        approval = self.repository.product_approvals.return_value[0]
+        approval.update(approval_content_fingerprint='c' * 64, viscosity='5W-30')
+        specification = self.repository.vehicle_specifications.return_value[0]
+        specification.pop('approval')
+        specification.update(approval_options=[['SPEC-B'], ['SPEC-A']], viscosity='5W-30')
+        specification['applicability'] = {
+            **VEHICLE, 'model_year_from': 2019, 'model_year_to': 2020,
+        }
+        del specification['applicability']['model_year']
+        approval['applicability'] = {}
+
+        self.assertEqual(self.service.recommend_oil(VEHICLE)['status'], 'VERIFIED')
+        first = self.service.oil_vehicles('p1', limit=1)
+        self.assertEqual(first['items'][0]['vehicle']['model_year'], 2019)
+        self.assertEqual(first['next_offset'], 1)
+        second = self.service.oil_vehicles('p1', offset=1, limit=1)
+        self.assertEqual(second['items'][0]['vehicle'], VEHICLE)
+        self.assertIsNone(second['next_offset'])
+
+        product['approval_content_fingerprint'] = 'd' * 64
+        self.assertEqual(self.service.recommend_oil(VEHICLE)['status'], 'INSUFFICIENT_DATA')
+        self.assertEqual(self.service.oil_vehicles('p1')['items'], [])
+
+    def test_provisional_or_conflicted_engine_requirements_never_get_reverse_labels(self):
+        specification = self.repository.vehicle_specifications.return_value[0]
+        specification['review_status'] = 'pending'
+        self.assertEqual(self.service.oil_vehicles('p1')['items'], [])
+        specification['review_status'] = 'approved'
+        self.repository.vehicle_specifications.return_value.append(
+            evidence(category='engine_oil', approval='SPEC-B', review_status='pending'),
+        )
+        self.assertEqual(self.service.oil_vehicles('p1')['items'], [])
 
     def test_missing_approval_or_inventory_fingerprint_cannot_verify(self):
         self.repository.product_approvals.return_value = [
@@ -350,6 +416,21 @@ class RecommendationTests(unittest.TestCase):
             evidence(product_id='p1', approval='SPEC-A', approved=True),
         ]
         self.assertEqual(self.service.recommend_oil(VEHICLE)['status'], 'VERIFIED')
+
+    def test_performance_claim_does_not_stand_in_for_an_approval(self):
+        self.repository.product_approvals.return_value[0]['claim_type'] = 'meets_requirements'
+        self.assertEqual(self.service.recommend_oil(VEHICLE)['items'], [])
+        self.assertEqual(self.service.oil_vehicles('p1')['items'], [])
+
+    def test_approval_notation_variants_preserve_the_exact_standard(self):
+        requirement = self.repository.vehicle_specifications.return_value[0]
+        product = self.repository.product_approvals.return_value[0]
+        for needed, stated in [('VW 508 00', 'VW 508.00'), ('MB 229.5', 'MB-Approval 229.5')]:
+            with self.subTest(needed=needed, stated=stated):
+                requirement['approval'], product['approval'] = needed, stated
+                self.assertEqual(self.service.recommend_oil(VEHICLE)['status'], 'VERIFIED')
+        product['approval'] = 'MB-Approval 229.51'
+        self.assertEqual(self.service.recommend_oil(VEHICLE)['items'], [])
 
     def test_viscosity_assertions_cannot_hide_disagreement_by_intersection(self):
         self.repository.vehicle_specifications.return_value[0]['viscosity'] = '5W30'

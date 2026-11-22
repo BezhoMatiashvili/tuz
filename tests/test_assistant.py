@@ -204,6 +204,7 @@ def finish(**values):
     return {"language": "ka", "car_label": "", "products": [], "question": "", "options": [],
             "suggestions": ["ნაწილის ძებნა"],
             "reply": "გამარჯობა! მომწერეთ, რა ნაწილი გჭირდებათ.", "notes": "",
+            "oil_quote": {"oil_id": "", "filter_id": "", "litres": 0},
             "outcome": "chat", **values}
 
 
@@ -1158,7 +1159,8 @@ class ToolTests(unittest.TestCase):
             done(products=[product("r1", evidence="5W-30", group="ძრავის ზეთი")]))
         result = run(service(script), "ზეთი Camry 2015",
                      search_service=agreed, dialogue={"memory": {"handles": {"r1": "p5"}}})
-        self.assertEqual((result["status"], len(result["cards"])), ("OK", 1))
+        self.assertEqual((result["status"], len(result["cards"])), ("CLARIFICATION", 0))
+        self.assertIn("დაშვებას", result["question"]["text"])
         content, is_error = tool_results(script.requests[1])[0]
         self.assertEqual((content["status"], is_error), ("answered", False))
         self.assertEqual(content["needs"], {
@@ -1185,6 +1187,229 @@ class ToolTests(unittest.TestCase):
         content, _ = self.one("oil_guide", car(make="Toyota", model="Camry", year=2015),
                               search_service=Search())
         self.assertEqual(content["status"], "no_answer")
+
+    def test_oil_guide_verifies_exact_sku_only_after_rechecking_catalog_identity(self):
+        vehicle = {"make": "Toyota", "model": "Camry", "model_year": 2015,
+                   "engine_code": "2AR-FE"}
+        reviewed = {"authority": "manufacturer", "reuse_permission": "owned",
+                    "review_status": "approved", "reviewed_by": "test reviewer"}
+
+        class OilRepository(Repository):
+            def vehicle_specifications(self, configuration):
+                return [{**reviewed, "category": "engine_oil", "applicability": vehicle,
+                         "approval": "TEST-OIL", "viscosity": "5W-30"}]
+
+            def oil_approval_products(self):
+                return [(self.get_product("p5"), [{**reviewed, "product_id": "p5",
+                         "approval": "TEST-OIL", "viscosity": "5W-30",
+                         "source_fingerprint": "f" * 16}])]
+
+        script = Script(
+            says(use("oil_guide", car(make="Toyota", model="Camry", year=2015,
+                                     engine_code="2AR-FE"))),
+            done(products=[product("r1", confidence="confirmed", evidence="5W-30")],
+                 outcome="offered"),
+        )
+        federation = Search()
+        result = run(service(script, repository=OilRepository()),
+                     "Camry 2015 2AR-FE ზეთი", search_service=federation)
+
+        content, is_error = tool_results(script.requests[1])[0]
+        self.assertFalse(is_error)
+        self.assertEqual(content["status"], "verified")
+        self.assertEqual(content["rows"][0][-1], "TEST-OIL")
+        self.assertEqual(federation.started, [])
+        self.assertEqual(result["cards"][0]["fitment_status"], "VERIFIED")
+        self.assertTrue(result["cards"][0]["compatible"])
+
+        guessed = Script(
+            says(use("oil_guide", car(make="Toyota", model="Camry", year=2015,
+                                     engine_code="2AR-FE"))),
+            done(),
+        )
+        run(service(guessed, repository=OilRepository()), "Camry 2015 ზეთი")
+        content, is_error = tool_results(guessed.requests[1])[0]
+        self.assertFalse(is_error)
+        self.assertEqual((content["status"], content["detail"]), ("needs_detail", "engine"))
+        self.assertNotIn("rows", content)
+
+    def test_oil_and_filter_quote_uses_pack_count_and_current_stock(self):
+        rows = [dict(item) for item in ROWS]
+        rows[4].update(price_raw="20,25", stock_store="9")
+        memory = {"handles": {"r4": "p4", "r5": "p5"}, "shown": ["p4", "p5"]}
+        quote = {"oil_id": "r5", "filter_id": "r4", "litres": 5}
+        for stocked, quantity, expected in (
+                ("9", "5 ლიტრი", True), ("7.9", "5 ლიტრი", False),
+                ("9", "4 ლიტრი", False)):
+            with self.subTest(stocked=stocked, quantity=quantity):
+                rows[4]["stock_store"] = stocked
+                script = Script(done(
+                    products=[product("r5", confidence="spec", evidence="5W-30"),
+                              product("r4", evidence="M276")],
+                    reply="ეს ზეთი და ფილტრია.", outcome="offered", oil_quote=quote,
+                ))
+                turn = run(service(script, rows=rows), f"{quantity} ზეთი და ფილტრი ჯამში",
+                           dialogue={"memory": memory})
+                self.assertEqual(turn["status"], "OK")
+                oil = next(card for card in turn["cards"] if card["pack_litres"])
+                self.assertEqual(oil["product"]["price"], 81)
+                self.assertEqual("212.00 ₾" in turn["answer"], expected)
+                packs = context_of(script.requests[0])["rows"]["oil_packs"]
+                self.assertEqual(packs["r5"], {"litres": 4, "price": 81,
+                                               "stock": {"store": int(float(stocked) // 4),
+                                                         "tuz11": 0}})
+
+    def test_followup_preserves_explicit_vehicle_oil_grade_and_quantity(self):
+        rows = [dict(item) for item in ROWS]
+        rows[4].update(price_raw="20,25", stock_store="9")
+        initial = Script(done(products=[product("r5", confidence="spec", evidence="5W-30")],
+                              outcome="offered"))
+        first = run(service(initial, rows=rows),
+                    "Toyota Camry 2015, engine code 2AR-FE, 5W-30 5 ლიტრი",
+                    dialogue={"memory": {"handles": {"r5": "p5", "r4": "p4"}}})
+        next_turn = Script(
+            says(use("oil_guide", car())),
+            done(products=[product("r5", confidence="spec", evidence="5W-30"),
+                           product("r4", evidence="M276")],
+                 reply="ეს არის ზეთი და ფილტრი.", outcome="offered",
+                 oil_quote={"oil_id": "r5", "filter_id": "r4", "litres": 5}),
+        )
+        search_source = Search()
+        result = run(service(next_turn, rows=rows), "და ფილტრით ჯამში?",
+                     dialogue={"memory": first["memory"]}, search_service=search_source)
+        focus = context_of(next_turn.requests[0])["followup"]
+        self.assertEqual((focus["oil_grade"], focus["oil_litres"], focus["previous_oil"]),
+                         ("5W-30", 5, "r5"))
+        self.assertEqual(search_source.started[0][3]["engine_code"], "2AR-FE")
+        self.assertIn("212.00 ₾", result["answer"])
+
+        switch = Script(says(use("oil_guide", car())), done())
+        switched = Search()
+        changed = run(service(switch, rows=rows), "და Honda Accord 2017-ზე?",
+                      dialogue={"memory": result["memory"]}, search_service=switched)
+        context = context_of(switch.requests[0])
+        self.assertNotIn("rows", context)
+        self.assertNotIn("oil_grade", context["followup"])
+        self.assertEqual(switched.started[0][3]["model"], "Accord")
+        self.assertNotIn("engine_code", changed["memory"]["followup"]["vehicle"])
+
+    def test_engine_clarification_uses_selector_choices_and_remembers_the_tap(self):
+        source = Search(fluids=[{
+            "provider": "Shell", "status": "CONFLICTED",
+            "candidates": ["Camry 2.5 (2AR-FE)", "Camry 3.5 (2GR-FE)"],
+        }])
+        first = Script(says(use("oil_guide", car())),
+                       done(reply="ზეთის შერჩევა ძრავზეა დამოკიდებული.",
+                            question="რომელი ძრავია?", options=["პირველი", "მეორე"],
+                            outcome="asked"))
+        asked = run(service(first), "Toyota Camry 2015 ზეთი", search_service=source)
+        self.assertEqual(asked["quick_replies"],
+                         ["Camry 2.5 (2AR-FE)", "Camry 3.5 (2GR-FE)", "არ ვიცი"])
+        second = Script(says(use("oil_guide", car())), done())
+        chosen = Search()
+        run(service(second), "Camry 3.5 (2GR-FE)", search_service=chosen,
+            dialogue={"memory": asked["memory"], "choice": 2, "pending": asked["pending"]})
+        self.assertEqual(chosen.started[0][3]["trim"], "Camry 3.5 (2GR-FE)")
+
+    def test_oil_customer_gets_one_missing_detail_at_a_time(self):
+        memory = {}
+        for message, field in (
+                ("I need engine oil", "vehicle"),
+                ("Toyota Camry", "year"),
+                ("2015", "engine"),
+                ("Not sure", "spec"),
+                ("Not sure", None)):
+            script = Script(done(language="en", reply="Nothing found.", outcome="nothing_found"))
+            response = run(service(script), message, dialogue={"memory": memory})
+            memory = response["memory"]
+            self.assertEqual(memory["oil_question"], field)
+            self.assertEqual(response["outcome"], "asked" if field else "handoff")
+            self.assertEqual(response["cards"], [])
+            self.assertNotIn("Nothing found", response["answer"])
+        self.assertIn("shop", response["answer"])
+
+    def test_vin_without_engine_requests_engine_without_offering_a_guess(self):
+        script = Script(done(language="en", reply="This oil fits.",
+                             products=[product("r5", confidence="spec", evidence="5W-30")],
+                             outcome="offered"))
+        result = run(service(script), f"Which engine oil fits {VIN}?",
+                     dialogue={"memory": {"handles": {"r5": "p5"}}})
+        self.assertEqual(result["outcome"], "asked")
+        self.assertIn("engine", result["question"]["text"])
+        self.assertEqual(result["cards"], [])
+        self.assertNotIn(VIN, result["answer"])
+
+    def test_oil_asks_for_dpf_and_retries_verified_match_after_reply(self):
+        vehicle = {"make": "TOYOTA", "model": "Camry", "model_year": 2015, "engine_code": "2AR-FE"}
+        reviewed = {"authority": "manufacturer", "reuse_permission": "owned",
+                    "review_status": "approved", "reviewed_by": "test reviewer"}
+
+        class OilRepository(Repository):
+            def vehicle_specifications(self, configuration):
+                return [{**reviewed, "category": "engine_oil", "applicability": vehicle,
+                         "restrictions": {"dpf": True}, "approval": "TEST-OIL",
+                         "viscosity": "5W-30"}]
+
+            def oil_approval_products(self):
+                return [(self.get_product("p5"), [{**reviewed, "product_id": "p5",
+                         "approval": "TEST-OIL", "viscosity": "5W-30",
+                         "source_fingerprint": "f" * 16}])]
+
+        lookup = says(use("oil_guide", car()))
+        first = Script(lookup, done(language="en", reply="Nothing found.", outcome="nothing_found"))
+        asked = run(service(first, repository=OilRepository()),
+                    "Which oil for Toyota Camry 2015, engine code 2AR-FE?")
+        self.assertEqual(asked["memory"]["oil_question"], "dpf")
+        self.assertEqual(asked["quick_replies"], ["With DPF", "No DPF", "Not sure"])
+        self.assertEqual(asked["cards"], [])
+
+        second = Script(lookup, done(language="en", reply="This is the oil for your engine.",
+                                    products=[product("r1", confidence="confirmed",
+                                                      evidence="5W-30")], outcome="offered"))
+        answer = run(service(second, repository=OilRepository()), "With DPF",
+                     dialogue={"memory": asked["memory"], "choice": 1})
+        self.assertEqual(answer["cards"][0]["fitment_status"], "VERIFIED")
+        self.assertIsNone(answer["question"])
+
+    def test_conflicting_oil_grade_cannot_be_offered_as_either_grade(self):
+        rows = [*ROWS, row("65812", "20417255", "ზეთი BMW TWIN POWER TURBO 5W30 LL01 1L",
+                           "UNIVERSAL", "BMW", "0W20", store="12")]
+        offered = done(products=[product("r7", confidence="spec", evidence="5W30")],
+                       outcome="offered")
+        script = Script(offered, done(reply="შეფუთვა უნდა გადავამოწმოთ.", outcome="chat"))
+        result = run(service(script, rows=rows), "BMW 5W30 ზეთი",
+                     dialogue={"memory": {"handles": {"r7": "65812"}, "shown": ["65812"]}})
+        self.assertEqual(context_of(script.requests[0])["rows"]["oil_grade_conflicts"], ["r7"])
+        self.assertEqual(result["cards"], [])
+        self.assertIn("შეფუთვა უნდა გადავამოწმოთ", result["answer"])
+        self.assertEqual(result["diagnostics"]["removed"][0]["rule"], "oil_grade_conflict")
+
+    def test_shared_oil_approvals_never_make_an_equivalent(self):
+        rows = [*ROWS, row("p7", "77777777", "ძრავის ზეთი 5W-30 1L", "", "FUCHS",
+                           "5W30", "MB22951/ACEAC3")]
+        rows[4] = {**rows[4], "original_code": "5W30", "duplicate_code": "MB22951/ACEAC3"}
+        script = Script(says(use("equivalents", {"id": "r5"})), done())
+        run(service(script, rows=rows), "ალტერნატივა",
+            dialogue={"memory": {"handles": {"r5": "p5"}}})
+        content, error = tool_results(script.requests[1])[0]
+        self.assertFalse(error)
+        self.assertEqual(content["rows"], [])
+
+    def test_supplier_cross_reference_finds_stock_for_another_car_not_a_shop_code(self):
+        rows = [*ROWS, row("p7", "0446533450", FRONT, CAMRY, "OTHER", "OTHER123")]
+        rows[1] = {**rows[1], "product_model": "TOYOTA AVALON 2015",
+                   "duplicate_code": "04465-33450"}
+        source = Search(fluids=[{"provider": "brembo", "status": "PROVISIONAL", "items": [
+            {"kind": "brake", "component": "front brake pads", "oem_codes": ["04465-33450"]}]}])
+        source._external = {}
+        source._catalog = object()
+        script = Script(says(use("supplier_parts", {"part_group": "brake_pads", **car(
+            make="Toyota", model="Camry", year=2015)})), done())
+        run(service(script, rows=rows), "Camry 2015 ხუნდები", search_service=source)
+        content, error = tool_results(script.requests[1])[0]
+        self.assertFalse(error)
+        # The same OE cross number reaches the stocked row filed under the Avalon.
+        self.assertEqual([item[2] for item in content["rows"]], ["TOYOTA AVALON 2015"])
 
 
 class RequestTests(unittest.TestCase):
@@ -1590,9 +1815,9 @@ class ButtonTests(unittest.TestCase):
         self.assertEqual(context_of(third.requests[0])["your_suggestions"],
                          ["უკანა ხუნდები", "დისკები"])
         schema = tool_definitions()[-1]["input_schema"]["properties"]
-        self.assertEqual(list(schema), ["language", "car_label", "products", "question",
-                                        "options", "suggestions", "reply", "notes", "outcome",
-                                        "staff"])
+        self.assertEqual(list(schema), ["language", "car_label", "products", "oil_quote",
+                                        "question", "options", "suggestions", "reply", "notes",
+                                        "outcome", "staff"])
         self.assertEqual((schema["question"]["type"], schema["options"]["items"],
                           schema["suggestions"]["items"]),
                          ("string", {"type": "string"}, {"type": "string"}))
@@ -2275,6 +2500,24 @@ class FailureTests(unittest.TestCase):
                          "stock figures last checked 40 hours ago; they may have changed "
                          "since, so availability needs the shop's confirmation")
 
+    def test_a_customer_turn_after_hours_tells_the_model_the_shop_is_closed(self):
+        public = {"memory": {"language": "en"}, "audience": "public"}
+        with patch("automotive.shop_hours.is_open", return_value=False):
+            script = Script(done())
+            run(service(script), "brake pads", dialogue=public)
+            self.assertIs(context_of(script.requests[0])["shop_closed"], True)
+            script = Script(done())  # a shop employee at the counter is never told
+            run(service(script), "brake pads")
+            self.assertNotIn("shop_closed", context_of(script.requests[0]))
+        with patch("automotive.shop_hours.is_open", return_value=True):
+            script = Script(done())  # open: the turn carries nothing new
+            run(service(script), "brake pads", dialogue=public)
+            self.assertNotIn("shop_closed", context_of(script.requests[0]))
+
+    def test_the_prompt_says_what_to_tell_a_customer_after_hours(self):
+        self.assertIn("When shop_closed is true", assistant_prompt.SYSTEM_PROMPT)
+        self.assertIn("during working hours", assistant_prompt.SYSTEM_PROMPT)
+
     def test_a_card_without_a_database_ages_with_the_snapshot(self):
         class Down(Repository):
             def get_product(self, product_id):
@@ -2319,6 +2562,18 @@ class StoreTests(unittest.TestCase):
                 return submitted, result
             time.sleep(0.005)
         self.fail("The stored assistant turn did not finish")
+
+    def test_switching_to_typing_another_car_clears_vin_for_later_turns(self):
+        _, first = self.turn(f"Pads for {VIN}", done(language="en", reply="I can help."))
+        self.assertEqual(first["engine_status"], "OK")
+        _, second = self.turn("For Honda Accord 2017", done(language="en", reply="Got it."))
+        self.assertEqual(second["engine_status"], "OK")
+        self.assertNotIn("vin", context_of(self.script.requests[-1]))
+        _, third = self.turn("And a filter?", done(language="en", reply="I can help."))
+        self.assertEqual(third["engine_status"], "OK")
+        context = context_of(self.script.requests[-1])
+        self.assertNotIn("vin", context)
+        self.assertEqual(context["followup"]["vehicle"]["model"], "Accord")
 
     def test_memory_choice_and_the_pending_question_go_round_through_the_store(self):
         self.assertTrue(self.store.ai_led)

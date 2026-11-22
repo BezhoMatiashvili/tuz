@@ -129,9 +129,11 @@ class ComposingTests(unittest.TestCase):
 
     def test_one_message_with_three_part_lines_and_never_more_than_messenger_takes(self):
         public = view(cards=5, total=8)
+        public["cards"][0]["sap_code"] = "000123"
         message = reply_message(public, "ka")
         lines = [card_line(card, "ka") for card in public["cards"][:3]]
         self.assertTrue(message.startswith(public["answer"]))
+        self.assertIn("SAP კოდი: 000123", message)
         for line in lines:
             self.assertIn(line, message)
         self.assertNotIn(card_line(public["cards"][3], "ka"), message)

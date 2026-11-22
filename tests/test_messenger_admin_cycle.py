@@ -415,7 +415,8 @@ class AdminSwitchCycleTests(FacebookCase):
             "SELECT actor_username, action, target, detail, host(client_ip) AS client_ip "
             "FROM garage.audit_log WHERE action IN ('messenger.bot_on', 'messenger.bot_off')"),
             [{"actor_username": "boss", "action": "messenger.bot_on", "target": "settings",
-              "detail": {"changed": True, "was_paused": False, "auto_reply_confirmed_off": True},
+              "detail": {"changed": True, "from": "off", "was_paused": False,
+                         "auto_reply_confirmed_off": True},
               "client_ip": "127.0.0.1"}])
         mark, turns = self.mark(), len(self.engine.calls)
         b = await self.say("Prius 2012-ის ზეთის ფილტრი გაქვთ?", after=enabled_at)

@@ -34,6 +34,8 @@ from automotive.meta_store import (
     InvalidFields,
     MetaConflict,
     MetaStore,
+    NotTester,
+    bot_mode,
     mask_psid,
 )
 from automotive.site_meta_admin import JOBS, PREFIX
@@ -55,6 +57,7 @@ SETTINGS = MetaSettings(app_id=APP_ID, app_secret="s" * 32, verify_token="v" * 4
                         token_key=bytes(range(32)), public_url="https://garage.example.test")
 DEFAULTS = {
     "settings_id": 1, "bot_enabled": False, "bot_enabled_at": None, "bot_changed_at": None,
+    "bot_test_mode": False, "bot_test_at": None,
     "bot_changed_by": "", "bot_paused_reason": "", "bot_paused_at": None,
     "auto_reply_confirmed_off": False, "comments_enabled": False, "comments_enabled_at": None,
     "comments_changed_at": None, "comments_changed_by": "", "max_reply_age_minutes": 1440,
@@ -138,22 +141,41 @@ class FakeMetaStore:
 
     def set_bot(self, enabled, actor, auto_reply_confirmed=None, *, client_ip=None) -> dict:
         self._call("set_bot")
-        confirmed = (self.row["auto_reply_confirmed_off"] if auto_reply_confirmed is None
-                     else bool(auto_reply_confirmed))
-        if enabled and not confirmed:
+        return self._set_mode("on" if enabled else "off", actor, auto_reply_confirmed, client_ip)
+
+    def set_bot_mode(self, mode, actor, auto_reply_confirmed=None, *, client_ip=None) -> dict:
+        self._call("set_bot_mode")
+        return self._set_mode(mode, actor, auto_reply_confirmed, client_ip)
+
+    def _set_mode(self, mode, actor, auto_reply_confirmed, client_ip) -> dict:
+        if mode not in ("off", "test", "on"):
+            raise ValueError("mode")
+        confirmed = (bool(auto_reply_confirmed) if auto_reply_confirmed is not None
+                     else mode != "test" and self.row["auto_reply_confirmed_off"])
+        if mode == "on" and not confirmed:
             raise AutoReplyNotConfirmed("confirm first")
-        was_on, was_paused = self.row["bot_enabled"], bool(self.row["bot_paused_reason"])
+        was, was_paused = bot_mode(self.row), bool(self.row["bot_paused_reason"])
         now = datetime.now(UTC)
-        if enabled and not was_on:
+        if mode == "on" and was != "on":
             self.row["bot_enabled_at"] = now
-        self.row.update(bot_enabled=bool(enabled), bot_changed_at=now,
-                        bot_changed_by=_name(actor), bot_paused_reason="", bot_paused_at=None,
-                        auto_reply_confirmed_off=confirmed)
+        if mode != "off" and was == "off":
+            self.row["bot_test_at"] = now
+        self.row.update(bot_enabled=mode == "on", bot_test_mode=mode == "test",
+                        bot_changed_at=now, bot_changed_by=_name(actor), bot_paused_reason="",
+                        bot_paused_at=None, auto_reply_confirmed_off=confirmed)
         self._bump()
-        self._record(actor, "messenger.bot_on" if enabled else "messenger.bot_off", "settings",
-                     {"changed": bool(enabled) != was_on, "was_paused": was_paused,
+        self._record(actor, f"messenger.bot_{mode}", "settings",
+                     {"changed": mode != was, "from": was, "was_paused": was_paused,
                       "auto_reply_confirmed_off": confirmed}, client_ip)
         return dict(self.row)
+
+    def testers(self, limit=200) -> list[dict]:
+        self._call("testers")
+        rows = sorted((row for row in self.threads.values() if row.get("bot_tester")),
+                      key=lambda row: (row["customer_name"].lower(), row["psid"]))
+        return [{key: row[key] for key in ("psid", "customer_name", "version",
+                                            "last_customer_at", "bot_enabled")}
+                for row in rows][:limit]
 
     def resume_bot(self, actor, *, client_ip=None) -> dict:
         self._call("resume_bot")
@@ -274,10 +296,11 @@ class FakeMetaStore:
                    **fields) -> dict:
         """Test helper: a chat as the worker would have stored it."""
         row = {"psid": psid, "page_id": PAGE_ID, "customer_name": name, "conversation_id": "",
-               "bot_enabled": True, "is_admin": False, "source": "", "source_ad_id": "",
-               "first_seen_at": ago(days=3), "last_customer_at": last, "last_shop_at": None,
-               "last_bot_at": None, "needs_attention": False, "attention_reason": "",
-               "engine_state_at": None, "updated_at": ago(days=1), "version": 1, **fields}
+               "bot_enabled": True, "is_admin": False, "bot_tester": False, "source": "",
+               "source_ad_id": "", "first_seen_at": ago(days=3), "last_customer_at": last,
+               "last_shop_at": None, "last_bot_at": None, "needs_attention": False,
+               "attention_reason": "", "engine_state_at": None, "context_cleared_at": None,
+               "updated_at": ago(days=1), "version": 1, **fields}
         self.threads[psid] = row
         self.chat.setdefault(psid, [])
         return row
@@ -293,7 +316,8 @@ class FakeMetaStore:
         self._call("list_threads")
         keep = {"all": lambda row: True, "attention": lambda row: row["needs_attention"],
                 "off": lambda row: not row["bot_enabled"], "admin": lambda row: row["is_admin"],
-                "ads": lambda row: row["source"] == "ads"}[filter]
+                "ads": lambda row: row["source"] == "ads",
+                "tester": lambda row: row["bot_tester"]}[filter]
         rows = sorted((row for row in self.threads.values() if keep(row)),
                       key=lambda row: row["last_customer_at"] or row["first_seen_at"],
                       reverse=True)
@@ -340,6 +364,29 @@ class FakeMetaStore:
         return self._switch("is_admin", psid, is_admin, actor,
                             "messenger.chat_admin_on" if is_admin else "messenger.chat_admin_off",
                             expected_version, client_ip)
+
+    def set_tester(self, psid, tester, actor, *, expected_version=None,
+                   client_ip=None) -> dict | None:
+        self._call("set_tester")
+        return self._switch("bot_tester", psid, tester, actor,
+                            "messenger.chat_tester_on" if tester
+                            else "messenger.chat_tester_off", expected_version, client_ip)
+
+    def clear_context(self, psid, actor, *, expected_version=None,
+                      client_ip=None) -> dict | None:
+        self._call("clear_context")
+        row = self.threads.get(psid)
+        if row is None:
+            return None
+        if not row["bot_tester"]:
+            raise NotTester("thread")
+        if expected_version is not None and expected_version != row["version"]:
+            raise MetaConflict("thread")
+        row["context_cleared_at"] = datetime.now(UTC)
+        row["version"] += 1
+        self._record(actor, "messenger.chat_context_cleared", mask_psid(psid),
+                     {"version": row["version"]}, client_ip)
+        return dict(row)
 
     def flag_attention(self, psid, reason, *, needs=True, actor=None, client_ip=None) -> bool:
         self._call("flag_attention")
@@ -507,6 +554,7 @@ class FacebookCase(AdminCase):
             ("GET", f"/threads/{PSID}", None),
             ("PUT", f"/threads/{PSID}", {"bot_enabled": False}),
             ("DELETE", f"/threads/{PSID}", {"confirm": True}),
+            ("POST", f"/threads/{PSID}/clear-context", {"confirm": True}),
         ]
 
 
@@ -633,7 +681,7 @@ class SwitchTests(FacebookCase):
         body = response.json()
         self.assertEqual(set(body), {"configured", "connected", "switches", "page", "tokens",
                                      "last_event", "events", "today", "runs", "jobs",
-                                     "required_scopes", "warnings", "checked_at"})
+                                     "required_scopes", "warnings", "checked_at", "testers"})
         self.assertIs(body["connected"], True)
         switches = body["switches"]
         self.assertEqual((switches["bot_state"], switches["version"],
@@ -697,7 +745,8 @@ class SwitchTests(FacebookCase):
         self.assertLess(datetime.now(UTC) - stamped, timedelta(minutes=1))
         self.assertEqual(self.store.audits, [{
             "actor": "boss", "action": "messenger.bot_on", "target": "settings",
-            "detail": {"changed": True, "was_paused": False, "auto_reply_confirmed_off": True},
+            "detail": {"changed": True, "from": "off", "was_paused": False,
+                       "auto_reply_confirmed_off": True},
             "client_ip": "127.0.0.1"}])
         # Already on: nothing is written, so enabled_at stays put and nothing is audited.
         response = await self.put_settings(bot_enabled=True)
@@ -965,6 +1014,130 @@ class ConnectionTests(FacebookCase):
         except ImportError as error:  # the worker is another module's; its absence is not ours
             self.skipTest(f"messenger_worker is not importable: {type(error).__name__}")
         self.assertEqual(JOBS, JOB_NAMES)
+
+
+class TestModeRouteTests(ConnectionTests):
+    """The main switch's test mode and the per-chat tester flag."""
+
+    async def put_settings(self, **fields):
+        return await self.fb("PUT", "/settings", {"version": self.store.row["version"],
+                                                  **fields})
+
+    async def test_test_mode_starts_without_the_auto_reply_tick_and_lists_the_testers(self):
+        self.store.add_thread(PSID, name="Giorgi", last=ago(minutes=5), bot_tester=True)
+        self.store.add_thread(OTHER_PSID, name="Nino", last=ago(minutes=3))
+        response = await self.put_settings(bot_mode="test")
+        self.assertEqual(response.status_code, 200, response.text)
+        switches = response.json()["switches"]
+        self.assertEqual((switches["bot_mode"], switches["bot_state"], switches["bot_enabled"],
+                          switches["bot_test_mode"]), ("test", "test", False, True))
+        self.assertIsNotNone(switches["bot_test_at"])
+        self.assertIsNone(switches["bot_enabled_at"])
+        self.assertEqual(self.store.actions(), ["messenger.bot_test"])
+        body = (await self.fb("GET", "/status")).json()
+        self.assertEqual([(row["psid"], row["customer_name"]) for row in body["testers"]],
+                         [(PSID, "Giorgi")])
+        codes = [warning["code"] for warning in body["warnings"]]
+        self.assertNotIn("test_no_testers", codes)
+        self.assertIn("auto_reply_not_confirmed", codes)
+        # Everyone still needs the tick; a refused body changes nothing.
+        self.assert_refused(await self.put_settings(bot_mode="on"), 409,
+                            "AUTO_REPLY_NOT_CONFIRMED")
+        self.assertEqual(bot_mode(self.store.row), "test")
+        response = await self.put_settings(bot_mode="on", auto_reply_confirmed_off=True)
+        self.assertEqual(response.status_code, 200, response.text)
+        switches = response.json()["switches"]
+        self.assertEqual((switches["bot_mode"], switches["bot_test_mode"]), ("on", False))
+        self.assertIsNotNone(switches["bot_enabled_at"])
+        # Back to testers only: nothing needs confirming, and the testers' start is kept.
+        test_at = switches["bot_test_at"]
+        response = await self.put_settings(bot_mode="test")
+        self.assertEqual(response.json()["switches"]["bot_test_at"], test_at)
+        # Test mode runs with Auto reply on: the tick is asked again before everyone.
+        self.assertIs(response.json()["switches"]["auto_reply_confirmed_off"], False)
+        self.assertEqual(self.store.actions(), ["messenger.bot_test", "messenger.bot_on",
+                                                "messenger.bot_test"])
+
+    async def test_off_from_a_stale_page_ends_test_mode_too(self):
+        for stop in ({"bot_enabled": False}, {"bot_mode": "off"}):
+            with self.subTest(stop=stop):
+                await self.put_settings(bot_mode="test")
+                self.store.row["version"] += 5  # changed meanwhile
+                response = await self.fb("PUT", "/settings", {"version": 1, **stop})
+                self.assertEqual(response.status_code, 200, response.text)
+                switches = response.json()["switches"]
+                self.assertEqual((switches["bot_state"], switches["bot_test_mode"]),
+                                 ("off", False))
+        # Anything else from a stale page is refused, test mode included.
+        self.assert_refused(await self.fb("PUT", "/settings", {"version": 1, "bot_mode": "test"}),
+                            409, "VERSION_CONFLICT")
+
+    async def test_the_mode_is_said_one_way_with_a_known_value(self):
+        for fields, codes in (({"bot_mode": "test", "bot_enabled": True}, {"bot_mode": "INVALID"}),
+                              ({"bot_mode": "everyone"}, {"bot_mode": "INVALID"}),
+                              ({"bot_mode": 1}, {"bot_mode": "INVALID"})):
+            with self.subTest(fields=fields):
+                response = await self.put_settings(**fields)
+                self.assertEqual((response.status_code, response.json()), (422, {"detail": {
+                    "code": "INVALID_FIELDS", "fields": codes}}))
+        self.assertEqual((bot_mode(self.store.row), self.store.audits), ("off", []))
+
+    async def test_test_mode_with_no_tester_warns_that_the_bot_answers_nobody(self):
+        await self.put_settings(bot_mode="test")
+        body = (await self.fb("GET", "/status")).json()
+        self.assertEqual(body["testers"], [])
+        self.assertEqual(body["warnings"][0]["code"], "test_no_testers")
+
+    async def test_a_chat_is_marked_as_a_tester_audited_and_filtered(self):
+        row = self.store.add_thread(PSID, name="Giorgi", last=ago(minutes=5))
+        self.store.add_thread(OTHER_PSID, last=ago(minutes=3))
+        response = await self.fb("PUT", f"/threads/{PSID}",
+                                 {"bot_tester": True, "version": row["version"]})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIs(response.json()["thread"]["bot_tester"], True)
+        self.assertEqual(self.store.actions(), ["messenger.chat_tester_on"])
+        body = (await self.fb("GET", "/threads", params={"filter": "tester"})).json()
+        self.assertEqual([item["psid"] for item in body["threads"]], [PSID])
+        self.assert_refused(await self.fb("PUT", f"/threads/{PSID}",
+                                          {"bot_tester": False, "version": 1}),
+                            409, "VERSION_CONFLICT")
+        response = await self.fb("PUT", f"/threads/{PSID}", {"bot_tester": False})
+        self.assertIs(response.json()["thread"]["bot_tester"], False)
+        self.assertEqual(self.store.actions()[-1], "messenger.chat_tester_off")
+
+    async def test_a_testers_bot_memory_is_cleared_with_a_confirmation_and_audited(self):
+        row = self.store.add_thread(PSID, name="Giorgi", last=ago(minutes=5), bot_tester=True)
+        self.store.add_thread(OTHER_PSID, last=ago(minutes=3))
+        path = f"/threads/{PSID}/clear-context"
+        self.assertIsNone((await self.fb("GET", f"/threads/{PSID}")).json()["thread"][
+            "context_cleared_at"])
+        for body in (None, {}, {"confirm": False}, {"confirm": "yes"}):
+            self.assertEqual((await self.fb("POST", path, body)).status_code, 422, body)
+        self.assert_refused(await self.fb("POST", path, {"confirm": True, "version": 9}),
+                            409, "VERSION_CONFLICT")
+        # Only a tester's chat: a customer's memory is never cleared from here.
+        self.assert_refused(await self.fb("POST", f"/threads/{OTHER_PSID}/clear-context",
+                                          {"confirm": True}), 409, "NOT_TESTER")
+        self.assert_refused(await self.fb("POST", "/threads/7000000000009999/clear-context",
+                                          {"confirm": True}), 404, "NOT_FOUND")
+        self.assertEqual(self.store.actions(), [])
+        response = await self.fb("POST", path, {"confirm": True, "version": row["version"]})
+        self.assertEqual(response.status_code, 200, response.text)
+        thread = response.json()["thread"]
+        self.assertEqual(thread["version"], 2)
+        self.assertIsNotNone(thread["context_cleared_at"])
+        self.assertEqual(self.store.actions(), ["messenger.chat_context_cleared"])
+        # The chat page reads the stamp to draw the line the bot reads nothing above.
+        self.assertEqual((await self.fb("GET", f"/threads/{PSID}")).json()["thread"][
+            "context_cleared_at"], thread["context_cleared_at"])
+
+    async def test_disconnect_ends_test_mode_first(self):
+        await self.connect_page()
+        await self.put_settings(bot_mode="test")
+        response = await self.fb("POST", "/disconnect", {"confirm": True})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["switches"]["bot_state"], "off")
+        self.assertIs(self.store.row["bot_test_mode"], False)
 
 
 class ChatTests(FacebookCase):

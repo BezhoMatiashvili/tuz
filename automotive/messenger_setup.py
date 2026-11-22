@@ -45,7 +45,7 @@ from automotive.meta_connect import ConnectError, connect, discover_ads, probe
 from automotive.meta_context import MetaContext, NotConnected, build_context
 from automotive.meta_crypto import TokenCipherError, new_key_hex
 from automotive.meta_graph import GraphError
-from automotive.meta_store import bot_state
+from automotive.meta_store import bot_mode, bot_state
 from warehouse_sync.migrations import MIGRATIONS_DIRECTORY
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -185,7 +185,11 @@ def status_lines(ctx: MetaContext) -> list[str]:
                      f"{_time(row['data_access_expires_at'], 'unknown')}{detail}")
     settings = store.settings()
     state = bot_state(settings)
-    since = (f" since {_time(settings['bot_enabled_at'])}" if state != "off" else "")
+    mode = bot_mode(settings)
+    since = (f" since {_time(settings.get('bot_test_at'))}" if mode == "test"
+             else f" since {_time(settings['bot_enabled_at'])}" if mode == "on" else "")
+    if mode == "test":
+        since += f" (testers only: {len(store.testers())})"
     lines.append(f"Messenger bot: {state.upper()}{since}; Meta auto reply confirmed off: "
                  f"{'yes' if settings['auto_reply_confirmed_off'] else 'no'}")
     lines.append(f"Comment replies: {'ON' if settings['comments_enabled'] else 'OFF'}")

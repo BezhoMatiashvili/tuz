@@ -26,6 +26,9 @@ export const fbApi = {
   saveThread: (psid, fields) => request('PUT', `${BASE}/threads/${id(psid)}`, { body: fields }),
   deleteThread: (psid) => request('DELETE', `${BASE}/threads/${id(psid)}`,
     { body: { confirm: true } }),
+  // A tester's chat only: the bot forgets it and reads nothing written before.
+  clearContext: (psid, version) => request('POST', `${BASE}/threads/${id(psid)}/clear-context`,
+    { body: { confirm: true, version } }),
 };
 
 // The section's own error codes; everything else is described by api.js.
@@ -35,6 +38,7 @@ const CODES = {
   NOT_CONNECTED: 'fb.err.not_connected',
   TOKEN_UNREADABLE: 'fb.err.token_unreadable',
   CONFIRM_REQUIRED: 'fb.err.confirm',
+  NOT_TESTER: 'fb.err.not_tester',
   SUBSCRIBE_FAILED: 'fb.err.subscribe_failed',
   CONNECT_FAILED: 'fb.err.connect_failed',
   TOKEN_INVALID: 'fb.err.token_invalid',

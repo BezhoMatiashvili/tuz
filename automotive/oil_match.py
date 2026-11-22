@@ -22,7 +22,10 @@ from automotive.stock import RANKS, classify
 
 BRANDS = {'shell': 'SHELL', 'pakelo': 'PAKELO', 'fuchs': 'FUCHS'}
 GRADE = re.compile(r'\b(\d{1,2})W[- ]?(\d{2})\b', re.IGNORECASE)
-PACK = re.compile(r'(?<![\d.,])(\d+(?:[.,]\d+)?)\s*(?:L|LT|ლ)(?![A-Za-z])', re.IGNORECASE)
+PACK = re.compile(
+    r'(?<![\w.,])(?:\d+\s*[x×]\s*)?(\d+(?:[.,]\d+)?)\s*'
+    r'(?:lit(?:res?|ers?)|ltr|lt|l|ლიტრ[ა-ჰ]*|ლ)(?!\w)', re.IGNORECASE,
+)
 DIESEL = re.compile(r'(^|\W)diesel(\W|$)|დიზელ', re.IGNORECASE)
 PETROL = re.compile(r'(^|\W)(petrol|gasoline|benzin)(\W|$)|ბენზინ', re.IGNORECASE)
 TIER2_LIMIT = 15
@@ -62,8 +65,11 @@ def product_line(name: str) -> list[str]:
 
 
 def pack_litres(name: str) -> float | None:
-    found = PACK.search(name or '')
-    return float(found.group(1).replace(',', '.')) if found else None
+    volumes = {float(value.replace(',', '.')) for value in PACK.findall(name or '')}
+    if len(volumes) != 1:
+        return None
+    litres = volumes.pop()
+    return litres if 0 < litres < float('inf') else None
 
 
 def requirements(fluids: list[dict]) -> dict:

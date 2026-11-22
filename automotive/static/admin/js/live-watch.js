@@ -10,7 +10,11 @@
 // A new alarm gets a sound, an alarm toast with a link to the chat, and a screen-reader
 // announcement; a phone number arriving gets a softer sound; so does a customer who starts
 // waiting or writes again while waiting; a reminder ping repeats every minute while anything
-// needs a person (an open alarm, a waiting or a stuck chat). A poll that hangs for 10 seconds
+// needs a person (an open alarm, a waiting or a stuck chat). A part the bot could not find and
+// a chat it hands to staff sound a loud siren that repeats every 15 seconds while the shop is
+// open (10:00-19:00, the server's clock), until someone opens that chat on the Live page or
+// marks the alarm done. A part not found outside those hours is saved quiet: shown, never heard
+// (the server marks it). A poll that hangs for 10 seconds
 // counts as offline, and an ended session is shown instead of silencing the alarms (app.js
 // shows both on every page). The sound is WebAudio (no audio files, nothing for the CSP to
 // allow); a browser lets it play only after the person has used the page, and until then
@@ -19,14 +23,21 @@
 import { ApiError, isAbort, leaveForSignIn, request } from './api.js';
 import { h, icon, statusIcon } from './dom.js';
 import {
-  alarmEvents, badgeCount, needsAlerts, newestFirst, nextDelay, openTotal, soundFor, toneOf,
+  alarmEvents, alertsOfChat, badgeCount, isOpenNow, isQuiet, needsAlerts, newestFirst, nextDelay,
+  openTotal, patternOf, reminderCount, sirenAlerts, soundFor, toneOf,
 } from './live-model.js';
 import { t } from './strings.js';
 import { announce } from './ui.js';
 
 const BASE = '/api/admin/live';
 const SOUND_KEY = 'garage.staff.alarm_sound';
+// The alarms someone opened on the Live page, kept in this browser (every tab of it, and after a
+// reload) so the siren does not start again for them. Another computer does not know: there
+// only Done stops it.
+const SEEN_KEY = 'garage.staff.alarm_seen';
+const SEEN_MAX = 200;
 const REMINDER_MS = 60000;
+const SIREN_MS = 15000; // the siren repeats this often while an alarm waits for a person
 // A poll that has not answered in this long counts as a failure (the page says it is offline)
 // instead of showing "live" forever on a hung connection.
 const PULSE_TIMEOUT_MS = 10000;
@@ -34,15 +45,26 @@ const SIGNED_OUT_RETRY_MS = 30000; // signed out but kept on the page (unsaved c
 const TOAST_MS = { critical: 20000, warning: 14000 };
 const SETUP_CODES = { LIVE_NOT_SET_UP: 'not_set_up', LIVE_NOT_CONFIGURED: 'not_configured' };
 
-// Each pattern: tones as [frequency Hz, start s, length s], a gain, and a wave.
+// Each pattern: a wave, a gain, and either tones [frequency Hz, start s, length s] or one
+// sweep, a siren: [from Hz, to Hz, length s] steps played back to back by one oscillator.
+// `detune` adds a second oscillator that many cents off, whose beating makes it harsh. All of it
+// goes through one compressor, so the loud patterns are as loud as the speakers allow without
+// clipping; nothing can be louder than the computer's own volume.
+const wail = (low, high, step, times) => Array.from({ length: times * 2 },
+  (_, index) => (index % 2 ? [high, low, step] : [low, high, step]));
+const SIREN = { gain: 0.85, wave: 'sawtooth', detune: 40, sweep: wail(620, 1500, 0.32, 4) };
 const PATTERNS = {
-  not_found: { gain: 0.24, wave: 'sine', tones: [[880, 0, 0.2], [587, 0.24, 0.32]] },
-  visit: { gain: 0.22, wave: 'sine', tones: [[523, 0, 0.15], [659, 0.18, 0.15], [784, 0.36, 0.28]] },
-  staff: { gain: 0.26, wave: 'triangle', tones: [[740, 0, 0.13], [740, 0.2, 0.13]] },
-  phone: { gain: 0.14, wave: 'sine', tones: [[988, 0, 0.16]] },
-  waiting: { gain: 0.15, wave: 'sine', tones: [[660, 0, 0.11], [660, 0.15, 0.11]] },
-  reminder: { gain: 0.1, wave: 'sine', tones: [[698, 0, 0.13]] },
-  test: { gain: 0.22, wave: 'sine', tones: [[523, 0, 0.15], [659, 0.18, 0.15], [784, 0.36, 0.28]] },
+  not_found: SIREN,
+  staff: { gain: 0.85, wave: 'square', detune: 30,
+    tones: [[960, 0, 0.22], [720, 0.25, 0.22], [960, 0.5, 0.22], [720, 0.75, 0.22],
+      [960, 1, 0.22], [720, 1.25, 0.22], [960, 1.5, 0.22], [720, 1.75, 0.3]] },
+  visit: { gain: 0.6, wave: 'square',
+    tones: [[523, 0, 0.15], [659, 0.18, 0.15], [784, 0.36, 0.28],
+      [523, 0.8, 0.15], [659, 0.98, 0.15], [784, 1.16, 0.36]] },
+  phone: { gain: 0.4, wave: 'triangle', tones: [[988, 0, 0.16], [1319, 0.2, 0.22]] },
+  waiting: { gain: 0.35, wave: 'triangle', tones: [[660, 0, 0.12], [660, 0.16, 0.12]] },
+  reminder: { gain: 0.25, wave: 'triangle', tones: [[698, 0, 0.14]] },
+  test: SIREN,
 };
 
 const state = {
@@ -60,6 +82,8 @@ const state = {
   updatedAt: null,
   soundOn: true,
   soundLocked: true,
+  viewing: '', // the chat open on the Live page: its alarms count as seen
+  acked: new Set(), // alarm ids someone has seen on the Live page: the siren leaves them be
 };
 const listeners = new Set();
 let timer = null;
@@ -68,6 +92,8 @@ let controller = null;
 let ticking = false;
 let again = false;
 let audio = null;
+let output = null; // the compressor every sound goes through
+let ticks = 0;
 
 // -- sound -------------------------------------------------------------------------------------
 
@@ -76,6 +102,30 @@ function readSound() {
     return window.localStorage.getItem(SOUND_KEY) !== 'off';
   } catch {
     return true; // Storage can be blocked: the sound stays on for this visit.
+  }
+}
+
+function readAcked() {
+  try {
+    const kept = JSON.parse(window.localStorage.getItem(SEEN_KEY) || '[]');
+    return new Set(Array.isArray(kept) ? kept.filter(Number.isInteger).slice(-SEEN_MAX) : []);
+  } catch {
+    return new Set(); // Storage blocked or garbled: this visit starts with nothing seen.
+  }
+}
+
+function writeAcked() {
+  try {
+    window.localStorage.setItem(SEEN_KEY, JSON.stringify([...state.acked].slice(-SEEN_MAX)));
+  } catch {
+    // Not remembered, but applied for this visit.
+  }
+}
+
+/** Another tab of this browser saw an alarm: this one stops calling for it too. */
+function onStorage(event) {
+  if (event.key === SEEN_KEY) {
+    state.acked = readAcked();
   }
 }
 
@@ -121,8 +171,16 @@ function context() {
   try {
     audio = new Context();
     audio.addEventListener('statechange', syncLocked);
+    output = audio.createDynamicsCompressor();
+    output.threshold.value = -8;
+    output.knee.value = 4;
+    output.ratio.value = 16;
+    output.attack.value = 0.002;
+    output.release.value = 0.2;
+    output.connect(audio.destination);
   } catch {
     audio = null;
+    output = null;
   }
   return audio;
 }
@@ -146,18 +204,42 @@ function unlock() {
   syncLocked();
 }
 
-function tone(ctx, start, frequency, length, gain, wave) {
-  const oscillator = ctx.createOscillator();
+function voice(ctx, start, end, gain, wave, detune, shape) {
   const envelope = ctx.createGain();
-  oscillator.type = wave;
-  oscillator.frequency.value = frequency;
   envelope.gain.setValueAtTime(0.0001, start);
-  envelope.gain.exponentialRampToValueAtTime(gain, start + 0.02);
-  envelope.gain.exponentialRampToValueAtTime(0.0001, start + length);
-  oscillator.connect(envelope);
-  envelope.connect(ctx.destination);
-  oscillator.start(start);
-  oscillator.stop(start + length + 0.05);
+  envelope.gain.exponentialRampToValueAtTime(gain, start + 0.015);
+  envelope.gain.setValueAtTime(gain, Math.max(start + 0.015, end - 0.03));
+  envelope.gain.exponentialRampToValueAtTime(0.0001, end);
+  envelope.connect(output || ctx.destination);
+  for (const cents of detune ? [0, detune] : [0]) {
+    const oscillator = ctx.createOscillator();
+    oscillator.type = wave;
+    oscillator.detune.value = cents;
+    shape(oscillator.frequency);
+    oscillator.connect(envelope);
+    oscillator.start(start);
+    oscillator.stop(end + 0.05);
+  }
+}
+
+function sound(ctx, pattern, origin) {
+  const { gain, wave, detune = 0 } = pattern;
+  if (pattern.sweep) {
+    const length = pattern.sweep.reduce((sum, step) => sum + step[2], 0);
+    voice(ctx, origin, origin + length, gain, wave, detune, (frequency) => {
+      let at = origin;
+      frequency.setValueAtTime(pattern.sweep[0][0], at);
+      for (const [, to, step] of pattern.sweep) {
+        at += step;
+        frequency.linearRampToValueAtTime(to, at);
+      }
+    });
+    return;
+  }
+  for (const [hz, start, length] of pattern.tones) {
+    voice(ctx, origin + start, origin + start + length, gain, wave, detune,
+      (frequency) => frequency.setValueAtTime(hz, origin + start));
+  }
 }
 
 /** 'played', 'off' (muted) or 'blocked' (the browser has not allowed sound yet). */
@@ -178,11 +260,7 @@ function play(name) {
     syncLocked();
     return 'blocked';
   }
-  const pattern = PATTERNS[name] || PATTERNS.not_found;
-  const origin = ctx.currentTime + 0.02;
-  for (const [frequency, start, length] of pattern.tones) {
-    tone(ctx, origin + start, frequency, length, pattern.gain, pattern.wave);
-  }
+  sound(ctx, PATTERNS[name] || PATTERNS.not_found, ctx.currentTime + 0.02);
   return 'played';
 }
 
@@ -264,11 +342,66 @@ function describe(event) {
   };
 }
 
+/** The alarms of the chat open on the Live page count as seen while the tab is in view. */
+function ackViewing() {
+  if (state.viewing && visible()) {
+    let added = false;
+    for (const alert of alertsOfChat(state.alerts, state.viewing)) {
+      if (!state.acked.has(alert.alert_id)) {
+        state.acked.add(alert.alert_id);
+        added = true;
+      }
+    }
+    if (added) {
+      writeAcked();
+    }
+  }
+}
+
+/** Seen marks kept only for open alarms; a loud change to one (new, the customer again, a phone
+ * number) makes the siren call for it again. */
+function reack(events) {
+  const open = new Set((state.alerts || []).map((alert) => alert.alert_id));
+  const before = state.acked.size;
+  for (const id of [...state.acked]) {
+    if (!open.has(id)) {
+      state.acked.delete(id);
+    }
+  }
+  // ('first', the page opening, names no single alarm: what was seen before stays seen.)
+  for (const event of events) {
+    if (event.alert && !isQuiet(event.alert)) {
+      state.acked.delete(event.alert.alert_id);
+    }
+  }
+  if (state.acked.size !== before) {
+    writeAcked();
+  }
+  ackViewing();
+}
+
+/** Every 15 seconds: the siren while an alarm still waits for a person during the staff's
+ * hours, otherwise a soft ping once a minute while anything else needs one. */
+function remind() {
+  ticks += 1;
+  const loud = sirenAlerts(state.alerts, { acked: state.acked, openNow: isOpenNow(state.pulse) });
+  if (loud.length) {
+    play(patternOf(loud[0].kind));
+    return;
+  }
+  if (ticks % (REMINDER_MS / SIREN_MS) === 0 && reminderCount(state.pulse, state.alerts) > 0) {
+    play('reminder');
+  }
+}
+
 function react(events) {
   if (!events.length) {
     return;
   }
-  const name = soundFor(events);
+  // Opening a page sounds only for the alarms nobody in this browser has seen yet.
+  const name = soundFor(events.map((event) => (event.type === 'first'
+    ? { ...event, alerts: event.alerts.filter((alert) => !state.acked.has(alert.alert_id)) }
+    : event)));
   if (name) {
     play(name);
   }
@@ -341,6 +474,7 @@ async function accept(pulse, detailed, signal) {
   state.signedOut = false;
   state.reason = '';
   state.updatedAt = new Date();
+  reack(events);
   react(events);
   emit(extra);
 }
@@ -429,6 +563,7 @@ async function tick() {
 
 function onVisibility() {
   if (state.running && visible()) {
+    ackViewing();
     schedule(0);
   }
 }
@@ -447,15 +582,14 @@ export function start() {
   state.pulse = null;
   state.alerts = null;
   state.soundLocked = isLocked();
+  state.acked = readAcked();
   gestures(state.soundLocked);
   document.addEventListener('visibilitychange', onVisibility);
-  // Every minute while anything needs a person: an open alarm, a customer nobody answered, a
-  // chat the bot got stuck in.
-  reminder = window.setInterval(() => {
-    if (badgeCount(state.pulse) > 0) {
-      play('reminder');
-    }
-  }, REMINDER_MS);
+  window.addEventListener('storage', onStorage);
+  // The siren every 15 seconds for an alarm nobody has looked at, a soft ping every minute
+  // while anything else needs a person: a customer nobody answered, a chat the bot got stuck in.
+  ticks = 0;
+  reminder = window.setInterval(remind, SIREN_MS);
   schedule(0);
 }
 
@@ -470,6 +604,7 @@ export function stop() {
   }
   gestures(false);
   document.removeEventListener('visibilitychange', onVisibility);
+  window.removeEventListener('storage', onStorage);
 }
 
 /** The Live page is open (true) or closed (false): the answer then carries messages too. */
@@ -486,6 +621,12 @@ export function setDetail(on) {
     }
     schedule(0);
   }
+}
+
+/** The chat open on the Live page ('' when none): its alarms stop the siren. */
+export function setViewing(key) {
+  state.viewing = key || '';
+  ackViewing();
 }
 
 /** Ask now instead of waiting, after something the person did (an alarm marked done). */

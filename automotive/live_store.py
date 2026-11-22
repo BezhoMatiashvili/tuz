@@ -9,8 +9,10 @@ needs; the privileges are the fence, this module only stays inside them:
   alarms, mark alarms done, switch a bot off for one customer, and record the website chat.
 
 An alarm never carries more than the customer's own words (cut to 200 characters), a short note the
-model wrote for the staff, and a phone number the customer typed. Audit rows name a customer by the
-last four characters of their key. Nothing here logs a message or a number.
+model wrote for the staff, a phone number the customer typed, and why the bot found nothing
+(``live_alerts.turn_detail``, migration 0017: the words it searched with and the catalogue's own
+counts, bounded in size). Audit rows name a customer by the last four characters of their key.
+Nothing here logs a message or a number.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from typing import Any, NamedTuple
 from psycopg import errors
 from psycopg.types.json import Jsonb
 
+from automotive import shop_hours
 from automotive.live_alerts import AlertDraft, TurnAlerts, text, visible
 from automotive.meta_db import MetaDatabase
 from automotive.meta_store import MetaConflict, MetaStore, bot_state, mask_psid
@@ -34,6 +37,8 @@ from automotive.meta_store import MetaConflict, MetaStore, bot_state, mask_psid
 LOGGER = logging.getLogger(__name__)
 
 KEY = re.compile(r"^(?:m-([0-9]{1,30})|w-([0-9a-f]{32}))$")
+# What the Messenger adapter records for a turn that ended in an error (messenger_engine._cause).
+CAUSE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,59}@[a-z]{1,20}")
 STATUSES = ("open", "done")
 FILTERS = ("all", "alerts", "waiting", "off", "stuck")
 ITEMS_KEPT = 10  # earlier notes an alarm keeps when a repeat merges into it
@@ -52,7 +57,8 @@ NOT_READY_SECONDS = 30.0
 # (the bot's or the shop's), is younger than the reply window (the dashboard's
 # max_reply_age_minutes, 24 hours by default: Meta's standard messaging window, after which the
 # page cannot answer anyway), and nothing is going to answer it by itself: the bot is switched off
-# for this chat, switched off or paused for everyone, or it has said nothing for BOT_GRACE_SECONDS
+# for this chat, switched off or paused for everyone, in test mode and this is not a tester's chat,
+# or it has said nothing for BOT_GRACE_SECONDS
 # (a reply that failed or was cut off, a message too old for the bot, one the catch-up job found
 # after the laptop slept). Constants only: no value ever reaches this text.
 BOT_GRACE_SECONDS = 180
@@ -70,7 +76,9 @@ WAITING = (  # constants only (see above): no value ever reaches this text
     # but stored late (migration 0016; LiveStore.dismiss_waiting).
     "AND (t.waiting_dismissed_id IS NULL OR EXISTS (SELECT 1 FROM garage.messenger_messages d "
     "WHERE d.psid = t.psid AND d.sender = 'customer' AND d.message_id > t.waiting_dismissed_id)) "
-    "AND (NOT t.bot_enabled OR NOT COALESCE(" + _SETTING.format("bot_enabled") + ", FALSE) "
+    # The bot answers nobody, or (test mode, migration 0018) not this customer: staff at once.
+    "AND (NOT t.bot_enabled OR NOT (COALESCE(" + _SETTING.format("bot_enabled") + ", FALSE) "
+    "OR (COALESCE(" + _SETTING.format("bot_test_mode") + ", FALSE) AND t.bot_tester)) "
     "OR COALESCE(" + _SETTING.format("bot_paused_reason") + ", '') <> '' "
     f"OR t.last_customer_at < now() - make_interval(secs => {BOT_GRACE_SECONDS})))")
 OPEN_ALERT = ("EXISTS (SELECT 1 FROM garage.live_alerts a WHERE a.channel = '{channel}' "
@@ -88,10 +96,18 @@ MESSENGER_CHATS = (
     + WAITING + " AS waiting, "
     "COALESCE((SELECT array_agg(a.kind ORDER BY a.kind) FROM garage.live_alerts a "
     "WHERE a.channel = 'messenger' AND a.chat_key = t.psid AND a.status = 'open'), "
-    "ARRAY[]::text[]) AS alerts "
+    "ARRAY[]::text[]) AS alerts, "
+    # Why the bot could not answer a stuck chat: the newest reply that failed, as the worker
+    # recorded it (the engine's status; Meta's or the engine's error text).
+    "COALESCE(failed.engine_status, '') AS failed_engine, "
+    "COALESCE(failed.error_text, '') AS failed_error "
     "FROM garage.messenger_threads t LEFT JOIN LATERAL (SELECT sender, body, sent_at "
     "FROM garage.messenger_messages m WHERE m.psid = t.psid "
-    "ORDER BY m.sent_at DESC, m.message_id DESC LIMIT 1) last ON TRUE WHERE NOT t.is_admin")
+    "ORDER BY m.sent_at DESC, m.message_id DESC LIMIT 1) last ON TRUE "
+    "LEFT JOIN LATERAL (SELECT r.engine_status, r.error_text FROM garage.messenger_replies r "
+    "WHERE t.needs_attention AND r.psid = t.psid AND r.channel = 'messenger' AND r.status IN "
+    "('fallback_sent', 'failed', 'paused_provider', 'abandoned', 'blocked_by_meta') "
+    "ORDER BY r.started_at DESC, r.reply_id DESC LIMIT 1) failed ON TRUE WHERE NOT t.is_admin")
 MESSENGER_FILTERS = {
     "all": "",
     "alerts": " AND (t.needs_attention OR " + OPEN_ALERT.format(channel="messenger",
@@ -121,6 +137,8 @@ ALERT_COLUMNS = (
     "a.alert_id, a.channel, a.chat_key, a.kind, a.reason, a.status, a.summary, a.items, "
     "a.occurrences, a.car_label, a.phone, a.phone_at, a.created_at, a.updated_at, a.handled_by, "
     "a.handled_at, a.version, "
+    # Why the bot found nothing (migration 0017); an empty object before it, or for an old alarm.
+    "COALESCE(to_jsonb(a) -> 'detail', '{}'::jsonb) AS detail, "
     "COALESCE(t.customer_name, '') AS customer_name, "
     "COALESCE(t.bot_enabled, w.bot_enabled, TRUE) AS bot_enabled, "
     "COALESCE(t.version, w.version, 0) AS chat_version")
@@ -144,6 +162,15 @@ class RaisedAlert(NamedTuple):
     changed: bool  # a new alarm, a new note or a new phone: staff should hear it again
     phone_added: bool
     version: int
+
+
+class Levels(NamedTuple):
+    """Which of the Live chats migrations this database has (``LiveStore._levels``)."""
+
+    tables: bool  # 0015: alarms, website chats, the bot switches
+    dismiss: bool  # 0016: "No reply needed" (the pages read it)
+    detail: bool  # 0017: why the bot found nothing, kept with each alarm
+    testers: bool  # 0018: the bot's test mode and tester chats (the pages read it, WAITING)
 
 
 def web_key(conversation_id: str) -> str:
@@ -174,6 +201,22 @@ def _clean_body(value: Any) -> str:
     return "".join(char for char in clean if visible(char))[:BODY_LIMIT]
 
 
+def _keep_detail(conn: Any, alert_id: int, detail: Jsonb | None) -> bool:
+    """Store why the bot found nothing on an alarm (migration 0017), in a savepoint: a detail the
+    database refuses is left out and never takes the alarm, or the rest of its turn, with it.
+    False when nothing was stored."""
+    if detail is None:
+        return False
+    try:
+        with conn.transaction():
+            conn.execute("UPDATE garage.live_alerts SET detail = %s WHERE alert_id = %s",
+                         (detail, alert_id))
+    except errors.Error as error:
+        LOGGER.warning("live_alert_detail_skipped %s", type(error).__name__)
+        return False
+    return True
+
+
 def _messenger_chat(row: Mapping[str, Any]) -> dict:
     psid = row["psid"]
     return {"key": f"m-{psid}", "channel": "messenger", "name": row["customer_name"] or "",
@@ -183,7 +226,13 @@ def _messenger_chat(row: Mapping[str, Any]) -> dict:
             "alerts": list(row["alerts"] or []), "last_sender": row["last_sender"] or "",
             "last_body": row["last_body"] or "", "last_at": row["last_at"],
             "last_id": row["last_id"],  # what "No reply needed" sends back (``seen_id``)
-            "first_seen_at": row["first_seen_at"], "source": row["source"] or ""}
+            "first_seen_at": row["first_seen_at"], "source": row["source"] or "",
+            # What the stuck chat's newest failed reply recorded: why the bot could not answer.
+            # Of its error text only the engine's own cause ("ValueError@model"): Meta's words
+            # for a refused send stay in the admin's Facebook section.
+            "failed_engine": row.get("failed_engine") or "",
+            "failed_error": cause if CAUSE.fullmatch(cause := str(row.get("failed_error") or ""))
+            else ""}
 
 
 def _web_chat(row: Mapping[str, Any]) -> dict:
@@ -194,7 +243,8 @@ def _web_chat(row: Mapping[str, Any]) -> dict:
             "needs_attention": False, "attention_reason": "", "waiting": False,
             "alerts": list(row["alerts"] or []), "last_sender": row["last_sender"] or "",
             "last_body": row["last_body"] or "", "last_at": row["last_at"], "last_id": None,
-            "first_seen_at": row["started_at"], "source": ""}
+            "first_seen_at": row["started_at"], "source": "", "failed_engine": "",
+            "failed_error": ""}
 
 
 def _messenger_message(row: Mapping[str, Any]) -> dict:
@@ -225,7 +275,18 @@ def _alert(row: Mapping[str, Any]) -> dict:
             "handled_by": row["handled_by"], "handled_at": row["handled_at"],
             "version": row["version"], "bot_enabled": bool(row["bot_enabled"]),
             # The chat's own version (0 when the chat is gone), for the bot switch on a card.
-            "chat_version": int(row["chat_version"] or 0)}
+            "chat_version": int(row["chat_version"] or 0),
+            "quiet": quiet(row["kind"], row["updated_at"]),
+            # Why the bot found nothing (``live_alerts.turn_detail``): {} for an alarm without it.
+            "detail": row["detail"] if isinstance(row.get("detail"), dict) else {}}
+
+
+def quiet(kind: str, updated_at: Any) -> bool:
+    """A part the bot could not find, last raised or repeated outside the staff's hours: the
+    page shows it without a sound, for the morning. Judged by the newest change, so a customer
+    who asks again during the day makes it sound."""
+    return kind == "part_not_found" and updated_at is not None and not shop_hours.is_open(
+        updated_at)
 
 
 class LiveStore:
@@ -235,7 +296,7 @@ class LiveStore:
         self.db = db
         self.meta = meta or MetaStore(db)
         self._lock = threading.Lock()
-        self._ready: tuple[tuple[bool, bool], float] | None = None
+        self._ready: tuple[Levels, float] | None = None
         self._pulse: tuple[float, dict] | None = None
         self._reachable = True  # what usable() last saw, so an outage is logged once
 
@@ -246,16 +307,23 @@ class LiveStore:
         the bot switches needs. A yes is kept five minutes and a no thirty seconds, so a page
         asking every few seconds costs one query a minute. Raises when the database cannot be
         reached."""
-        return self._levels()[0]
+        return self._levels().tables
 
     def pages_ready(self) -> bool:
-        """``ready`` and migration 0016's column, which the Live pages read (``WAITING``):
-        without it the pages say "not set up" instead of every query failing, while alarms and
-        website chats are still recorded."""
-        tables, column = self._levels()
-        return tables and column
+        """``ready`` and the columns of migrations 0016 and 0018, which the Live pages read
+        (``WAITING``): without them the pages say "not set up" instead of every query failing,
+        while alarms and website chats are still recorded."""
+        levels = self._levels()
+        return levels.tables and levels.dismiss and levels.testers
 
-    def _levels(self) -> tuple[bool, bool]:
+    def details_ready(self) -> bool:
+        """``ready`` and migration 0017's column: an alarm then keeps why the bot found nothing
+        (``AlertDraft.detail``). Without it alarms are raised and read exactly as before, with
+        no detail: the column is written only when it exists, so no alarm is lost to it."""
+        levels = self._levels()
+        return levels.tables and levels.detail
+
+    def _levels(self) -> Levels:
         now = time.monotonic()
         with self._lock:
             if self._ready is not None and now < self._ready[1]:
@@ -267,8 +335,15 @@ class LiveStore:
                 "AND to_regclass('garage.live_web_messages') IS NOT NULL AS tables, "
                 "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = "
                 "'garage' AND table_name = 'messenger_threads' "
-                "AND column_name = 'waiting_dismissed_id') AS dismiss").fetchone()
-        levels = (bool(row["tables"]), bool(row["dismiss"]))
+                "AND column_name = 'waiting_dismissed_id') AS dismiss, "
+                "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = "
+                "'garage' AND table_name = 'live_alerts' "
+                "AND column_name = 'detail') AS detail, "
+                "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = "
+                "'garage' AND table_name = 'messenger_threads' "
+                "AND column_name = 'bot_tester') AS testers").fetchone()
+        levels = Levels(bool(row["tables"]), bool(row["dismiss"]), bool(row["detail"]),
+                        bool(row["testers"]))
         with self._lock:
             self._ready = (levels, now + (READY_SECONDS if all(levels) else NOT_READY_SECONDS))
         return levels
@@ -320,10 +395,14 @@ class LiveStore:
                allow_create: bool) -> RaisedAlert | None:
         summary = text(draft.summary, 300) or "-"
         phone = draft.phone or None
+        # Why the bot found nothing (``live_alerts.turn_detail``), kept once migration 0017 is
+        # there; before it the alarm is raised exactly as it always was.
+        detail = Jsonb(dict(draft.detail)) if draft.detail and self.details_ready() else None
         with self.db.transaction() as conn:
             row = conn.execute(
-                "SELECT alert_id, version, reason, summary, items, occurrences, phone, updated_at "
-                "FROM garage.live_alerts WHERE channel = %s AND chat_key = %s AND kind = %s "
+                "SELECT alert_id, version, reason, summary, items, occurrences, phone, updated_at, "
+                "to_jsonb(a) -> 'detail' AS detail "  # NULL before migration 0017
+                "FROM garage.live_alerts a WHERE channel = %s AND chat_key = %s AND kind = %s "
                 "AND status = 'open' FOR UPDATE", (channel, chat_key, draft.kind)).fetchone()
             if row is None:
                 if not allow_create:
@@ -341,6 +420,7 @@ class LiveStore:
                     "RETURNING alert_id, version",
                     (channel, chat_key, draft.kind, draft.reason, summary,
                      text(draft.car_label, 80), phone, phone)).fetchone()
+                _keep_detail(conn, made["alert_id"], detail)
                 self._changed()
                 return RaisedAlert(made["alert_id"], True, True, bool(phone), made["version"])
             repeated = _same(row["summary"], summary)
@@ -351,8 +431,31 @@ class LiveStore:
             # does change the reason, even in the same words.
             reason = (row["reason"] if draft.reason == "failed" and row["reason"] not in
                       ("", "failed") else draft.reason)
-            if repeated and not phone_new and reason == row["reason"]:
-                return RaisedAlert(row["alert_id"], False, False, False, row["version"])
+            # A part not found that was saved quiet (outside the staff's hours) and is asked
+            # for again while they work, even in the same words: its newest change moves into
+            # the day, so the page sounds it.
+            woke = quiet(draft.kind, row["updated_at"]) and shop_hours.is_open()
+            # The newest turn's reason replaces the stored one, but a failure's never takes the
+            # place of a handoff's (the alarm stays a handoff, see above).
+            if detail is not None and draft.reason == "failed" and reason != "failed":
+                detail = None
+            if repeated and not phone_new and reason == row["reason"] and not woke:
+                if detail is None or detail.obj == row["detail"]:
+                    return RaisedAlert(row["alert_id"], False, False, False, row["version"])
+                # The same request found nothing again, for other reasons: the card shows the new
+                # ones and nothing sounds. Its newest change moves, so the page reads it, unless
+                # that would make a loud part-not-found quiet (``quiet`` judges by the newest
+                # change): one refreshed after hours keeps its time, and so its morning siren.
+                if not _keep_detail(conn, row["alert_id"], detail):
+                    return RaisedAlert(row["alert_id"], False, False, False, row["version"])
+                keep_time = (draft.kind == "part_not_found" and not shop_hours.is_open()
+                             and not quiet(draft.kind, row["updated_at"]))
+                refreshed = conn.execute(
+                    "UPDATE garage.live_alerts SET updated_at = CASE WHEN %s THEN updated_at "
+                    "ELSE now() END, version = version + 1 WHERE alert_id = %s "
+                    "RETURNING version", (keep_time, row["alert_id"])).fetchone()
+                self._changed()
+                return RaisedAlert(row["alert_id"], False, False, False, refreshed["version"])
             items = list(row["items"] or [])
             occurrences = row["occurrences"]
             kept = row["summary"]
@@ -375,6 +478,7 @@ class LiveStore:
                 "version = version + 1 WHERE alert_id = %s RETURNING version",
                 (reason, kept, Jsonb(items), occurrences, text(draft.car_label, 80),
                  phone, phone_new, row["alert_id"])).fetchone()
+            _keep_detail(conn, row["alert_id"], detail)
         self._changed()
         return RaisedAlert(row["alert_id"], False, True, phone_new, made["version"])
 
@@ -545,7 +649,7 @@ class LiveStore:
                 "(SELECT COALESCE(max(message_id), 0) FROM garage.messenger_messages) AS m, "
                 "(SELECT COALESCE(max(message_id), 0) FROM garage.live_web_messages) AS w"
             ).fetchone()
-            settings = conn.execute("SELECT bot_enabled, bot_paused_reason "
+            settings = conn.execute("SELECT bot_enabled, bot_test_mode, bot_paused_reason "
                                     "FROM garage.meta_settings WHERE settings_id = 1").fetchone()
         open_by_kind = {"part_not_found": 0, "visit_request": 0, "service_booking": 0,
                         "needs_staff": 0}
@@ -553,6 +657,8 @@ class LiveStore:
         result = {"open": {**open_by_kind, "total": sum(open_by_kind.values())},
                   "waiting": int(counts["waiting"]), "waiting_at": counts["waiting_at"],
                   "attention": int(counts["attention"]),
+                  # The staff's hours, by the server's clock: the siren stops at closing time.
+                  "open_now": shop_hours.is_open(),
                   "messenger_bot": bot_state(settings) if settings else "unknown",
                   "stamp": stamp, "cursor": {"m": int(counts["m"]), "w": int(counts["w"])}}
         with self._lock:

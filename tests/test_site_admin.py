@@ -6,6 +6,7 @@ import copy
 import hashlib
 import unittest
 from datetime import UTC, datetime
+from unittest.mock import patch
 
 from automotive.site_auth import verify_password
 from automotive.site_catalog import Catalog
@@ -167,6 +168,39 @@ class RoleTests(AdminCase):
             response = await self.call("GET", "/api/admin/inventory", who=self.employee,
                                        params=params)
             self.assertEqual(response.status_code, 422, params)
+
+    async def test_engine_oil_inventory_uses_current_rows_and_labels(self):
+        today = datetime.now(UTC)
+        old = {"source_product_id": "new-oil", "product_code": "NEW-OIL",
+               "product_name": "Example 0W20 (VW 508.00) 1L", "brand": "Example",
+               "stock": {"store": 2, "tuz11": 0}, "sae_grades": ["0W-20"],
+               "last_observed_at": today, "price_raw": "30",
+               "catalog_review_status": "NEEDS_APPROVAL_REVIEW"}
+        other = {**old, "source_product_id": "other", "product_name": "Oil pump",
+                 "catalog_review_status": "OTHER_PRODUCT"}
+        with (
+            patch.object(self.legacy, "oil_review_products", return_value=[old, other],
+                         create=True) as scan,
+            patch.object(self.legacy, "oil_approval_products", return_value=[], create=True),
+        ):
+            params = {"category": "engine_oil", "state": "available"}
+            refused = await self.client.get("/api/admin/inventory", params=params)
+            self.assertEqual(refused.status_code, 401)
+            scan.assert_not_called()
+            response = await self.call("GET", "/api/admin/inventory", who=self.employee,
+                                       params=params)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["total"], 1)
+            item = response.json()["items"][0]
+            self.assertEqual((item["code"], item["store"], item["price"]), ("NEW-OIL", 2, 30))
+            self.assertEqual(item["oil"], {"grade": "0W-20", "status": "NEEDS_APPROVAL_REVIEW",
+                                           "catalog_specs": "VW 508.00",
+                                           "reviewed_approvals": ""})
+
+            scan.return_value = [{**old, "stock": {"store": 0, "tuz11": 0}}, other]
+            depleted = await self.call("GET", "/api/admin/inventory", who=self.employee,
+                                       params=params)
+            self.assertEqual(depleted.json()["items"], [])
 
     async def test_a_database_failure_is_a_plain_503(self):
         self.repo.failing.add("list_users")

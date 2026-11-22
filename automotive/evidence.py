@@ -8,7 +8,7 @@ TRUSTED_AUTHORITIES = frozenset({'manufacturer', 'official', 'authorized_supplie
 ALLOWED_REUSE = frozenset({'owned', 'authorized'})
 VEHICLE_KEYS = frozenset({
     'make', 'model', 'model_year', 'engine_code', 'fuel', 'transmission', 'market',
-    'body', 'drive', 'displacement_l', 'engine_cylinders', 'trim', 'fuel_type',
+    'body', 'drive', 'displacement_l', 'engine_cylinders', 'trim', 'fuel_type', 'dpf',
 })
 
 
@@ -36,6 +36,14 @@ def _same(left: Any, right: Any) -> bool:
     return str(left).strip().casefold() == str(right).strip().casefold()
 
 
+def _same_vehicle_value(key: str, left: Any, right: Any) -> bool:
+    if key != 'market':
+        return _same(left, right)
+    aliases = {'usa': 'us', 'united states': 'us', 'eu': 'europe', 'jp': 'japan'}
+    actual, expected = (str(value).strip().casefold() for value in (left, right))
+    return aliases.get(actual, actual) == aliases.get(expected, expected)
+
+
 def applies_to(record: dict[str, Any], vehicle: dict[str, Any] | None) -> bool:
     """Unknown configuration keys or unresolved restrictions never match silently."""
     row = flatten_record(record)
@@ -61,11 +69,35 @@ def applies_to(record: dict[str, Any], vehicle: dict[str, Any] | None) -> bool:
             elif key not in VEHICLE_KEYS or vehicle.get(key) in (None, ''):
                 return False
             elif isinstance(expected, list):
-                if not any(_same(vehicle[key], value) for value in expected):
+                if not any(_same_vehicle_value(key, vehicle[key], value) for value in expected):
                     return False
-            elif not _same(vehicle[key], expected):
+            elif not _same_vehicle_value(key, vehicle[key], expected):
                 return False
     return True
+
+
+def missing_oil_detail(record: dict[str, Any], vehicle: dict[str, Any]) -> str | None:
+    """A missing DPF or market value that could make an oil specification applicable."""
+    working = dict(vehicle)
+    missing = []
+    scopes = [record.get(key, {}) for key in ('applicability', 'restrictions')]
+    for key in ('dpf', 'market'):
+        if working.get(key) not in (None, ''):
+            continue
+        required = [scope[key] for scope in scopes if isinstance(scope, dict) and key in scope]
+        if not required:
+            continue
+        first = required[0]
+        values = first if isinstance(first, list) else [first]
+        value = next((value for value in values if value not in (None, '')
+                      and all(any(_same_vehicle_value(key, value, option) for option in
+                                  (other if isinstance(other, list) else [other]))
+                              for other in required)), None)
+        if value is None:
+            return None
+        working[key] = value
+        missing.append(key)
+    return missing[0] if missing and applies_to(record, working) else None
 
 
 def evaluate_compatibility(

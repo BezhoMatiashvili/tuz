@@ -189,9 +189,10 @@ class AccessTests(LiveCase):
         for method, path in (("GET", "/api/admin/facebook/status"),
                              ("GET", "/api/admin/facebook/threads"),
                              ("PUT", f"/api/admin/facebook/threads/{PSID}"),
-                             ("DELETE", f"/api/admin/facebook/threads/{PSID}")):
+                             ("DELETE", f"/api/admin/facebook/threads/{PSID}"),
+                             ("POST", f"/api/admin/facebook/threads/{PSID}/clear-context")):
             body = {"is_admin": True} if method == "PUT" else (
-                {"confirm": True} if method == "DELETE" else None)
+                {"confirm": True} if method in ("DELETE", "POST") else None)
             response = await self.call(method, path, body, who=self.employee)
             with self.subTest(path=path):
                 self.assertEqual((response.status_code, response.json()),

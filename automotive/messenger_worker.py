@@ -22,7 +22,8 @@ The admin's switches decide everything a customer receives. They are read fresh 
 claimed and again immediately before every Send API call (typing indicators included), so a switch
 turned off mid-turn stops the reply before it leaves. Only customer messages written after the bot
 was switched on, and younger than the maximum age, are answered: a backlog is never bulk-answered.
-A message the shop already answered is never answered by the bot.
+A message the shop already answered is never answered by the bot. In test mode only the chats an
+admin marked as testers are answered; everyone else is left to the shop, as with the bot off.
 
 Nothing here reads what a customer means: the assistant engine does. This module moves data and
 enforces the switches, the limits, privacy and Meta's channel rules. The only parts of a message
@@ -49,7 +50,7 @@ from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import wait as wait_for_futures
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -76,6 +77,7 @@ from automotive.messenger_render import (
     bot_on_refused_text,
     bot_status_text,
     bot_switched_text,
+    bot_test_text,
     cap_notice,
     conflicting_vins_text,
     fallback_text,
@@ -91,7 +93,13 @@ from automotive.meta_connect import ConnectError, check, ensure_subscribed, sync
 from automotive.meta_context import MetaContext, NotConnected
 from automotive.meta_crypto import TokenCipherError
 from automotive.meta_graph import GraphError
-from automotive.meta_store import AutoReplyNotConfirmed, mask_psid
+from automotive.meta_store import (
+    ANY_CONTEXT,
+    AutoReplyNotConfirmed,
+    answered_since,
+    bot_mode,
+    mask_psid,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -131,7 +139,7 @@ SENT_MEMORY = 2000
 # engine has no key at all: pause instead of sending every customer the fallback.
 ACCOUNT_CODES = frozenset({"PROVIDER_BILLING", "AUTHENTICATION_ERROR", "ACCESS_DENIED",
                            "NOT_CONFIGURED"})
-COMMANDS = {"#bot off": "off", "#bot on": "on", "#bot status": "status"}
+COMMANDS = {"#bot off": "off", "#bot on": "on", "#bot test": "test", "#bot status": "status"}
 _ANY_COMMAND = re.compile(r"#bot(?:\s.*)?", re.DOTALL)
 _OUTCOME = re.compile(r"[^a-z0-9_.:-]")
 # Internal stop reason: a Graph error the typing thread met; mapped to a status where recorded.
@@ -248,7 +256,10 @@ class _Chat:
 @dataclass(frozen=True)
 class _Burst:
     """One burst being answered. ``rows`` are its customer messages, oldest first. ``checked``
-    is False only for a command reply, which the switches never stop."""
+    is False only for a command reply, which the switches never stop. ``cleared_at`` is the
+    chat's ``context_cleared_at`` as read with the state the burst works from: when the
+    dashboard clears a tester's bot memory meanwhile, the value no longer matches, and the burst
+    neither sends nor saves."""
 
     psid: str
     page_id: str
@@ -257,6 +268,7 @@ class _Burst:
     newest_sent_at: datetime
     kind: str  # turn, media, more, command
     checked: bool = True
+    cleared_at: datetime | None = None
 
 
 @dataclass
@@ -294,9 +306,10 @@ class _Reply:
 
 
 def command_of(text: Any) -> str | None:
-    """The ``#bot`` command an admin's message is: 'off', 'on' and 'status' match exactly after
-    trimming and lower-casing; any other text starting with '#bot' asks for 'help'. None for
-    everything else. The caller applies it only to chats the admin marked as their own."""
+    """The ``#bot`` command an admin's message is: 'off', 'on', 'test' and 'status' match
+    exactly after trimming and lower-casing; any other text starting with '#bot' asks for
+    'help'. None for everything else. The caller applies it only to chats the admin marked as
+    their own."""
     if not isinstance(text, str):
         return None
     said = text.strip().lower()
@@ -350,6 +363,12 @@ def _error_code(error: BaseException) -> str:
 def _language(state: Mapping[str, Any] | None) -> str:
     value = (state or {}).get("language")
     return value if value in ("ka", "en") else "ka"
+
+
+def _cleared_at(thread: Mapping[str, Any] | None) -> Any:
+    """The chat's ``context_cleared_at`` as just read (None: never cleared), to save its state
+    under; ``ANY_CONTEXT`` when there is no chat row to compare with."""
+    return thread.get("context_cleared_at") if thread is not None else ANY_CONTEXT
 
 
 def _split_state(value: Any) -> tuple[dict, dict]:
@@ -711,6 +730,12 @@ class MessengerWorker:
         the chat holds the state; the words then wait for it to finish."""
         psid = event.psid
         with self._state_lock(psid):
+            thread = self.store.get_thread(psid, with_state=True)
+            cleared = thread.get("context_cleared_at") if thread else None
+            if isinstance(cleared, datetime) and event.sent_at <= cleared:
+                # Written before a tester's bot memory was cleared, its echo handled only now
+                # (Meta was late, or the worker was stopped): the bot no longer reads it.
+                return
             if psid in self._active:
                 with self._wake:
                     chat = self._chats.get(psid)
@@ -719,10 +744,10 @@ class MessengerWorker:
                 said = _joined([row for row in before if row["mid"] not in covered])
                 self._active[psid].append((event.text, said))
                 return
-            thread = self.store.get_thread(psid, with_state=True)
             state, _ = _split_state(thread.get("engine_state") if thread else None)
             # The shop wrote last, so the options of the bot's last reply no longer apply.
-            self._save_state(psid, self._shop_reply(state, event.text, _joined(before)), {})
+            self._save_state(psid, self._shop_reply(state, event.text, _joined(before)), {},
+                             _cleared_at(thread))
 
     def _comment(self, row: Mapping[str, Any], event: CommentEvent) -> str | None:
         handler = self._comment_handler()
@@ -1047,7 +1072,8 @@ class MessengerWorker:
         kind = _kind(rows, channel)
         newest = rows[-1]
         burst = _Burst(psid=psid, page_id=page_id, rows=tuple(rows), newest_mid=newest["mid"],
-                       newest_sent_at=newest["sent_at"], kind=kind)
+                       newest_sent_at=newest["sent_at"], kind=kind,
+                       cleared_at=thread.get("context_cleared_at"))
         name = "messenger" if kind == "turn" else "notice"
         skip = self._rules(settings, thread, burst.newest_sent_at, claim=True)
         if skip is not None:
@@ -1086,16 +1112,22 @@ class MessengerWorker:
     def _rules(self, settings: Mapping[str, Any], thread: Mapping[str, Any] | None,
                newest_sent_at: datetime, *, claim: bool) -> str | None:
         """Why the bot may not answer this burst now, or None. At claim time the maximum age
-        applies too; before a send it does not (the reply is already under way)."""
-        if not settings.get("bot_enabled"):
+        applies too; before a send it does not (the reply is already under way). The warm-up
+        (_turn_likely) asks the same, so a chat the bot leaves alone costs no request."""
+        mode = bot_mode(settings)
+        if mode == "off":
             return "skipped_off"
         if settings.get("bot_paused_reason"):
             return "skipped_paused"
         if thread is None or not thread.get("bot_enabled"):
             return "skipped_chat_off"
-        enabled_at = settings.get("bot_enabled_at")
-        if enabled_at is None or newest_sent_at <= enabled_at:
-            return "skipped_off"  # written before the bot was switched on: never a backlog reply
+        tester = bool(thread.get("bot_tester"))
+        if mode == "test" and not tester:
+            return "skipped_not_tester"  # test mode: only chats an admin marked as testers
+        since = answered_since(settings, tester=tester)
+        if since is None or newest_sent_at <= since:
+            # Written before the bot began answering this customer: never a backlog reply.
+            return "skipped_off"
         if claim:
             limit = timedelta(minutes=int(settings.get("max_reply_age_minutes") or 1440))
             if self.ctx.now() - newest_sent_at > limit:
@@ -1141,22 +1173,33 @@ class MessengerWorker:
         saving: tuple[dict, dict] | None = None
         state: dict = {}
         channel: dict = {}
+        cleared_at: Any = ANY_CONTEXT  # until the chat is read: what _settle saves under
         try:
             with self._state_lock(psid):
                 self._active[psid] = []
                 thread = self.store.get_thread(psid, with_state=True)
             state, channel = _split_state(thread.get("engine_state") if thread else None)
-            if burst.kind == "media":
-                saving = self._answer_media(burst, reply_id, reply, state, channel)
-            elif burst.kind == "more":
-                saving = self._answer_more(burst, reply_id, reply, state, channel)
+            cleared_at = _cleared_at(thread)
+            if isinstance(cleared_at, datetime) and any(
+                    row["sent_at"] <= cleared_at for row in burst.rows):
+                # The dashboard cleared this tester's bot memory after the burst read its
+                # messages: they are from before the clear, which the bot no longer reads.
+                reply.status = "skipped_superseded"
             else:
-                saving = self._answer_turn(burst, reply_id, reply, state, channel, settings)
+                # From here on the burst sends and saves only while the chat stays uncleared.
+                burst = replace(burst, cleared_at=thread.get("context_cleared_at")
+                                if thread else None)
+                if burst.kind == "media":
+                    saving = self._answer_media(burst, reply_id, reply, state, channel)
+                elif burst.kind == "more":
+                    saving = self._answer_more(burst, reply_id, reply, state, channel)
+                else:
+                    saving = self._answer_turn(burst, reply_id, reply, state, channel, settings)
         except Exception as error:  # the status says what was delivered before it ('failed')
             LOGGER.warning("messenger_reply_failed psid=%s error=%s", mask_psid(psid),
                            _error_code(error))
         finally:
-            self._settle(psid, saving, state, channel)
+            self._settle(psid, saving, state, channel, cleared_at)
             self._finish_reply(reply_id, reply)
             if reply.attention:
                 self._flag(psid, reply.attention)
@@ -1278,6 +1321,8 @@ class MessengerWorker:
         if self._deliver(burst, messages, reply_id, reply, done="fallback_sent"):
             reply.attention = reply.attention or (
                 "engine_timeout" if result.status == "timeout" else "engine_failed")
+            # Why the engine failed (dashboard > Live chats shows it on the stuck chat).
+            reply.error_text = reply.error_text or getattr(result, "cause", "")
             return answered, {}
         return unsent, channel
 
@@ -1297,9 +1342,11 @@ class MessengerWorker:
                            _error_code(error))
 
     def _settle(self, psid: str, saving: tuple[dict, dict] | None, state: dict,
-                channel: dict) -> None:
+                channel: dict, cleared_at: Any = ANY_CONTEXT) -> None:
         """Save the chat's state once the reply is over, with any shop words that arrived
-        meanwhile added on top, and let echoes write the state directly again."""
+        meanwhile added on top, and let echoes write the state directly again. ``cleared_at``
+        is the chat's ``context_cleared_at`` read with ``state``: a chat cleared since then
+        keeps its empty memory."""
         with self._state_lock(psid):
             deferred = self._active.pop(psid, [])
             if saving is None and not deferred:
@@ -1309,7 +1356,7 @@ class MessengerWorker:
                 new_state = self._shop_reply(new_state, shop_text, customer_text)
                 new_channel = {}
             try:
-                self._save_state(psid, new_state, new_channel)
+                self._save_state(psid, new_state, new_channel, cleared_at)
             except Exception as error:
                 LOGGER.warning("messenger_state_not_saved psid=%s error=%s", mask_psid(psid),
                                _error_code(error))
@@ -1344,6 +1391,10 @@ class MessengerWorker:
         status = self._rules(settings, thread, burst.newest_sent_at, claim=False)
         if status is not None:
             return status
+        if thread.get("context_cleared_at") != burst.cleared_at:
+            # The dashboard cleared this tester's bot memory while the reply was under way: it
+            # was built on what the bot must no longer know, so it is not sent.
+            return "skipped_superseded"
         if self._shop_answered(thread, burst):
             return "skipped_shop_answered"
         with self._wake:
@@ -1512,7 +1563,7 @@ class MessengerWorker:
     # -- commands ---------------------------------------------------------------------------
 
     def _run_command(self, psid: str, page_id: str, mid: str, command: str) -> str:
-        """'#bot off|on|status' from the admin's own chat: the switch changes here, at once;
+        """'#bot off|on|test|status' from the admin's own chat: the switch changes here, at once;
         the answer is sent on the command thread. Never reaches the engine."""
         reply_id = self.store.start_reply("command", psid, mid)
         if reply_id is None:
@@ -1541,8 +1592,8 @@ class MessengerWorker:
         target = mask_psid(psid)
         if command == "off":
             before = self.store.settings()
-            self.store.set_bot(False, actor)
-            return bot_switched_text(language, False, changed=bool(before.get("bot_enabled")))
+            self.store.set_bot(False, actor)  # ends test mode too
+            return bot_switched_text(language, False, changed=bot_mode(before) != "off")
         if command == "on":
             before = self.store.settings()
             try:
@@ -1551,8 +1602,13 @@ class MessengerWorker:
                 self.store.audit(actor, "messenger.bot_on_refused", target,
                                  {"reason": "auto_reply_not_confirmed"})
                 return bot_on_refused_text(language)
-            changed = not before.get("bot_enabled") or bool(before.get("bot_paused_reason"))
+            changed = bot_mode(before) != "on" or bool(before.get("bot_paused_reason"))
             return bot_switched_text(language, True, changed=changed)
+        if command == "test":
+            before = self.store.settings()
+            self.store.set_bot_mode("test", actor)  # needs no Auto reply confirmation
+            changed = bot_mode(before) != "test" or bool(before.get("bot_paused_reason"))
+            return bot_test_text(language, changed=changed, testers=len(self.store.testers()))
         if command == "status":
             self.store.audit(actor, "messenger.bot_status", target, {})
             return self.status_text(language)
@@ -1563,13 +1619,16 @@ class MessengerWorker:
         """The bot's state, since when, today's turns against the cap, the comment switch and
         today's estimated cost."""
         settings = self.store.settings()
-        enabled, paused = bool(settings.get("bot_enabled")), settings.get("bot_paused_reason")
-        lines = bot_status_text(language, enabled=enabled, paused=paused,
+        mode, paused = bot_mode(settings), settings.get("bot_paused_reason")
+        enabled = mode != "off"
+        lines = bot_status_text(language, enabled=enabled, paused=paused, mode=mode,
+                                testers=len(self.store.testers()) if mode == "test" else None,
                                 turns_today=self.store.turns_today(),
                                 turn_limit=settings.get("daily_turn_limit"),
                                 comments_enabled=settings.get("comments_enabled")).split("\n")
         texts = STATUS_TEXTS[text_language(language)]
         since = (settings.get("bot_paused_at") if enabled and paused
+                 else settings.get("bot_test_at") if mode == "test"
                  else settings.get("bot_enabled_at") if enabled
                  else settings.get("bot_changed_at"))
         if isinstance(since, datetime):
@@ -1642,16 +1701,21 @@ class MessengerWorker:
         return function(state, shop_text, customer_text=customer_text)
 
     def _save_state(self, psid: str, state: Mapping[str, Any] | None,
-                    channel: Mapping[str, Any] | None) -> None:
+                    channel: Mapping[str, Any] | None, cleared_at: Any = ANY_CONTEXT) -> None:
+        """Store the chat's state, unless its bot memory was cleared since ``cleared_at`` was
+        read with the state this one grew from (``MetaStore.save_engine_state``)."""
         data = dict(state or {})
         data.pop(CHANNEL_KEY, None)
         if channel:
             data[CHANNEL_KEY] = dict(channel)
         try:
-            self.store.save_engine_state(psid, data)
+            saved = self.store.save_engine_state(psid, data, cleared_at=cleared_at)
         except ValueError:  # over the column's size: the engine's own part is what matters
             data.pop(CHANNEL_KEY, None)
-            self.store.save_engine_state(psid, data)
+            saved = self.store.save_engine_state(psid, data, cleared_at=cleared_at)
+        if not saved and cleared_at is not ANY_CONTEXT:
+            LOGGER.info("messenger_state_dropped psid=%s reason=context_cleared_or_no_chat",
+                        mask_psid(psid))
 
     def _log_once(self, key: str, message: str, *args: Any) -> None:
         if key not in self._quiet_logged:

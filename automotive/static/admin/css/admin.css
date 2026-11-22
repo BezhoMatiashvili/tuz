@@ -2090,7 +2090,7 @@ textarea {
 
 @media (min-width: 768px) {
   .filters {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
     align-items: end;
   }
 
@@ -2101,7 +2101,7 @@ textarea {
 
 @media (min-width: 1280px) {
   .filters {
-    grid-template-columns: minmax(0, 2.6fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 2.6fr) repeat(3, minmax(0, 1fr)) auto;
   }
 
   .filters__search {
@@ -2875,10 +2875,22 @@ textarea {
   font-weight: 700;
 }
 
+/* A chat named in a list row (Facebook > Status: the testers): long names wrap. */
+.audit__link {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .audit__when {
   margin-top: 2px;
   color: var(--text-3);
   font-size: 12.5px;
+}
+
+/* Facebook > Chats: where a tester's bot memory was cleared (the bot reads nothing above). */
+.audit__row--cleared {
+  border-top: 2px dashed var(--border-strong);
+  text-align: center;
 }
 
 .who {
@@ -3188,6 +3200,41 @@ textarea {
   padding-left: 20px;
 }
 
+/* Why the bot found nothing: each search and what it found (live-why.js). */
+.alarm__why {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--sunken);
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+
+.alarm__why-title {
+  font-weight: 650;
+  color: var(--text);
+}
+
+.alarm__why-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.alarm__why-line {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.alarm__why-line--cause {
+  color: var(--error-text);
+  font-weight: 650;
+}
+
+.alarm__why-line--note {
+  font-style: italic;
+}
+
 .alarm__phone {
   display: flex;
   align-items: center;
@@ -3467,6 +3514,191 @@ textarea {
   color: var(--text-2);
   font-size: 14px;
   font-weight: 600;
+}
+
+/* -- prompts ------------------------------------------------------------------------------ */
+
+.prompt-groups {
+  display: grid;
+  gap: 16px;
+}
+
+.prompt-group__about {
+  margin-top: 4px;
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.prompt-list {
+  margin: 12px -16px -16px;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.prompt-list > li + li {
+  border-top: 1px solid var(--border);
+}
+
+.prompt-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 12px 16px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.prompt-row:hover {
+  background: var(--sunken);
+}
+
+.prompt-row:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.prompt-row__body {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+}
+
+.prompt-row__title {
+  font-weight: 600;
+}
+
+.prompt-row__about,
+.prompt-row__meta {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.prompt-row__go {
+  display: inline-flex;
+  color: var(--text-3);
+}
+
+.prompt-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-bottom: 12px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.prompt-card {
+  margin-top: 12px;
+}
+
+.prompt-editor {
+  min-height: 55vh;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.prompt-actions__main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.prompt-original {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.prompt-original > summary {
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 32px;
+}
+
+.prompt-original__actions {
+  margin: 8px 0;
+}
+
+.prompt-original__text {
+  max-height: 50vh;
+  overflow: auto;
+  padding: 12px;
+  background: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.prompt-history {
+  margin-top: 16px;
+}
+
+.prompt-history__list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.prompt-history__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 0;
+}
+
+.prompt-history__row + .prompt-history__row {
+  border-top: 1px solid var(--border);
+}
+
+.prompt-history__what {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.prompt-history__when {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+@media (max-width: 599px) {
+  .prompt-row {
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .prompt-editor {
+    min-height: 60vh;
+  }
+
+  .prompt-actions__main,
+  .prompt-actions__main .btn {
+    flex: 1 1 auto;
+  }
 }
 
 /* -- reduced motion ---------------------------------------------------------------------- */

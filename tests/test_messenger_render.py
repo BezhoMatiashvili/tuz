@@ -133,8 +133,9 @@ class SplitTests(unittest.TestCase):
 
 class CardTests(unittest.TestCase):
     def test_a_part_line_in_georgian_and_english(self):
-        self.assertEqual(card_line(card(), "ka"),
-                         f"• სამუხრუჭე ხუნდი წინა — SATO — 45.50{NBSP}₾ — მარაგშია")
+        self.assertEqual(card_line(card(sap_code="000123"), "ka"),
+                         f"• სამუხრუჭე ხუნდი წინა — SATO — SAP კოდი: 000123 — "
+                         f"45.50{NBSP}₾ — მარაგშია")
         self.assertEqual(card_line(card(price=None, availability="soon", brand=""), "en"),
                          "• სამუხრუჭე ხუნდი წინა — Price on request — At the warehouse, 1-2 hours")
         self.assertEqual(card_line(card(name="", fits=""), "ka"), "")
@@ -150,12 +151,14 @@ class CardTests(unittest.TestCase):
         self.assertEqual(availability_text("in_stock", "ru"), "მარაგშია")
 
     def test_five_lines_then_how_many_more_and_a_more_button(self):
-        cards = [card(f"ნაწილი {number}") for number in range(1, 9)]
+        cards = [card(f"ნაწილი {number}", sap_code=f"00000{number}")
+                 for number in range(1, 9)]
         reply = render(view(answer="ნაპოვნია 8 ნაწილი.", cards=cards, total=8), language="ka")
         check_messages(self, reply)
         text = text_of(reply)
         self.assertEqual(text.count("• "), 5)
         self.assertIn("ნაწილი 5", text)
+        self.assertIn("ნაწილი 5 — SATO — SAP კოდი: 000005", text)
         self.assertNotIn("ნაწილი 6", text)
         self.assertIn("კიდევ 3 ნაწილი მოიძებნა.", text)
         self.assertEqual(reply.messages[-1]["quick_replies"],
@@ -165,11 +168,13 @@ class CardTests(unittest.TestCase):
         following = render(view(answer="ნაპოვნია 8 ნაწილი.", cards=cards, total=8),
                            language="ka", offset=reply.next_offset)
         self.assertEqual(text_of(following).count("• "), 3)
+        self.assertIn("ნაწილი 6 — SATO — SAP კოდი: 000006", text_of(following))
         self.assertNotIn("ნაპოვნია 8", text_of(following))  # the answer is not repeated
         self.assertNotIn("quick_replies", following.messages[-1])
         self.assertIsNone(following.next_offset)
         english = render(view(cards=cards[:6], total=6), language="en")
         self.assertIn("1 more part found.", text_of(english))
+        self.assertIn("SAP code: 000001", text_of(english))
         self.assertEqual(english.messages[-1]["quick_replies"][0]["title"], "Show more")
 
     def test_group_headings_only_when_the_parts_are_in_several_groups(self):

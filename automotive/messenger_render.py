@@ -1,7 +1,7 @@
 """Messenger messages laid out from the website chat's public view of a turn.
 
-``messenger_engine`` hands over ``site_chat.public_turn``'s dict, with the same redaction the
-website's chat widget gets: no stock counts and no stock codes. Messenger shows plain text bubbles
+``messenger_engine`` hands over the same ``site_chat.public_turn`` dict the website's chat widget
+gets, including the SAP codes on part cards. Messenger shows plain text bubbles
 of at most 2,000 characters and up to 13 quick replies of at most 20 characters, under the last
 bubble only. This module fits the view into those limits:
 
@@ -58,6 +58,7 @@ TEXTS: dict[str, dict[str, str]] = {
         "status_on": "ბოტი: ჩართულია",
         "status_off": "ბოტი: გამორთულია",
         "status_paused": "ბოტი: შეჩერებულია (AI პროვაიდერის ანგარიში)",
+        "status_test": "ბოტი: სატესტო რეჟიმი, პასუხობს მხოლოდ ტესტერებს ({count})",
         "status_turns": "დღევანდელი პასუხები: {count} / {limit}",
         "status_turns_open": "დღევანდელი პასუხები: {count}",
         "status_comments_on": "კომენტარები: ჩართულია",
@@ -66,9 +67,12 @@ TEXTS: dict[str, dict[str, str]] = {
         "switched_off": "ბოტი გამოირთო. შეტყობინებებს აღარ უპასუხებს.",
         "already_on": "ბოტი უკვე ჩართულია.",
         "already_off": "ბოტი უკვე გამორთულია.",
+        "switched_test": ("ჩაირთო სატესტო რეჟიმი. ბოტი პასუხობს მხოლოდ ტესტერებს ({count}); "
+                          "დანარჩენ მომხმარებლებს თქვენ პასუხობთ."),
+        "already_test": "სატესტო რეჟიმი უკვე ჩართულია. ტესტერები: {count}.",
         "on_refused": ("ბოტი არ ჩაირთო. ჯერ Meta Business Suite-ში გამორთეთ „Auto reply“ და "
                        "ეს პანელში დაადასტურეთ."),
-        "help": "ბრძანებები: #bot on, #bot off, #bot status",
+        "help": "ბრძანებები: #bot on, #bot test, #bot off, #bot status",
         "command_failed": "ბრძანება ვერ შესრულდა. სცადეთ თავიდან ან გამოიყენეთ პანელი.",
     },
     "en": {
@@ -91,6 +95,7 @@ TEXTS: dict[str, dict[str, str]] = {
         "status_on": "Bot: on",
         "status_off": "Bot: off",
         "status_paused": "Bot: paused (AI provider account)",
+        "status_test": "Bot: test mode, answers testers only ({count})",
         "status_turns": "Replies today: {count} / {limit}",
         "status_turns_open": "Replies today: {count}",
         "status_comments_on": "Comments: on",
@@ -99,9 +104,12 @@ TEXTS: dict[str, dict[str, str]] = {
         "switched_off": "The bot is off. It no longer answers messages.",
         "already_on": "The bot is already on.",
         "already_off": "The bot is already off.",
+        "switched_test": ("Test mode is on. The bot answers only the testers ({count}); you "
+                          "answer everyone else."),
+        "already_test": "Test mode is already on. Testers: {count}.",
         "on_refused": ("The bot was not switched on. First switch off “Auto reply” in Meta "
                        "Business Suite and confirm it in the dashboard."),
-        "help": "Commands: #bot on, #bot off, #bot status",
+        "help": "Commands: #bot on, #bot test, #bot off, #bot status",
         "command_failed": "The command did not go through. Try again, or use the dashboard.",
     },
 }
@@ -288,12 +296,16 @@ def conflicting_vins_text(language: Any) -> str:
 
 def bot_status_text(language: Any = "ka", *, enabled: bool, paused: Any = "",
                     turns_today: int | None = None, turn_limit: int | None = None,
-                    comments_enabled: bool | None = None) -> str:
+                    comments_enabled: bool | None = None, mode: str | None = None,
+                    testers: int | None = None) -> str:
     """The answer to ``#bot status`` from an admin's chat: the switch (or the pause and its
-    reason), today's replies against the cap, and the comment switch, one per line."""
+    reason; ``mode`` 'test' with the number of ``testers``), today's replies against the cap,
+    and the comment switch, one per line."""
     texts = TEXTS[text_language(language)]
     if paused:
         lines = [texts["status_paused"]]
+    elif mode == "test":
+        lines = [texts["status_test"].replace("{count}", str(_count(testers) or 0))]
     else:
         lines = [texts["status_on"] if enabled else texts["status_off"]]
     if _count(turns_today) is not None:
@@ -314,13 +326,20 @@ def bot_switched_text(language: Any, enabled: bool, changed: bool = True) -> str
     return texts["switched_on"] if enabled else texts["switched_off"]
 
 
+def bot_test_text(language: Any, *, changed: bool = True, testers: int = 0) -> str:
+    """The answer to ``#bot test``: test mode is on (or already was), with the testers' count."""
+    texts = TEXTS[text_language(language)]
+    return texts["switched_test" if changed else "already_test"].replace(
+        "{count}", str(_count(testers) or 0))
+
+
 def bot_on_refused_text(language: Any) -> str:
     """``#bot on`` while Meta's "Auto reply" is not confirmed off in the dashboard."""
     return TEXTS[text_language(language)]["on_refused"]
 
 
 def bot_help_text(language: Any) -> str:
-    """The answer to a ``#bot`` command that is none of the three."""
+    """The answer to a ``#bot`` command that is none of the four."""
     return TEXTS[text_language(language)]["help"]
 
 
@@ -334,7 +353,7 @@ def bot_failed_text(language: Any) -> str:
 
 
 def card_line(card: Any, language: Any) -> str:
-    """'• name — brand — price — availability' for one public card; '' without a name."""
+    """Format one public card with its brand, SAP code, price and availability."""
     if not isinstance(card, dict):
         return ""
     lang = text_language(language)
@@ -345,6 +364,9 @@ def card_line(card: Any, language: Any) -> str:
     brand = _one_line(card.get("brand"))
     if brand:
         parts.append(brand)
+    sap_code = _one_line(card.get("sap_code"))
+    if sap_code:
+        parts.append(STRINGS[lang]["js.chat.sap_code"].format(code=sap_code))
     parts += [price_text(card.get("price"), lang), availability_text(card.get("availability"),
                                                                       lang)]
     return "• " + " — ".join(parts)

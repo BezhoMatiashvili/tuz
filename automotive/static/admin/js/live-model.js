@@ -32,6 +32,35 @@ export function patternOf(kind) {
   return kind === 'needs_staff' ? 'staff' : 'not_found';
 }
 
+/** The kinds whose alarm is a siren that repeats until someone opens the chat on the Live page
+ * or marks the alarm done: a part the bot could not find, a chat the bot hands to staff. */
+export const SIREN_KINDS = ['part_not_found', 'needs_staff'];
+
+/** An alarm the server saved without a sound: a part not found outside the staff's hours
+ * (10:00-19:00 Tbilisi, judged by the server). It is shown, never heard. */
+export function isQuiet(alert) {
+  return Boolean(alert && alert.quiet);
+}
+
+/** Whether the server says the shop is open (its clock, 10:00-19:00 Tbilisi). A server that
+ * does not send the field cannot tell night from day, so the siren never repeats for it. */
+export function isOpenNow(pulse) {
+  return Boolean(pulse && pulse.open_now === true);
+}
+
+/**
+ * The open alarms the siren keeps sounding for: siren kinds, not quiet, not yet seen on the
+ * Live page (`acked`: alarm ids), and none at all while the shop is closed (`openNow` false),
+ * so an alarm left open at closing time does not ring all night.
+ */
+export function sirenAlerts(alerts, { acked = new Set(), openNow = true } = {}) {
+  if (!openNow) {
+    return [];
+  }
+  return newestFirst((alerts || []).filter((alert) => SIREN_KINDS.includes(alert.kind)
+    && !isQuiet(alert) && !acked.has(alert.alert_id)));
+}
+
 const asCount = (value) => (Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0);
 
 export function openTotal(pulse) {
@@ -42,6 +71,12 @@ export function openTotal(pulse) {
  * plus chats the bot got stuck in. */
 export function badgeCount(pulse) {
   return pulse ? openTotal(pulse) + asCount(pulse.waiting) + asCount(pulse.attention) : 0;
+}
+
+/** What the soft once-a-minute reminder counts: the badge without the quiet alarms. */
+export function reminderCount(pulse, alerts) {
+  const silent = (alerts || []).filter(isQuiet).length;
+  return Math.max(0, badgeCount(pulse) - silent);
 }
 
 function stampOf(alert) {
@@ -77,8 +112,10 @@ export function diffAlerts(prev, next) {
     const phone = Boolean(alert.phone) && alert.phone !== old.phone;
     const note = asCount(alert.occurrences) > asCount(old.occurrences)
       || alert.summary !== old.summary;
-    if (phone || note) {
-      updated.push({ alert, previous: old, phone, note });
+    // A quiet alarm the customer raised again during the staff's hours: it sounds now.
+    const woke = isQuiet(old) && !isQuiet(alert);
+    if (phone || note || woke) {
+      updated.push({ alert, previous: old, phone, note, woke });
     }
   }
   for (const alert of before.values()) {
@@ -110,7 +147,11 @@ export function alarmEvents(before, after, { first = false } = {}) {
     events.push({ type: 'new', alert });
   }
   for (const item of updated) {
-    events.push({ type: item.phone ? 'phone' : 'update', alert: item.alert });
+    let type = item.phone ? 'phone' : 'update';
+    if (item.woke) {
+      type = 'new';
+    }
+    events.push({ type, alert: item.alert });
   }
   // A chat that starts waiting, or a new message in one that already waits (the newest waiting
   // message moved although the count did not).
@@ -126,10 +167,25 @@ export function alarmEvents(before, after, { first = false } = {}) {
 
 const PRIORITY = { new: 4, first: 4, phone: 3, update: 2, waiting: 1, stuck: 1 };
 
-/** The one sound a poll deserves: the most urgent event decides, however many there are. */
+/** An event that may be heard: none about a quiet alarm, a 'first' only for its loud alarms. */
+function audible(event) {
+  if (event.alert) {
+    return !isQuiet(event.alert);
+  }
+  if (event.alerts) {
+    return event.alerts.some((alert) => !isQuiet(alert));
+  }
+  return true;
+}
+
+/** The one sound a poll deserves: the most urgent event decides, however many there are.
+ * Quiet alarms (a part not found outside the staff's hours) are never heard. */
 export function soundFor(events) {
   let best = null;
   for (const event of events || []) {
+    if (!audible(event)) {
+      continue;
+    }
     const rank = PRIORITY[event.type] || 0;
     if (!best || rank > best.rank) {
       best = { rank, event };
@@ -143,8 +199,9 @@ export function soundFor(events) {
     return patternOf(event.alert.kind);
   }
   if (event.type === 'first') {
-    const urgent = event.alerts.find((alert) => toneOf(alert.kind) === 'critical');
-    return patternOf((urgent || event.alerts[0]).kind);
+    const loud = event.alerts.filter((alert) => !isQuiet(alert));
+    const urgent = loud.find((alert) => toneOf(alert.kind) === 'critical');
+    return patternOf((urgent || loud[0]).kind);
   }
   if (event.type === 'phone') {
     return 'phone';

@@ -19,12 +19,20 @@ from typing import Any
 
 import psycopg
 
+from automotive import assistant_followup, oil_match
 from automotive import assistant_prompt as prompt
-from automotive import oil_match
 from automotive.assistant_catalog import CROSS_SHOWN, SearchError
+from automotive.assistant_oil_quote import (
+    is_oil,
+    oil_grade_conflict,
+    oil_pack,
+    pack_counts,
+    pack_price,
+)
 from automotive.catalog_api import CATEGORY_TERMS
-from automotive.codes import latin
+from automotive.codes import latin, normalize_code
 from automotive.parts_catalog import PartsCatalogService
+from automotive.recommendations import OIL_DPF_REQUIRED, OIL_MARKET_REQUIRED, RecommendationService
 
 ROW_COLUMNS = ("id", "name", "vehicle", "brand", "code", "cross_codes", "price", "store",
                "warehouse")
@@ -65,13 +73,26 @@ MAX_TERMS = 12
 MAX_NUMBERS = 8
 CRAWLED_VEHICLES = 120
 SHOWN_VEHICLES = 12
-OUTSIDE_SOURCES = ("vpic", "catalog_api", "motorium", "jsfilter", "shell", "pakelo", "fuchs")
+OUTSIDE_SOURCES = ("vpic", "catalog_api", "motorium", "jsfilter", "shell", "pakelo", "fuchs",
+                   "brembo")
+# Which Brembo products answer each brake group: drum cars take shoes where others take pads.
+BRAKE_KINDS = {"brake_pads": ("brake pads", "brake shoes"),
+               "brake_discs": ("brake disc", "brake drum"),
+               "brakes": ("brake pads", "brake shoes", "brake disc", "brake drum")}
 QUIET = ("NOT_REQUESTED", "NOT_NEEDED")
 FIELD_NAMES = {"code": "own number", "cross": "cross number", "shop_code": "shop code"}
 JUDGE = "Judge from the shop catalogue rows you have."
 HANDLE = re.compile(r"\br\d{1,6}\b")
 NUMBER_TOKEN = re.compile(r"[0-9A-Za-z][0-9A-Za-z./-]*")
 WORD = re.compile(r"[0-9a-zა-ჰа-яё]+")
+_DPF_PRESENT = re.compile(
+    r"(?<!\w)(?:with\s+(?:a\s+)?dpf|dpf\s+(?:present|installed)|"
+    r"(?:dpf|დპფ)\s+აქვს|с\s+dpf)(?!\w)", re.IGNORECASE,
+)
+_DPF_ABSENT = re.compile(
+    r"(?<!\w)(?:without\s+(?:a\s+)?dpf|(?:no|без)\s+dpf|dpf\s+(?:absent|removed)|"
+    r"(?:dpf|დპფ)\s+(?:არ\s+აქვს|ამოღებულია))(?!\w)", re.IGNORECASE,
+)
 
 
 class ToolError(Exception):
@@ -108,6 +129,7 @@ class Output:
     data: dict
     extra_columns: tuple[str, ...] = ()
     sourced: tuple[str, ...] = ()
+    verified_oils: dict[str, tuple[str, str]] = field(default_factory=dict)
 
 
 def plain(value: Any) -> str:
@@ -117,17 +139,22 @@ def plain(value: Any) -> str:
 
 def row_numbers(row: Any) -> set[str]:
     """The brand's own number and the cross numbers of a row, each as ``plain`` text."""
+    if is_oil(getattr(row, "name", "")):
+        return set()
     found = set()
     for value in (getattr(row, "code", ""), *(getattr(row, "cross_codes", ()) or ())):
         for piece in re.split(r"[\s/,;]+", str(value or "")):
-            if len(plain(piece)) >= 4:
-                found.add(plain(piece))
+            number = plain(piece)
+            if len(number) >= 4 and any(char.isdigit() for char in number):
+                found.add(number)
     return found
 
 
 def own_number(row: Any) -> str:
     """A row's own number when it can stand for the part by itself: six or more letters
     and digits with a digit among them. A shorter one (a grade, a size) names many parts."""
+    if is_oil(getattr(row, "name", "")):
+        return ""
     number = plain(getattr(row, "code", ""))
     return number if len(number) >= OWN_NUMBER and any(char.isdigit() for char in number) \
         else ""
@@ -239,7 +266,12 @@ def tool_definitions(ttl: str = "") -> list[dict]:
         "equivalents": _schema({"id": _field("string", "id")}),
         "supplier_parts": _schema({
             "part_group": _field("string", "part_group", enum=list(SUPPLIER_GROUPS)), **car}),
-        "oil_guide": _schema(copy.deepcopy(car)),
+        "oil_guide": _schema({
+            **copy.deepcopy(car),
+            "market": {"type": "string", "description":
+                       "Original vehicle sales market from reliable evidence or the user, "
+                       "such as US. Leave empty when unknown."},
+        }),
         "car_numbers": _schema({
             "make": _field("string", "cn_make"), "model_terms": _strings("model_terms"),
             "year": _field("integer", "cn_year"), "engine_terms": _strings("engine_terms"),
@@ -261,6 +293,16 @@ def tool_definitions(ttl: str = "") -> list[dict]:
             "language": _field("string", "language", enum=list(LANGUAGES)),
             "car_label": _field("string", "car_label"),
             "products": _field("array", "products", items=product),
+            "oil_quote": {
+                **_schema({
+                    "oil_id": {"type": "string", "description": "Selected engine oil row ID."},
+                    "filter_id": {"type": "string", "description": "Selected oil filter row ID."},
+                    "litres": {"type": "number", "description":
+                               "Litres requested by the customer, or 0 for a reviewed fill."},
+                }),
+                "description": "Request a calculated parts-only oil and filter total when "
+                               "asked for one. Otherwise send empty IDs and 0 litres.",
+            },
             "question": _field("string", "question"),
             "options": _strings("options"),
             "suggestions": _strings("suggestions"),
@@ -367,6 +409,33 @@ def _source_lines(snapshot: dict, names: tuple[str, ...]) -> list[dict]:
     return lines
 
 
+def brembo_answer(snapshot: dict, group: str) -> dict | None:
+    """What Brembo said for this car: its products for the group (axle, size, OE numbers),
+    or the Brembo models or engines to choose between. Quoted, never a stock claim."""
+    for report in snapshot.get("fluids") or []:
+        if not isinstance(report, dict) or report.get("provider") != "Brembo":
+            continue
+        answer: dict = {"car": report.get("vehicle_label") or "",
+                        "status": str(report.get("status") or "").lower()}
+        kinds = BRAKE_KINDS.get(group, ())
+        products = [{
+            "part": item.get("component"), "code": item.get("product_code"),
+            "line": item.get("line"), "details": item.get("details"),
+            "oe_numbers": (item.get("oem_codes") or [])[:8],
+            **({"note": item["note"]} if item.get("note") else {}),
+        } for item in report.get("items") or []
+            if isinstance(item, dict) and any(
+                str(item.get("component") or "").endswith(kind) for kind in kinds)]
+        if products:
+            answer["products"] = products[:8]
+        if report.get("candidates"):
+            answer["choose_from"] = report["candidates"]
+        if report.get("clarification"):
+            answer["note"] = report["clarification"]
+        return answer
+    return None
+
+
 class Toolbox:
     """The read tools of one turn. ``run`` may be called from several threads at once;
     ``render`` assigns handles and must be called on one thread, in the model's order."""
@@ -379,13 +448,23 @@ class Toolbox:
         # Services of the newer tools (see assistant_extras): each may be missing.
         self.extras: dict = dict(extras) if isinstance(extras, dict) else {}
         self.audience, self.deadline, self.clock = audience, deadline, clock
-        self.crawled = crawled or PartsCatalogService(_bounded(repository))
+        self.repository = _bounded(repository)
+        self.crawled = crawled or PartsCatalogService(self.repository)
         self.handles: dict[str, str] = {
             str(key): str(value) for key, value in (handles or {}).items()}
         self._by_product = {product: handle for handle, product in self.handles.items()}
         numbers = [int(handle[1:]) for handle in self.handles if HANDLE.fullmatch(handle)]
         self._next = max(numbers, default=0) + 1
         self.sourced: set[str] = set()
+        self.verified_oils: dict[str, tuple[str, str]] = {}
+        self.oil_capacities: dict[str, float | None] = {}
+        self.decoded_vehicle: dict = {}
+        self.stated_vehicle: dict = {}
+        self.followup_vehicle: dict = {}
+        self._engine_choices: set[tuple[str, ...]] = set()
+        self.oil_guide_result: dict = {}
+        self.customer_vehicle_text = ""
+        self.customer_message = ""
         self._crawled_down = False
 
     # -- rows ----------------------------------------------------------------------------
@@ -409,6 +488,9 @@ class Toolbox:
         product_id = self.handles.get(handle_of(handle))
         return self.index.row(product_id) if product_id is not None else None
 
+    def confirmed_part(self, row: Any, sourced: set[str]) -> bool:
+        return not is_oil(row.name) and bool(self.index.article_numbers(row) & sourced)
+
     def row_values(self, row: Any) -> list:
         cross = "/".join(row.cross_codes[:CROSS_SHOWN])
         if len(row.cross_codes) > CROSS_SHOWN:
@@ -423,6 +505,8 @@ class Toolbox:
     def render(self, output: Output) -> tuple[dict, int]:
         """The JSON-ready result and how many rows it carries."""
         count = 0
+        packs: dict[str, dict] = {}
+        conflicts: list[str] = []
 
         def convert(value: Any) -> Any:
             nonlocal count
@@ -431,6 +515,13 @@ class Toolbox:
                 for position, row in enumerate(value.rows):
                     extra = value.extras[position] if position < len(value.extras) else []
                     rendered.append([*self.row_values(row), *extra])
+                    if oil_grade_conflict(row.name, row.code):
+                        conflicts.append(rendered[-1][0])
+                    if litres := oil_pack(row.name):
+                        packs[rendered[-1][0]] = {
+                            "litres": litres, "price": pack_price(row.price, litres),
+                            "stock": pack_counts({"store": row.store, "tuz11": row.warehouse},
+                                                 litres)}
                 count += len(rendered)
                 return rendered
             if isinstance(value, Listed):
@@ -444,12 +535,33 @@ class Toolbox:
         data = convert(output.data)
         if count:
             data = {"columns": [*self.columns, *output.extra_columns], **data}
+            if packs:
+                data["oil_packs"] = packs
+            if conflicts:
+                data["oil_grade_conflicts"] = list(dict.fromkeys(conflicts))
             for key, field_name in (("vehicle_readings", "vehicle"), ("name_readings", "name")):
                 readings = self._readings(output, key, field_name)
                 if readings:
                     data[key] = readings
         self.sourced.update(output.sourced)
+        self.verified_oils.update(output.verified_oils)
+        if output.verified_oils:
+            capacity = output.data["needs"].get("capacity_l")
+            for product_id in output.verified_oils:
+                previous = self.oil_capacities.get(product_id, capacity)
+                self.oil_capacities[product_id] = capacity if capacity == previous else None
+        variants = output.data.get("engine_variants")
+        brembo = output.data.get("brembo") or {}
+        if not variants and str(brembo.get("note", "")).startswith("Several Brembo engines fit"):
+            variants = brembo.get("choose_from")
+        if variants:
+            titles = {_text(title, 160) for title in variants} - {""}
+            self._engine_choices.add(tuple(sorted(titles)))
         return data, count
+
+    @property
+    def engine_variants(self) -> tuple[str, ...]:
+        return next(iter(self._engine_choices)) if len(self._engine_choices) == 1 else ()
 
     def _readings(self, output: Output, key: str, field_name: str) -> dict[str, str]:
         """What the vehicle texts (or part names) of a result's rows mean, as a model read
@@ -564,11 +676,12 @@ class Toolbox:
         conversation holds a VIN. A source whose state is unknown counts as able."""
         if self.search_service is None:
             return {"supplier_parts": "cannot answer in this turn",
-                    "oil_guide": "cannot answer in this turn", **self._extra_sources()}
+                    "oil_guide": "can answer" if self._local_oil_configured() else
+                    "cannot answer in this turn", **self._extra_sources()}
         has_vin = self.vin is not None
         every = [group for group in SUPPLIER_GROUPS if group not in OIL_GROUPS]
         groups = [group for group in every if self._able(group, has_vin) != []]
-        oil = self._able(OIL_GROUPS[0], has_vin) != []
+        oil = self._local_oil_configured() or self._able(OIL_GROUPS[0], has_vin) != []
         return {"supplier_parts": "any part group" if groups == every else
                 groups or "cannot answer in this turn",
                 "oil_guide": "can answer" if oil else "cannot answer in this turn",
@@ -859,12 +972,14 @@ class Toolbox:
             raise ToolError(f"equivalents names {handle or 'an empty id'}, which you were "
                             "never shown.",
                             "Use the handle of a row from a result in this conversation.")
+        source = self.index.row(product_id)
         found = [item for item in self.index.equivalents(product_id, limit=30) or []
                  if isinstance(item, dict)]
         rows, extras = [], []
         for item in found:
             row = self.index.row(_row_id(item))
-            if row is not None:
+            if row is not None and source is not None and not (
+                    is_oil(source.name) or is_oil(row.name)):
                 rows.append(row)
                 extras.append(["/".join(str(code) for code in item.get("shared_numbers") or []),
                                bool(item.get("same_brand"))])
@@ -894,12 +1009,12 @@ class Toolbox:
         name parts of several brands."""
         usable = [number for number in dict.fromkeys(numbers)
                   if len(plain(number)) >= SHOP_NUMBER]
-        hits = self.index.by_codes(usable, limit_per_number=12) if usable else {}
+        hits = self.index.by_codes(usable, limit_per_number=12, article_only=True) if usable else {}
         rows, via, seen = [], [], set()
         for number in usable:
             for item in _matches(hits, number):
                 row = self.index.row(_row_id(item))
-                if row is None or str(row.id) in seen or item.get("field") == "shop_code":
+                if row is None or str(row.id) in seen or is_oil(row.name):
                     continue
                 seen.add(str(row.id))
                 rows.append(row)
@@ -943,7 +1058,8 @@ class Toolbox:
                               "vehicle_ids of the one that is the customer's car. Only the "
                               "numbers of a vehicle you chose count for confirmed.")
         # The numbers of a vehicle the model chose (or the only match) are this car's.
-        return Output(data, ("via",), tuple(plain(number) for number in numbers) if ids else ())
+        return Output(data, ("via",),
+                      tuple(normalize_code(number) for number in numbers) if ids else ())
 
     def _research(self, args: dict) -> Output:
         from automotive.assistant_research import for_the_bot, numbers_of
@@ -996,6 +1112,16 @@ class Toolbox:
         make, model = _text(args.get("make"), 60), _text(args.get("model"), 60)
         year = _number(args.get("year"))
         year = int(year) if year is not None and 1950 <= year <= 2100 else None
+        known = self.followup_vehicle
+        requested = {"make": make, "model": model, "model_year": year}
+        if all(known.get(key) for key in assistant_followup.IDENTITY) and not (
+                assistant_followup.conflicts(known, requested)):
+            make, model, year = make or known["make"], model or known["model"], \
+                year or known["model_year"]
+            if not assistant_followup.conflicts(known, details, assistant_followup.DETAILS):
+                details = {**{key: known[key] for key in ("engine_code", "trim", "body", "fuel",
+                                                         "displacement_l") if key in known},
+                           **details}
         missing = [name for name, value in (("make", make), ("model", model), ("year", year))
                    if not value]
         if missing:
@@ -1027,6 +1153,8 @@ class Toolbox:
             able.append("jsfilter")
         if group in OIL_GROUPS:
             able.extend(name for name in ("shell", "pakelo", "fuchs") if on(name))
+        if group in BRAKE_KINDS and on("brembo"):
+            able.append("brembo")
         return able
 
     def _federation(self, group: str, query: str, args: dict, tool: str) -> tuple[dict, bool]:
@@ -1078,7 +1206,7 @@ class Toolbox:
             items = job.get("catalog_items") if isinstance(job, dict) else None
             return copy.deepcopy([item for item in items or [] if isinstance(item, dict)])
 
-    def _supplier_numbers(self, snapshot: dict) -> list[dict]:
+    def _supplier_numbers(self, snapshot: dict, group: str = "") -> list[dict]:
         found: list[dict] = []
 
         def add(number: Any, brand: Any, source: str, part: Any = None) -> None:
@@ -1112,9 +1240,18 @@ class Toolbox:
                     add(item.get("product_code"), report.get("provider"),
                         str(report.get("provider") or "selector"),
                         f"{item.get('component') or ''} filter")
+                elif (isinstance(item, dict) and item.get("kind") == "brake"
+                      and report.get("status") == "PROVISIONAL"
+                      and any(str(item.get("component") or "").endswith(kind)
+                              for kind in BRAKE_KINDS.get(group, ()))):
+                    part = item.get("component")
+                    for code in [item.get("product_code"), *(item.get("variants") or [])]:
+                        add(code, "Brembo", "Brembo", part)
+                    for code in item.get("oem_codes") or []:
+                        add(code, "OE", "Brembo", part)
         unique: dict[str, dict] = {}
         for item in found:
-            unique.setdefault(plain(item["number"]), item)
+            unique.setdefault(normalize_code(item["number"]), item)
         return list(unique.values())
 
     def _supplier(self, args: dict) -> Output:
@@ -1124,20 +1261,23 @@ class Toolbox:
                             "Use one of: " + ", ".join(SUPPLIER_GROUPS) + ". " + JUDGE)
         snapshot, running = self._federation(group, supplier_query(group), args,
                                              "supplier_parts")
-        numbers = self._supplier_numbers(snapshot)
-        hits = (self.index.by_codes([item["number"] for item in numbers], limit_per_number=8)
+        numbers = self._supplier_numbers(snapshot, group)
+        hits = (self.index.by_codes([item["number"] for item in numbers], limit_per_number=8,
+                                    article_only=True)
                 if numbers else {})
         matched: dict[str, tuple[Any, list[str]]] = {}
         unmatched = []
         for item in numbers:
             name = " ".join(part for part in (item["brand"], item["number"]) if part)
-            found = _matches(hits, item["number"])
+            found = [match for match in _matches(hits, item["number"])
+                     if (row := self.index.row(_row_id(match))) is not None
+                     and not is_oil(row.name)]
             for match in found:
                 row = self.index.row(_row_id(match))
                 if row is not None:
                     via = FIELD_NAMES.get(match.get("field"), "number")
                     matched.setdefault(str(row.id), (row, []))[1].append(f"{name} = {via}")
-            if not any(self.index.row(_row_id(match)) is not None for match in found):
+            if not found:
                 unmatched.append(f"{name} ({item['part']})" if item["part"] else name)
         for item in snapshot.get("items") or []:
             for record in (item.get("warehouse_records") or []) if isinstance(item, dict) else []:
@@ -1149,7 +1289,8 @@ class Toolbox:
                 if row is not None and str(row.id) not in matched:
                     via = [str(value) for value in record.get("provenance") or []][:3]
                     matched[str(row.id)] = (row, via or ["fitment record"])
-        chosen = list(matched.values())[:SEARCH_LIMIT]
+        chosen = sorted(matched.values(), key=lambda match: not (
+            (match[0].store or 0) > 0 or (match[0].warehouse or 0) > 0))[:SEARCH_LIMIT]
         vehicle = snapshot.get("vehicle") if isinstance(snapshot.get("vehicle"), dict) else {}
         state = str(snapshot.get("status") or "").lower()
         data: dict = {
@@ -1166,6 +1307,9 @@ class Toolbox:
         }
         if unmatched:
             data["numbers_not_in_catalogue"] = unmatched[:30]
+        brembo = brembo_answer(snapshot, group)
+        if brembo:
+            data["brembo"] = brembo
         if not numbers:
             note = ("No outside source returned part numbers for this car and part. That "
                     "says nothing about fit: judge from the shop catalogue rows.")
@@ -1180,9 +1324,118 @@ class Toolbox:
                      f"{SUPPLIER_SECONDS:g} seconds; the same call next turn returns the "
                      "finished answer.")
         data["note"] = note
-        return Output(data, ("via",), tuple(plain(item["number"]) for item in numbers))
+        return Output(data, ("via",), tuple(normalize_code(item["number"]) for item in numbers))
+
+    def _local_oil_configured(self) -> bool:
+        from automotive.repository import AutomotiveRepository
+
+        return (isinstance(self.repository, AutomotiveRepository)
+                and bool(self.repository.database_url.strip()))
+
+    def _verified_oil(self, vehicle: dict) -> Output | None:
+        if not all(vehicle.get(key) for key in ("make", "model", "model_year", "engine_code")):
+            return None
+        try:
+            result = RecommendationService(self.repository).recommend_oil(
+                vehicle, deadline=self.deadline - 1.0)
+        except (AttributeError, OSError, RuntimeError, psycopg.Error, TypeError):
+            return None
+        if OIL_DPF_REQUIRED in result.get("warnings", []):
+            return Output({"status": "needs_detail", "detail": "dpf",
+                           "note": "Ask whether the vehicle has a diesel particulate filter."})
+        if OIL_MARKET_REQUIRED in result.get("warnings", []):
+            return Output({"status": "needs_detail", "detail": "market",
+                           "note": "Ask the vehicle's original sales market."})
+        if result["status"] == "CONFLICTED":
+            return Output({"status": "sources_disagree", "note":
+                           "Reviewed engine-oil requirements conflict for this configuration."})
+        rows, approvals, grades = [], [], set()
+        verified = {}
+        for item in result["items"][:SEARCH_LIMIT]:
+            product = item["product"]
+            row = self.index.row(product["source_product_id"])
+            if row is None:
+                continue
+            key = ("approval_content_fingerprint" if all(
+                "approval_content_fingerprint" in evidence for evidence in item["evidence"])
+                   else "source_fingerprint")
+            verified[str(row.id)] = (key, product[key])
+            rows.append(row)
+            approvals.append([", ".join(item["required_approvals"]).upper()])
+            grades.update(item["required_viscosities"])
+        if not rows:
+            return None
+        needs = {"engine_code": vehicle["engine_code"], "grades": sorted(grades),
+                 "sources": ["Reviewed manufacturer and product evidence"]}
+        if result.get("capacity_liters"):
+            needs["capacity_l"] = result["capacity_liters"]
+        return Output({
+            "status": "verified",
+            "needs": needs,
+            "rows": Table(rows, approvals),
+            "note": "These exact oil rows have verified approvals for the stated engine. "
+                    "Use these rows for vehicle-specific offers.",
+        }, ("verified_approvals",), verified_oils=verified)
+
+    def _confirmed_oil_vehicle(self, vin: str | None, configuration: dict) -> dict:
+        vehicle = dict(self.decoded_vehicle if vin else configuration)
+        form = self.stated_vehicle
+        same_form = all(vehicle.get(key) and plain(vehicle[key]) == plain(form.get(key))
+                        for key in ("make", "model", "model_year"))
+        known_engine = vehicle.get("engine_code") if vin else (
+            form.get("engine_code") if same_form else None)
+        requested_engine = configuration.get("engine_code")
+        remembered = self.followup_vehicle
+        same_remembered = bool(remembered) and all(
+            vehicle.get(key) and plain(vehicle[key]) == plain(remembered.get(key))
+            for key in assistant_followup.IDENTITY)
+        if not known_engine and same_remembered:
+            known_engine = remembered.get("engine_code")
+        if not known_engine and requested_engine:
+            parts = re.findall(r"[a-z]+|[0-9]+", requested_engine, re.IGNORECASE)
+            pattern = (r"(?<![a-z0-9])" + r"[ .\-/]*".join(parts) + r"(?![a-z0-9])")
+            if parts and re.search(pattern, self.customer_vehicle_text, re.IGNORECASE):
+                known_engine = requested_engine
+        if requested_engine and plain(known_engine) != plain(requested_engine):
+            return {}
+        if not known_engine:
+            return {key: vehicle.get(key) for key in assistant_followup.IDENTITY}
+        vehicle["engine_code"] = known_engine
+        if same_form and plain(form.get("engine_code")) == plain(known_engine):
+            vehicle = {**form, **vehicle} if vin else dict(form)
+        elif not vin:
+            vehicle = {key: vehicle[key] for key in ("make", "model", "model_year", "engine_code")}
+        if same_remembered:
+            for key in ("dpf", "market"):
+                if vehicle.get(key) in (None, "") and remembered.get(key) not in (None, ""):
+                    vehicle[key] = remembered[key]
+        statement = self.customer_message if "?" not in self.customer_message else ""
+        present = bool(_DPF_PRESENT.search(statement))
+        absent = bool(_DPF_ABSENT.search(statement))
+        if present and absent:
+            return {}
+        if present or absent:
+            known = vehicle.get("dpf")
+            if isinstance(known, bool) and known != present:
+                return {}
+            vehicle["dpf"] = present
+        return vehicle
 
     def _oil(self, args: dict) -> Output:
+        vin, configuration = self._car(args, "oil_guide")
+        vehicle = self._confirmed_oil_vehicle(vin, configuration)
+        if configuration.get("engine_code") and not vehicle.get("engine_code"):
+            return Output({"status": "needs_detail", "detail": "engine",
+                           "note": "The requested engine code is unconfirmed or conflicts "
+                                   "with the established vehicle. Ask which engine is installed."})
+        verified = self._verified_oil(vehicle)
+        if verified is not None:
+            return verified
+        if self._local_oil_configured() and (
+                self.search_service is None or self._able("engine_oil", vin is not None) == []):
+            return Output({"status": "no_answer",
+                           "note": "No reviewed oil match for this exact configuration. "
+                                   "Ask for any missing engine or market details."})
         snapshot, running = self._federation("engine_oil", OIL_QUERY, args, "oil_guide")
         reports = [report for report in snapshot.get("fluids") or []
                    if isinstance(report, dict)]
@@ -1199,7 +1452,7 @@ class Toolbox:
                 continue
             approvals = sorted({str(value) for item in oils
                                 for value in item.get("approvals") or []})
-            codes.extend(plain(item.get("product_code")) for item in oils
+            codes.extend(normalize_code(str(item["product_code"])) for item in oils
                          if len(plain(item.get("product_code"))) >= 5)
             variants.append({
                 "source": report.get("provider"), "label": report.get("vehicle_label"),
@@ -1207,23 +1460,25 @@ class Toolbox:
                 "products": list(dict.fromkeys(
                     item["name"] for item in need["recommended"]))[:4]})
         agreed = len({(tuple(sorted(item["grades"])), item.get("capacity_l"),
+                       tuple(sorted(item.get("approvals", []))),
                        item.get("engine_code")) for item in variants}) <= 1
         undecided = list(dict.fromkeys(
             str(label) for report in reports if report.get("status") == "CONFLICTED"
             for label in report.get("candidates") or []))[:12]
-        data: dict = {"status": "answered" if variants and agreed else
-                      "sources_disagree" if variants else
+        data: dict = {"status": "sources_disagree" if variants and not agreed else
                       "engine_ambiguous" if undecided else
+                      "answered" if variants and agreed else
                       "still_running" if running else "no_answer"}
-        if variants and agreed:
+        if variants and agreed and not undecided:
             merged = oil_match.summary(oil_match.requirements(answered))
             approvals = sorted({value for item in variants
                                 for value in item.get("approvals", [])})
             data["needs"] = {**merged, **({"approvals": approvals} if approvals else {}),
                              "products": list(dict.fromkeys(
                                  name for item in variants for name in item["products"]))[:6]}
-            note = ("Supplier-asserted. Find oils of this grade with search_catalog, with "
-                    "the grade as the catalogue writes it.")
+            data["catalogue_codes"] = list(dict.fromkeys(codes))
+            note = ("Supplier-asserted. Match the exact product code and approved grade. "
+                    "Offer no oil by viscosity alone.")
         elif variants:
             data["variants"] = variants
             note = ("The selectors disagree. Decide by the engine the customer has, or ask "

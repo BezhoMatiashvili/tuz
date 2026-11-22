@@ -44,6 +44,7 @@ export function mountView(root, ctx) {
             h('p', { class: 'who__role', text: `${user.username} · ${t(`role.${user.role}`)}` }))),
         h('nav', { class: 'card menu', 'aria-label': t('more.title') }, h('ul', {},
           ctx.isAdmin && row('spark', t('nav.facebook'), { href: '/admin/facebook', dataset: { link: '' } }),
+          ctx.isAdmin && row('chat', t('nav.prompts'), { href: '/admin/prompts', dataset: { link: '' } }),
           ctx.isAdmin && row('users', t('nav.users'), { href: '/admin/users', dataset: { link: '' } }),
           ctx.isAdmin && row('audit', t('audit.title'), { href: '/admin/audit', dataset: { link: '' } }),
           row('account', t('nav.account'), { href: '/admin/account', dataset: { link: '' } }),

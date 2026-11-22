@@ -864,12 +864,16 @@ class ResearchService:
     findings and the usage. ``cache_path`` is the cache file; None keeps results in this
     process only. A turn waits ``wait_seconds`` for a job, a job has ``job_seconds`` in all,
     and ``fallback`` gets one try when the backend's request is refused for its search tool.
+    ``instructions`` gives the system prompt of each job (the owner's edit on the dashboard);
+    None, or a failure, means ``RESEARCH_SYSTEM``.
     """
 
     def __init__(self, backend: Any, *, cache_path: str | Path | None,
                  wait_seconds: float = 8.0, job_seconds: float = 60.0,
-                 clock: Callable[[], float] = time.monotonic, fallback: Any = None) -> None:
+                 clock: Callable[[], float] = time.monotonic, fallback: Any = None,
+                 instructions: Callable[[], str] | None = None) -> None:
         self.backend, self.fallback = backend, fallback
+        self.instructions = instructions
         self.wait_seconds, self.job_seconds, self.clock = wait_seconds, job_seconds, clock
         # Lifetimes are wall-clock time, not ``clock``: a cache file outlives this process.
         self._cache: _FileStore | _MemoryStore = (
@@ -966,15 +970,25 @@ class ResearchService:
                    "yes" if stored else "no", f" error={error}" if error else "")
         return result
 
+    def _system(self) -> str:
+        if self.instructions is None:
+            return RESEARCH_SYSTEM
+        try:
+            text = self.instructions()
+        except Exception:  # The job goes on with the packaged instructions.
+            return RESEARCH_SYSTEM
+        return text if isinstance(text, str) and text.strip() else RESEARCH_SYSTEM
+
     def _research(self, question: dict, started: float,
                   tried: list[str]) -> tuple[dict, dict]:
+        system = self._system()
         tried.append(_name(self.backend))
         try:
-            return self.backend.run(question, RESEARCH_SYSTEM, self.job_seconds)
+            return self.backend.run(question, system, self.job_seconds)
         except anthropic.BadRequestError as exc:
             if self.fallback is None or not _search_refused(exc):
                 raise
         # One try, within what is left of the job's time; its own failure ends the job.
         tried.append(_name(self.fallback))
         left = max(1.0, self.job_seconds - (self.clock() - started))
-        return self.fallback.run(question, RESEARCH_SYSTEM, left)
+        return self.fallback.run(question, system, left)

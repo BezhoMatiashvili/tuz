@@ -111,14 +111,12 @@ class GoldenTurnTests(unittest.TestCase):
         # The car line never shows more than make, model and year.
         for view in views.values():
             self.assertEqual(view["car"], "Toyota Camry 2015")
-        # What only staff may see is in the fixture's payloads and in no public view:
-        # stock numbers, the vehicle record, the engine's notes, ids and bookkeeping.
+        # The vehicle record, the engine's notes, ids and bookkeeping stay with staff.
         for turn in TURNS:
             text = json.dumps(turn["public"], ensure_ascii=False)
-            for private in ("ZQ-1234", "04465", "2AR-FE", "XLE", "private", "oil_filter",
+            for private in ("04465", "2AR-FE", "XLE", "private", "oil_filter",
                             "engine_oil", "front", "evidence", "pending", "input_tokens",
-                            "sid-0", "ZQ-7702", "2060006281", "meaning", "memory",
-                            "diagnostics", "outcome"):
+                            "sid-0", "meaning", "memory", "diagnostics", "outcome"):
                 self.assertNotIn(private, text, turn["id"])
             # The staff view adds the contract's four keys and never the engine's notes.
             self.assertNotIn("meaning", json.dumps(turn["staff"], ensure_ascii=False))

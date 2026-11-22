@@ -43,6 +43,7 @@ from automotive.messenger_render import (
     bot_help_text,
     bot_on_refused_text,
     bot_switched_text,
+    bot_test_text,
     conflicting_vins_text,
     late_apology,
     media_only_text,
@@ -66,6 +67,7 @@ from automotive.meta_crypto import TokenCipher
 from automotive.meta_graph import GraphError, TokenChoice
 from automotive.meta_store import (
     ACTION,
+    ANY_CONTEXT,
     CHANNELS,
     REPLY_FIELDS,
     REPLY_STATUSES,
@@ -74,7 +76,11 @@ from automotive.meta_store import (
     THREAD_COLUMNS,
     UNFINISHED,
     AutoReplyNotConfirmed,
+    MetaConflict,
     MetaStore,
+    NotTester,
+    bot_mode,
+    mask_psid,
 )
 from tests.test_assistant import (
     REAR,
@@ -152,6 +158,7 @@ class FakeStore:
         now = clock.now()
         self.settings_row = {
             "settings_id": 1, "bot_enabled": False, "bot_enabled_at": None,
+            "bot_test_mode": False, "bot_test_at": None,
             "bot_changed_at": None, "bot_changed_by": "", "bot_paused_reason": "",
             "bot_paused_at": None, "auto_reply_confirmed_off": False, "comments_enabled": False,
             "comments_enabled_at": None, "max_reply_age_minutes": 1440,
@@ -192,20 +199,36 @@ class FakeStore:
 
     def set_bot(self, enabled, actor, auto_reply_confirmed=None, *, client_ip=None) -> dict:
         self._hit("set_bot")
+        return self.set_bot_mode("on" if enabled else "off", actor, auto_reply_confirmed)
+
+    def set_bot_mode(self, mode, actor, auto_reply_confirmed=None, *, client_ip=None) -> dict:
+        self._hit("set_bot_mode")
+        if mode not in ("off", "test", "on"):
+            raise ValueError("The bot mode is off, test or on")
         row = self.settings_row
-        confirmed = (row["auto_reply_confirmed_off"] if auto_reply_confirmed is None
-                     else bool(auto_reply_confirmed))
-        if enabled and not confirmed:
+        confirmed = (bool(auto_reply_confirmed) if auto_reply_confirmed is not None
+                     else mode != "test" and row["auto_reply_confirmed_off"])
+        if mode == "on" and not confirmed:
             raise AutoReplyNotConfirmed("Confirm that Meta's Auto reply is off first")
-        was, now = row["bot_enabled"], self.clock.now()
-        if enabled and not was:
+        was, now = bot_mode(row), self.clock.now()
+        if mode == "on" and was != "on":
             row["bot_enabled_at"] = now
-        row.update(bot_enabled=bool(enabled), bot_changed_at=now, bot_changed_by=actor_name(actor),
-                   bot_paused_reason="", bot_paused_at=None, auto_reply_confirmed_off=confirmed,
-                   version=row["version"] + 1)
-        self.audit(actor, "messenger.bot_on" if enabled else "messenger.bot_off", "settings",
-                   {"changed": bool(enabled) != was})
+        if mode != "off" and was == "off":
+            row["bot_test_at"] = now
+        row.update(bot_enabled=mode == "on", bot_test_mode=mode == "test", bot_changed_at=now,
+                   bot_changed_by=actor_name(actor), bot_paused_reason="", bot_paused_at=None,
+                   auto_reply_confirmed_off=confirmed, version=row["version"] + 1)
+        self.audit(actor, f"messenger.bot_{mode}", "settings",
+                   {"changed": mode != was, "from": was})
         return dict(row)
+
+    def testers(self, limit=200) -> list[dict]:
+        self._hit("testers")
+        rows = sorted((thread for thread in self.threads.values() if thread["bot_tester"]),
+                      key=lambda thread: (thread["customer_name"].lower(), thread["psid"]))
+        return [{key: thread[key] for key in ("psid", "customer_name", "version",
+                                               "last_customer_at", "bot_enabled")}
+                for thread in rows][:limit]
 
     def pause_for_provider(self, reason="ai_provider") -> bool:
         self._hit("pause_for_provider")
@@ -251,10 +274,11 @@ class FakeStore:
             now = self.clock.now()
             thread = {"psid": psid, "page_id": page_id, "customer_name": "",
                       "conversation_id": "", "bot_enabled": True, "is_admin": False,
-                      "source": "", "source_ad_id": "", "first_seen_at": now,
+                      "bot_tester": False, "source": "", "source_ad_id": "", "first_seen_at": now,
                       "last_customer_at": None, "last_shop_at": None, "last_bot_at": None,
                       "needs_attention": False, "attention_reason": "", "engine_state": None,
-                      "engine_state_at": None, "updated_at": now, "version": 1}
+                      "engine_state_at": None, "context_cleared_at": None, "updated_at": now,
+                      "version": 1}
             self.threads[psid] = thread
         return thread
 
@@ -294,13 +318,33 @@ class FakeStore:
                       key=lambda thread: thread["last_customer_at"] or thread["first_seen_at"])
         return [self._row(thread) for thread in rows][offset:offset + limit]
 
-    def save_engine_state(self, psid, state) -> bool:
+    def clear_context(self, psid, actor, *, expected_version=None, client_ip=None):
+        """MetaStore.clear_context (migration 0023's function): a tester's bot memory."""
+        self._hit("clear_context")
+        with self.lock:
+            thread = self.threads.get(psid)
+            if thread is None:
+                return None
+            if not thread["bot_tester"]:
+                raise NotTester("thread")
+            if expected_version is not None and expected_version != thread["version"]:
+                raise MetaConflict("thread")
+            now = self.clock.now()
+            thread.update(engine_state=None, engine_state_at=now, context_cleared_at=now,
+                          updated_at=now, version=thread["version"] + 1)
+            self.audit(actor, "messenger.chat_context_cleared", mask_psid(psid),
+                       {"version": thread["version"]})
+            return self._row(thread)
+
+    def save_engine_state(self, psid, state, *, cleared_at=ANY_CONTEXT) -> bool:
         self._hit("save_engine_state")
         if state is not None and len(json.dumps(state, ensure_ascii=False).encode()) > 262144:
             raise ValueError("The engine state is larger than 256 KiB")
         thread = self.threads.get(psid)
         if thread is None:
             return False
+        if cleared_at is not ANY_CONTEXT and cleared_at != thread["context_cleared_at"]:
+            return False  # cleared since the caller read the chat
         thread["engine_state"] = (None if state is None
                                   else json.loads(json.dumps(state, ensure_ascii=False)))
         return True
@@ -353,8 +397,10 @@ class FakeStore:
         answers = [row for row in rows if row["sender"] != "customer"
                    and not (row["sender"] == "shop" and row["app_id"] in ignore_app_ids)]
         last = (answers[-1]["sent_at"], answers[-1]["message_id"]) if answers else None
+        cleared = (self.threads.get(psid) or {}).get("context_cleared_at")
         return [dict(row) for row in rows if row["sender"] == "customer"
-                and (last is None or (row["sent_at"], row["message_id"]) > last)]
+                and (last is None or (row["sent_at"], row["message_id"]) > last)
+                and (cleared is None or row["sent_at"] > cleared)]
 
     # -- replies -------------------------------------------------------------------------------
 
@@ -1076,6 +1122,370 @@ class SwitchTests(WorkerCase):
         self.assertEqual(results, {PSID: "skipped_superseded"})
         self.assertEqual(self.reply(first)["engine_status"], "CANCELLED")
         self.assertEqual(self.later(5), {PSID: "sent"})
+
+
+class TestModeTests(WorkerCase):
+    """Test mode: the bot answers only the chats an admin marked as testers."""
+
+    def tester(self, psid: str = PSID) -> None:
+        self.store.upsert_thread(psid, PAGE)
+        self.store.threads[psid]["bot_tester"] = True
+
+    def testing(self) -> None:
+        self.store.set_bot_mode("test", "boss")
+        self.clock.advance(1)
+
+    def test_only_a_tester_is_answered_and_anyone_else_costs_nothing(self):
+        self.tester()
+        self.testing()
+        other = self.say("ხუნდები გაქვთ?", psid=OTHER)
+        self.assertEqual(self.pump(), ["stored"])
+        self.assertEqual(self.later(5), {OTHER: "skipped_not_tester"})
+        self.assertEqual(self.reply(other)["status"], "skipped_not_tester")
+        # No warm-up, no engine turn, no typing indicator, no turn counted against the caps.
+        self.assertEqual((self.engine.prepared, self.engine.calls, self.graph.calls), (0, [], []))
+        self.assertEqual(self.store.turns_today(), 0)
+        mid, results = self.turn("Camry 2015 წინა ხუნდები")
+        self.assertEqual(results, {PSID: "sent"})
+        self.assertEqual(self.engine.prepared, 1)
+        self.assertEqual([call["text"] for call in self.engine.calls], ["Camry 2015 წინა ხუნდები"])
+        self.assertEqual(self.graph.texts(OTHER), [])
+        self.assertEqual(self.reply(mid)["status"], "sent")
+
+    def test_turning_test_mode_into_everyone_never_answers_what_others_wrote_during_it(self):
+        self.testing()
+        self.say("ხუნდები", psid=OTHER)
+        self.pump()
+        self.assertEqual(self.later(5), {OTHER: "skipped_not_tester"})
+        self.clock.advance(10)
+        self.store.set_bot(True, "boss", True)  # the dashboard's tick
+        self.assertEqual(self.worker.run_burst(OTHER), "duplicate")
+        # Written during the test, delivered after the switch (the laptop slept): not answered.
+        self.say("ზეთი", psid=OTHER, ago=5)
+        self.pump()
+        self.assertEqual(self.later(5), {OTHER: "skipped_off"})
+        self.assertEqual((self.engine.calls, self.graph.calls), ([], []))
+        self.turn("Camry 2015", psid=OTHER)  # a new message is answered, the earlier ones read
+        self.assertEqual(self.engine.calls[0]["text"], "ხუნდები\nზეთი\nCamry 2015")
+
+    def test_a_testers_reply_under_way_survives_the_switch_to_everyone(self):
+        self.tester()
+        self.testing()
+
+        def everyone(call):
+            self.store.set_bot(True, "boss", True)
+            return ok()(call)
+
+        self.engine.results = [everyone]
+        mid, results = self.turn()
+        self.assertEqual(results, {PSID: "sent"})
+        self.assertEqual(self.graph.texts(PSID), [ANSWER])
+
+    def test_switching_to_test_mode_mid_turn_stops_a_non_testers_reply(self):
+        def narrow(call):
+            self.store.set_bot_mode("test", "boss")
+            return ok()(call)
+
+        self.engine.results = [narrow]
+        mid, results = self.turn()
+        self.assertEqual(results, {PSID: "skipped_not_tester"})
+        self.assertEqual(self.graph.sends(), [])
+        self.assertEqual(self.reply(mid)["status"], "skipped_not_tester")
+
+    def test_unmarking_a_tester_mid_turn_stops_the_reply(self):
+        self.tester()
+        self.testing()
+
+        def unmark(call):
+            self.store.threads[PSID]["bot_tester"] = False
+            return ok()(call)
+
+        self.engine.results = [unmark]
+        _, results = self.turn()
+        self.assertEqual(results, {PSID: "skipped_not_tester"})
+        self.assertEqual(self.graph.sends(), [])
+
+    def test_a_testers_messages_from_before_test_mode_are_never_answered(self):
+        self.store.set_bot(False, "boss")
+        self.tester()
+        self.say("ხუნდები")
+        self.pump()
+        self.assertEqual(self.later(5), {PSID: "skipped_off"})
+        self.clock.advance(10)
+        self.testing()
+        self.assertEqual(self.worker.run_burst(PSID), "duplicate")
+        self.say("ზეთი", ago=5)
+        self.pump()
+        self.assertEqual(self.later(5), {PSID: "skipped_off"})
+        self.assertEqual(self.engine.calls, [])
+        self.assertEqual(self.turn("Camry 2015")[1], {PSID: "sent"})
+
+    def test_off_ends_test_mode_and_a_chat_switched_off_stays_off_for_a_tester(self):
+        self.tester()
+        self.testing()
+        self.store.set_bot(False, "boss")
+        self.assertEqual(bot_mode(self.store.settings_row), "off")
+        self.assertEqual(self.turn()[1], {PSID: "skipped_off"})
+        self.testing()
+        self.store.threads[PSID]["bot_enabled"] = False
+        self.assertEqual(self.turn("ზეთი")[1], {PSID: "skipped_chat_off"})
+
+    def test_test_mode_needs_no_auto_reply_confirmation_but_everyone_still_does(self):
+        self.store.set_bot(False, "boss")
+        self.assertIs(self.store.settings_row["auto_reply_confirmed_off"], True)
+        self.store.set_bot_mode("test", "boss")
+        self.assertEqual(bot_mode(self.store.settings_row), "test")
+        # Test mode runs with Auto reply on: the stored tick is dropped, so it is asked again.
+        self.assertIs(self.store.settings_row["auto_reply_confirmed_off"], False)
+        with self.assertRaises(AutoReplyNotConfirmed):
+            self.store.set_bot(True, "boss")
+        self.assertEqual(bot_mode(self.store.settings_row), "test")
+
+    def test_a_tester_marked_after_writing_is_answered_from_their_next_message(self):
+        self.testing()
+        self.say("ხუნდები გაქვთ?")
+        self.pump()
+        self.assertEqual(self.later(5), {PSID: "skipped_not_tester"})
+        self.store.threads[PSID]["bot_tester"] = True  # the admin marks them in Chats
+        self.assertEqual(self.worker.run_burst(PSID), "duplicate")  # never answered on its own
+        self.assertEqual(self.turn("Camry 2015")[1], {PSID: "sent"})
+        self.assertEqual(self.engine.calls[0]["text"], "ხუნდები გაქვთ?\nCamry 2015")
+
+    def test_metas_auto_reply_greeting_leaves_a_testers_first_message_to_the_shop(self):
+        self.tester()
+        self.testing()
+        self.say("გამარჯობა")
+        self.pump()
+        self.shop("მოგესალმებით Garage 1886-ში 👋", app_id=AUTO_APP)  # Meta's Auto reply
+        self.pump()
+        self.assertNotIn(PSID, {key: value for key, value in self.later(5).items()
+                                if value == "sent"})
+        self.assertEqual(self.graph.sends(), [])
+        self.assertEqual(self.turn("Camry 2015 ხუნდები")[1], {PSID: "sent"})
+        self.assertEqual(self.engine.calls[-1]["text"], "Camry 2015 ხუნდები")
+
+
+class ClearContextTests(WorkerCase):
+    """Dashboard > Facebook > Chats, "Clear bot memory" on a tester's chat: the bot forgets the
+    chat and reads nothing written before the clear (MetaStore.clear_context)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.store.upsert_thread(PSID, PAGE)
+        self.store.threads[PSID]["bot_tester"] = True
+
+    def clear(self) -> None:
+        self.assertIsNotNone(self.store.clear_context(PSID, "boss"))
+        self.clock.advance(1)
+
+    def test_the_next_message_starts_a_new_conversation(self):
+        self.turn("Camry 2015 წინა ხუნდები")
+        self.assertEqual(self.state()["history"][0]["question"], "Camry 2015 წინა ხუნდები")
+        self.clear()
+        self.assertIsNone(self.state())
+        mid, results = self.turn("ზეთის ფილტრი")
+        self.assertEqual(results, {PSID: "sent"})
+        # No state from before, and only the new message as the text.
+        self.assertIsNone(self.engine.calls[-1]["state"])
+        self.assertEqual(self.engine.calls[-1]["text"], "ზეთის ფილტრი")
+        self.assertEqual(self.state()["history"], [
+            {"question": "ზეთის ფილტრი", "answer": ANSWER, "shown": []}])
+        self.assertEqual(self.reply(mid)["status"], "sent")
+
+    def test_a_message_left_unanswered_before_the_clear_is_never_read(self):
+        self.store.threads[PSID]["bot_enabled"] = False  # the chat's switch: nothing answered
+        old = self.say("ძველი კითხვა: Camry 2015")
+        self.pump()
+        self.assertEqual(self.later(5), {PSID: "skipped_chat_off"})
+        self.assertEqual(self.reply(old, "messenger")["status"], "skipped_chat_off")
+        self.clear()
+        self.store.threads[PSID]["bot_enabled"] = True
+        self.turn("ახალი კითხვა")
+        # Without the clear the bot would read both (see TestModeTests: "ხუნდები\nზეთი\n...").
+        self.assertEqual([call["text"] for call in self.engine.calls], ["ახალი კითხვა"])
+        self.assertIsNone(self.engine.calls[0]["state"])
+
+    def test_a_clear_during_a_turn_sends_nothing_and_keeps_the_memory_empty(self):
+        self.turn("Camry 2015")
+
+        def cleared(call):
+            self.store.clear_context(PSID, "boss")
+            return ok("ძველ კონტექსტზე აგებული პასუხი")(call)
+
+        self.engine.results = [cleared]
+        mid, results = self.turn("წინა ხუნდები")
+        self.assertEqual(results, {PSID: "skipped_superseded"})
+        self.assertEqual(self.graph.texts(PSID), [ANSWER])  # only the first turn's reply
+        self.assertEqual(self.reply(mid)["status"], "skipped_superseded")
+        self.assertIsNone(self.state())  # neither the answered nor the unsent state came back
+        self.clock.advance(1)
+        self.turn("ზეთი")
+        self.assertIsNone(self.engine.calls[-1]["state"])
+        self.assertEqual(self.engine.calls[-1]["text"], "ზეთი")
+
+    def test_a_turn_stopped_for_another_reason_does_not_bring_the_memory_back(self):
+        self.turn("Camry 2015")
+
+        def cleared_then_cancelled(call):
+            self.store.clear_context(PSID, "boss")
+            return cancelled(call)
+
+        self.engine.results = [cleared_then_cancelled]
+        self.turn("წინა ხუნდები")
+        self.assertIsNone(self.state())
+
+    def test_a_clear_between_reading_the_messages_and_the_state_stops_the_burst(self):
+        self.turn("Camry 2015")
+        start_reply = self.store.start_reply
+
+        def clearing(channel, psid, trigger_key, trigger_keys=()):
+            reply_id = start_reply(channel, psid, trigger_key, trigger_keys)
+            if channel == "messenger":
+                self.store.start_reply = start_reply
+                self.store.clear_context(PSID, "boss")
+            return reply_id
+
+        self.store.start_reply = clearing
+        mid, results = self.turn("წინა ხუნდები")
+        # The burst's message is from before the clear: the engine never sees it.
+        self.assertEqual(results, {PSID: "skipped_superseded"})
+        self.assertEqual(len(self.engine.calls), 1)
+        self.assertEqual(self.graph.texts(PSID), [ANSWER])
+        self.assertIsNone(self.state())
+
+    def test_the_shops_reply_after_a_clear_is_remembered_without_what_came_before(self):
+        self.store.threads[PSID]["bot_enabled"] = False
+        self.say("ძველი კითხვა")
+        self.pump()
+        self.later(5)
+        self.clear()
+        self.say("ახალი კითხვა")
+        self.pump()
+        self.later(5)
+        self.shop("დიახ, გვაქვს")
+        self.pump()
+        history = self.state()["history"]
+        self.assertEqual([entry["question"] for entry in history], ["ახალი კითხვა"])
+        self.assertNotIn("ძველი", json.dumps(self.state(), ensure_ascii=False))
+
+    def test_a_clear_while_the_shops_reply_is_being_remembered_keeps_the_memory_empty(self):
+        self.turn("Camry 2015")
+        get_thread = self.store.get_thread
+
+        def clearing(psid, *, with_state=False):
+            row = get_thread(psid, with_state=with_state)
+            if with_state:  # the echo read the old memory; the dashboard clears right after
+                self.store.get_thread = get_thread
+                self.store.clear_context(PSID, "boss")
+            return row
+
+        self.store.get_thread = clearing
+        self.shop("დიახ, გვაქვს")
+        self.assertEqual(self.pump()[-1], "echo_shop")
+        self.assertIsNone(self.state())
+
+    def test_a_shop_message_from_before_the_clear_arriving_late_is_not_remembered(self):
+        self.turn("Camry 2015")
+        self.shop("ძველი პასუხი მაღაზიიდან")  # sent now; its echo is handled after the clear
+        self.clock.advance(1)
+        self.store.clear_context(PSID, "boss")
+        self.assertEqual(self.pump()[-1], "echo_shop")
+        self.assertIsNone(self.state())
+        # One the shop writes after the clear is remembered as ever.
+        self.clock.advance(1)
+        self.shop("ახალი პასუხი")
+        self.pump()
+        self.assertIn("ახალი პასუხი", json.dumps(self.state(), ensure_ascii=False))
+        self.assertNotIn("ძველი", json.dumps(self.state(), ensure_ascii=False))
+
+    def test_a_late_shop_message_is_not_queued_onto_a_turn_running_after_the_clear(self):
+        self.turn("Camry 2015")
+        written = self.clock.now()  # the shop wrote now; Meta delivers the echo much later
+        self.clock.advance(1)
+        self.store.clear_context(PSID, "boss")
+        self.clock.advance(1)
+
+        def echo_arrives(call):  # while the new turn holds the chat's state
+            self.store.deliver("messages", {
+                "sender": {"id": PAGE}, "recipient": {"id": PSID}, "timestamp": ms(written),
+                "message": {"mid": "m_late_echo", "is_echo": True, "app_id": int(OTHER_APP),
+                            "text": "ძველი პასუხი მაღაზიიდან"}})
+            self.assertEqual(self.pump()[-1], "echo_shop")
+            return ok()(call)
+
+        self.engine.results = [echo_arrives]
+        _, results = self.turn("ახალი კითხვა")
+        self.assertEqual(results, {PSID: "sent"})
+        self.assertEqual([entry["question"] for entry in self.state()["history"]],
+                         ["ახალი კითხვა"])
+        self.assertNotIn("ძველი", json.dumps(self.state(), ensure_ascii=False))
+
+    def test_the_cap_notice_still_goes_out_in_a_chat_that_was_cleared_before(self):
+        self.clear()
+        self.store.settings_row["customer_daily_turn_limit"] = 0
+        _, results = self.turn("ხუნდები გაქვთ?")
+        self.assertEqual(results, {PSID: "skipped_cap"})
+        self.assertEqual(len(self.graph.texts(PSID)), 1)  # the polite notice with the phone
+
+    def test_a_shop_reply_saved_under_an_older_read_is_dropped(self):
+        self.turn("Camry 2015")
+        before = self.store.threads[PSID]["context_cleared_at"]
+        self.clear()
+        self.worker._save_state(PSID, {"history": [{"question": "ძველი"}]}, {}, before)
+        self.assertIsNone(self.state())
+        self.worker._save_state(PSID, {"history": []}, {},
+                                self.store.threads[PSID]["context_cleared_at"])
+        self.assertEqual(self.state(), {"history": []})
+
+    def test_only_a_testers_chat_is_cleared_and_a_stale_version_is_refused(self):
+        self.store.upsert_thread(OTHER, PAGE)
+        with self.assertRaises(NotTester):
+            self.store.clear_context(OTHER, "boss")
+        with self.assertRaises(MetaConflict):
+            self.store.clear_context(PSID, "boss", expected_version=99)
+        self.assertIsNone(self.store.clear_context("7000000000000000", "boss"))
+        self.assertIsNone(self.store.threads[PSID]["context_cleared_at"])
+
+
+class TestModeCommandTests(WorkerCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.store.upsert_thread(ADMIN_PSID, PAGE)
+        self.store.threads[ADMIN_PSID]["is_admin"] = True
+
+    def command(self, text: str) -> str:
+        self.say(text, psid=ADMIN_PSID)
+        self.assertEqual(self.pump()[-1], "command")
+        return self.graph.texts(ADMIN_PSID)[-1]
+
+    def test_test_on_status_and_off_from_the_admins_own_chat(self):
+        self.store.upsert_thread(PSID, PAGE)
+        self.store.threads[PSID]["bot_tester"] = True
+        self.assertEqual(self.command("#bot test"), bot_test_text("ka", testers=1))
+        self.assertEqual(bot_mode(self.store.settings_row), "test")
+        self.assertEqual(self.store.audits[-1][:2], ("messenger:9999", "messenger.bot_test"))
+        self.assertEqual(self.command("#BOT TEST"), bot_test_text("ka", changed=False, testers=1))
+        status = self.command("#bot status").split("\n")
+        self.assertEqual(status[0], TEXTS["ka"]["status_test"].replace("{count}", "1"))
+        self.assertEqual(status[1], "ბოლო ცვლილება: 11.11.2026 14:00")
+        # Test mode dropped the stored Auto reply tick: everyone needs it confirmed again.
+        self.assertEqual(self.command("#bot on"), bot_on_refused_text("ka"))
+        self.assertEqual(bot_mode(self.store.settings_row), "test")
+        self.store.settings_row["auto_reply_confirmed_off"] = True  # ticked in the dashboard
+        self.assertEqual(self.command("#bot on"), bot_switched_text("ka", True))  # was testers only
+        self.assertEqual(bot_mode(self.store.settings_row), "on")
+        self.command("#bot test")
+        self.assertEqual(self.command("#bot off"), bot_switched_text("ka", False))
+        self.assertEqual(bot_mode(self.store.settings_row), "off")
+        self.assertEqual(self.command("#bot help"), bot_help_text("ka"))
+        self.assertIn("#bot test", bot_help_text("ka"))
+        self.assertEqual(self.engine.calls, [])
+
+    def test_test_also_resumes_a_bot_the_ai_provider_paused(self):
+        self.store.set_bot_mode("test", "boss")
+        self.store.pause_for_provider()
+        self.assertEqual(self.command("#bot test"), bot_test_text("ka", testers=0))
+        self.assertEqual(self.store.settings_row["bot_paused_reason"], "")
 
 
 class CapTests(WorkerCase):

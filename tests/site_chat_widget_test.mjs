@@ -63,6 +63,7 @@ const OLD_STRINGS = {
   'search.price_request': 'Price on request',
 };
 const NEW_STRINGS = {
+  'chat.sap_code': 'SAP code: {code}',
   'chat.starters': 'Popular requests',
   'chat.starter_oil': 'Oil change',
   'chat.starter_pads': 'Front brake pads',
@@ -1055,18 +1056,18 @@ await test('an offer lists its parts under group headings, then the next steps',
   assert.equal(pads.lang, 'ka');
   assert.equal(pads.children.length, 2);
   assert.equal(filters.children.length, 1);
-  // One card: name and price, brand and what it fits, then rows of their own for the
-  // availability, for how sure the fit is and for the reason.
+  // One row each for the catalogue details, SAP code, availability, and fit explanation.
   const row = pads.children[0];
-  assert.deepEqual(shape(row), ['card__name', 'card__price', 'card__meta', 'card__state', 'card__fit', 'card__why']);
+  assert.deepEqual(shape(row), ['card__name', 'card__price', 'card__meta', 'card__sap', 'card__state', 'card__fit', 'card__why']);
   assert.deepEqual(shape(row.querySelector('.card__state')), ['card__stock'], 'availability shares its row with nothing');
-  assert.deepEqual(shape(pads.children[1]), ['card__name', 'card__price', 'card__meta', 'card__state', 'card__fit', 'card__why']);
+  assert.deepEqual(shape(pads.children[1]), shape(row));
   assert.deepEqual(shape(why), ['card__fit', 'card__why']);
   assert.equal(why.textContent, 'Needs checkingძრავი ჩანაწერში არ წერია. გადაამოწმეთ ძველი ფილტრით.');
-  assert.deepEqual(shape(filters.children[0]), ['card__name', 'card__price card__price--ask', 'card__meta', 'card__state'], 'the card does not repeat its group');
+  assert.deepEqual(shape(filters.children[0]), ['card__name', 'card__price card__price--ask', 'card__meta', 'card__sap', 'card__state'], 'the card does not repeat its group');
   assert.equal(row.querySelector('.card__name').textContent, 'სამუხრუჭე ხუნდი წინა');
   assert.equal(row.querySelector('.card__price').textContent, '₾45.50');
   assert.equal(row.querySelector('.card__meta').textContent, 'SATO, TOYOTA CAMRY 2012-2017');
+  assert.equal(row.querySelector('.card__sap').textContent, 'SAP code: ZQ-1234');
   assert.equal(row.dataset.availability, 'in_stock');
   const stock = row.querySelector('.card__stock');
   assert.equal(stock.textContent, 'In stock');
@@ -1119,6 +1120,9 @@ await test('nothing found, or a part to ask the shop about, adds the ways out of
 await test('"Show more" keeps the groups, and says so right there when it fails', async () => {
   const offer = golden('offer');
   const [padA, padB, filter] = offer.cards;
+  padA.sap_code = '000123';
+  padB.sap_code = '000124';
+  filter.sap_code = '000126';
   const groups = [{ id: 'g1', label: 'წინა ხუნდები', count: 3 }, { id: 'g2', label: 'ზეთის ფილტრი', count: 2 }];
   await ask('pads and a filter', { ...offer, groups, cards: [padA, padB], total: 5, next_offset: 2 });
   const bubble = newest();
@@ -1136,8 +1140,9 @@ await test('"Show more" keeps the groups, and says so right there when it fails'
   assert.equal(progress.textContent, '');
   assert.equal(holder.querySelectorAll('.card').length, 2);
   // The second try brings one more pad and two filters.
-  const third = { ...padB, name: 'სამუხრუჭე ხუნდი წინა, კერამიკული' };
-  server.pages.set(2, { ...offer, groups, cards: [third, filter, { ...filter, brand: 'SAKURA' }], total: 5, offset: 2, next_offset: null });
+  const third = { ...padB, name: 'სამუხრუჭე ხუნდი წინა, კერამიკული', sap_code: '000125' };
+  const otherFilter = { ...filter, brand: 'SAKURA', sap_code: '000127' };
+  server.pages.set(2, { ...offer, groups, cards: [third, filter, otherFilter], total: 5, offset: 2, next_offset: null });
   await tap(more);
   assert.equal(calls.at(-1).url, `${BASE}/conversation-1/turns/turn-1?offset=2&limit=10`);
   assert.deepEqual(shape(bubble), ['sr-only', 'p', 'msg__note', 'cards', 'next'], 'the failure line and the button are gone');
@@ -1147,6 +1152,8 @@ await test('"Show more" keeps the groups, and says so right there when it fails'
   assert.equal(heading.words, 'ზეთის ფილტრი');
   assert.equal(heading.querySelector('.cards__count').textContent, '2');
   assert.equal(filters.children.length, 2);
+  assert.deepEqual(labels(holder.querySelectorAll('.card__sap')),
+    ['SAP code: 000123', 'SAP code: 000124', 'SAP code: 000125', 'SAP code: 000126', 'SAP code: 000127']);
   assert.ok(sameNodes(holder.querySelectorAll('.card').slice(0, 2), firstRows), 'the rows that were there were not redrawn');
   // The button that was pressed is gone: focus is where the new parts start.
   assert.equal(document.activeElement, pads.children[2]);
@@ -1170,9 +1177,9 @@ await test('a group whose parts rest on one ground says it once, under its headi
   assert.equal(badge.dataset.confidence, 'spec');
   assert.match(badge.querySelector('use').getAttribute('href'), /#gauge$/);
   assert.equal(chosen.querySelector('.card__why').textContent, '0W-20: სიბლანტე, რომელსაც ზეთის შემრჩევი ამ ძრავისთვის ასახელებს.');
-  // The cards under it are all alike: name and price, brand and fits, availability.
+  // The cards share the same layout, including their SAP codes.
   for (const row of [...filters.children, ...oils.children]) {
-    assert.deepEqual(shape(row).map((name) => name.split(' ')[0]), ['card__name', 'card__price', 'card__meta', 'card__state']);
+    assert.deepEqual(shape(row).map((name) => name.split(' ')[0]), ['card__name', 'card__price', 'card__meta', 'card__sap', 'card__state']);
     assert.deepEqual(shape(row.querySelector('.card__state')), ['card__stock']);
   }
   assert.deepEqual(labels(holder.querySelectorAll('.card__fit')), ['Listed for this model and year', 'Chosen by specification'], 'said twice in all, not four times');
@@ -1216,7 +1223,7 @@ await test('"Show more" keeps that line right: said once while it holds, on the 
   assert.equal(summary.isConnected, false);
   assert.ok(sameNodes(holder.querySelectorAll('.card').slice(0, 2), rows), 'the rows that were there were not redrawn');
   assert.deepEqual(labels(holder.querySelectorAll('.card .card__fit')), ['Chosen by specification', 'Chosen by specification', 'Needs checking']);
-  assert.deepEqual(holder.querySelectorAll('.card').map((row) => shape(row).slice(3)), Array(3).fill(['card__state', 'card__fit', 'card__why']));
+  assert.deepEqual(holder.querySelectorAll('.card').map((row) => shape(row).slice(-3)), Array(3).fill(['card__state', 'card__fit', 'card__why']));
   // A fourth like the first two changes nothing back: the cards keep their own lines.
   server.pages.set(3, page([{ ...oilA, brand: 'PAKELO' }], { offset: 3, next_offset: null }));
   await tap(newest().querySelector('.msg__more'));

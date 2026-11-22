@@ -38,14 +38,14 @@ from tests.test_site_guard import Clock, RecordingBuckets, SiteAppCase
 TURN_KEYS = {"status", "answer", "note", "language", "car", "question", "suggestions",
              "quick_replies", "groups", "cards", "total", "offset", "next_offset", "checked",
              "checking"}
-CARD_KEYS = {"name", "fits", "brand", "price", "availability", "group", "reason",
+CARD_KEYS = {"name", "fits", "brand", "sap_code", "price", "availability", "group", "reason",
              "confidence"}
 FORBIDDEN_KEYS = {"product_code", "source_product_id", "stock", "usage", "results",
                   "matched_codes", "supplier_only", "claims", "citations", "product",
                   "vehicle", "warnings", "progress", "conversation_id", "turn_id",
                   "original_code", "duplicate_code", "source_fingerprint", "basis",
                   "matched_via", "requirements", "knowledge", "engine_status"}
-PRIVATE_VALUES = ("sid-0001", "ZQ-1234", "04465", "private-", "f" * 64, "1HGCM82633A004352",
+PRIVATE_VALUES = ("sid-0001", "04465", "private-", "f" * 64, "1HGCM82633A004352",
                   "2AR-FE")
 A, B, C = "203.0.113.7", "198.51.100.9", "192.0.2.50"
 
@@ -91,7 +91,7 @@ def staff_turn(**changes) -> dict:
 CAMRY = {"make": "TOYOTA", "model": "Camry", "model_year": 2015, "trim": "XLE",
          "engine_code": "2AR-FE", "displacement_l": 2.5, "vin": "4T1BF1FK5FU000001"}
 PAD_CARD = {"name": "სამუხრუჭე ხუნდი წინა", "fits": "TOYOTA CAMRY 2012-2017", "brand": "SATO",
-            "price": 45.5}
+            "price": 45.5, "sap_code": "ZQ-1234"}
 
 
 def engine_turn(**changes) -> dict:
@@ -147,7 +147,7 @@ class WhitelistTests(unittest.TestCase):
         self.assertEqual(keys_in(turn) & FORBIDDEN_KEYS, set())
         self.assertEqual(keys_in(turn), TURN_KEYS | CARD_KEYS | {"label", "value"})
         text = json.dumps(turn, ensure_ascii=False)
-        for private in (*PRIVATE_VALUES, "999", "1234"):
+        for private in (*PRIVATE_VALUES, "999"):
             self.assertNotIn(private, text)
 
     def test_new_engine_fields_never_leak(self):
@@ -166,6 +166,21 @@ class WhitelistTests(unittest.TestCase):
             self.assertIsNone(public_card(card(sid, price=999.0), self.catalog)["price"], sid)
         self.assertIsNone(public_card(card(), Catalog.from_rows([]))["price"])
         self.assertEqual(public_card(card("sid-0008"), self.catalog)["price"], 850.0)
+
+    def test_assistant_oil_card_converts_catalogue_litre_price_to_pack_price(self):
+        catalog = Catalog.from_rows([
+            row("oil", "ძრავის ზეთი 5W-30 4L", "", "FUCHS", "20,25", "9", "0"),
+        ])
+        offered = {**card("oil", price=999.0), "match_source": "assistant"}
+        self.assertEqual(public_card(offered, catalog)["price"], 81.0)
+
+    def test_sap_code_uses_the_offered_row_with_a_catalogue_fallback(self):
+        offered = card(product_code="  00001234  ")
+        self.assertEqual(public_card(offered, self.catalog)["sap_code"], "00001234")
+        self.assertEqual(public_card(card(product_code=" "), self.catalog)["sap_code"],
+                         "ZQ-1234")
+        missing = card("sid-missing", product_code="")
+        self.assertEqual(public_card(missing, self.catalog)["sap_code"], "")
 
     def test_availability_maps_stock_states_to_labels(self):
         self.assertEqual(set(AVAILABILITY),
@@ -212,7 +227,7 @@ class WhitelistTests(unittest.TestCase):
                                  "quick_replies": [], "groups": [], "cards": [], "total": 0,
                                  "offset": 0, "next_offset": None, "checked": 0, "checking": 0})
         self.assertEqual(public_card({"product": "not a dict"}, self.catalog),
-                         {"name": "", "fits": "", "brand": "", "price": None,
+                         {"name": "", "fits": "", "brand": "", "sap_code": "", "price": None,
                           "availability": "unknown", "group": "", "reason": "",
                           "confidence": ""})
         self.assertEqual(public_turn(staff_turn(language="en", next_offset=5),
@@ -328,7 +343,8 @@ class QuestionTests(unittest.TestCase):
         self.assertEqual(turn["cards"], [
             {**PAD_CARD, "availability": "in_stock", "group": "g1", "confidence": "confirmed",
              "reason": "ემთხვევა ამ მანქანის კატალოგის ჩანაწერს."},
-            {**PAD_CARD, "availability": "soon", "group": "g2", "confidence": "listed",
+            {**PAD_CARD, "sap_code": "ZQ-1234B", "availability": "soon", "group": "g2",
+             "confidence": "listed",
              "reason": "CAMRY 2012-2017 მოიცავს 2015 წელს."}])
         self.assertEqual(keys_in(turn),
                          TURN_KEYS | CARD_KEYS | {"label", "value", "id", "count"})
@@ -454,7 +470,10 @@ class QuestionTests(unittest.TestCase):
         # listed without a heading.
         self.assertEqual(turn["groups"], [{"id": "g1", "label": "წინა ხუნდები", "count": 1}])
         self.assertEqual([shown["group"] for shown in turn["cards"]], ["g1", ""])
-        self.assertNotIn("ZQ", json.dumps(turn, ensure_ascii=False).upper())
+        for shown in turn["cards"]:
+            self.assertNotIn("ZQ", shown["reason"].upper())
+        surrounding = {key: value for key, value in turn.items() if key != "cards"}
+        self.assertNotIn("ZQ", json.dumps(surrounding, ensure_ascii=False).upper())
         # Unless the visitor wrote the numbers: then they are theirs to read and tap.
         typed = public_turn(payload, self.catalog, said=plain("ZQ-1234 ZQ-1234B"))
         self.assertEqual((len(typed["question"]["options"]), len(typed["suggestions"]),
@@ -1013,6 +1032,7 @@ class ChatRouteTests(SiteAppCase):
         self.assertEqual(polled.status_code, 200)
         self.assertEqual(set(polled.json()), TURN_KEYS)
         self.assertEqual(set(polled.json()["cards"][0]), CARD_KEYS)
+        self.assertEqual(polled.json()["cards"][0]["sap_code"], "ZQ-1234")
         self.assertEqual(self.store.fetched, [(conversation, turn_id, 0, 3)])
         for response in (created, sent, polled):
             self.assertEqual(response.headers["cache-control"], "no-store")

@@ -8,14 +8,18 @@ admin-only. Bodies are validated by hand so the dashboard gets field codes, neve
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 from typing import Annotated, Any
 
 import anyio
+import psycopg
 from fastapi import APIRouter, Body, HTTPException, Query, Request, Response
 
-from automotive import site_media, site_reports
+from automotive import oil_catalog, prompt_library, site_media, site_reports
+from automotive.repository import DatabaseNotConfigured
 from automotive.site_auth import ROLES, USERNAME, hash_password, password_problem
+from automotive.site_catalog import Catalog
 from automotive.site_content import SECTIONS, clean, clean_service, describe_schema, missing_setup
 from automotive.site_repository import Conflict, LastAdmin
 
@@ -73,8 +77,17 @@ def _media_row(row: dict) -> dict:
             "url": f"/api/admin/media/file/{row['sha256']}"}
 
 
+def _prompt_meta(item: prompt_library.Prompt, row: dict | None) -> dict:
+    return {"key": item.key, "group": item.group, "title": item.title, "about": item.about,
+            "editable": item.editable, "edited": row is not None,
+            "version": row["version"] if row else 0,
+            "updated_at": row["updated_at"] if row else None,
+            "updated_by": row["updated_by"] if row else ""}
+
+
 def build_admin_router(*, auth: Any, repository: Any, content: Any, catalog_store: Any,
-                       settings: Any, media_cache: Any = None) -> APIRouter:
+                       settings: Any, media_cache: Any = None,
+                       prompts: Any = None, inventory_repository: Any = None) -> APIRouter:
     router = APIRouter(prefix="/api/admin", include_in_schema=False)
 
     def changed(user: dict, request: Request, action: str, target: str = "",
@@ -106,11 +119,35 @@ def build_admin_router(*, auth: Any, repository: Any, content: Any, catalog_stor
                   brand: Annotated[str, Query(max_length=80)] = "",
                   make: Annotated[str, Query(max_length=40)] = "",
                   state: Annotated[str, Query(pattern="^(all|available|out)$")] = "all",
+                  category: Annotated[str, Query(pattern="^(all|engine_oil)$")] = "all",
                   page: Annotated[int, Query(ge=1, le=2000)] = 1) -> dict:
         _user(request)
         catalog = catalog_store.current()
+        oil_labels = None
+        if category == "engine_oil":
+            if inventory_repository is None:
+                raise _fail(503, "DATA_UNAVAILABLE")
+            try:
+                reviewed = oil_catalog.read_review(inventory_repository)
+            except (DatabaseNotConfigured, psycopg.Error):
+                raise _fail(503, "DATA_UNAVAILABLE") from None
+            oils = []
+            oil_labels = {}
+            for product, label in reviewed:
+                if label["review_status"] == "OTHER_PRODUCT":
+                    continue
+                oils.append({**product, "stock_store": label["stock_store"],
+                             "stock_tuz11": label["stock_tuz11"]})
+                oil_labels[label["product_id"]] = {
+                    "grade": label["sae_grade_from_catalog"],
+                    "status": label["review_status"],
+                    "catalog_specs": label["specs_stated_in_catalog"],
+                    "reviewed_approvals": label["verified_approvals"],
+                }
+            catalog = Catalog.from_rows(oils, catalog.rules)
         return {**catalog.inventory(query=q, brand=brand.strip() or None,
-                                    make=make.strip().lower() or None, state=state, page=page),
+                                    make=make.strip().lower() or None, state=state, page=page,
+                                    oil_labels=oil_labels),
                 "options": catalog.options()}
 
     # -- admin-only reports --------------------------------------------------------------
@@ -358,5 +395,95 @@ def build_admin_router(*, auth: Any, repository: Any, content: Any, catalog_stor
         name = next((row["username"] for row in repository.list_users()
                      if row["user_id"] == user_id), str(user_id))
         changed(user, request, "user.sessions_revoked", name)
+
+    # -- prompts (every text sent to a language model; the live bot's are editable) ----------
+
+    def prompt_rows() -> tuple[dict, str]:
+        """The stored edits and the store's state: ready, unavailable (migration 0019 not
+        applied or the database down: the packaged texts apply) or off (no login)."""
+        if prompts is None or not getattr(prompts, "configured", False):
+            return {}, "off"
+        try:
+            return prompts.rows(), "ready"
+        except psycopg.Error:
+            return {}, "unavailable"
+
+    def known(key: str) -> prompt_library.Prompt:
+        item = prompt_library.BY_KEY.get(key)
+        if item is None:
+            raise _fail(404, "NOT_FOUND")
+        return item
+
+    def writable(key: str) -> prompt_library.Prompt:
+        item = known(key)
+        if not item.editable:
+            raise _fail(409, "PROMPT_READ_ONLY")
+        if prompts is None or not getattr(prompts, "configured", False):
+            raise _fail(503, "PROMPTS_UNAVAILABLE")
+        return item
+
+    def prompt_changed(user: dict, request: Request, action: str, key: str,
+                       detail: dict | None = None) -> None:
+        repository.audit(user, action, key, detail, _address(request))
+
+    @router.get("/prompts")
+    def list_prompts(request: Request) -> dict:
+        _admin(request)
+        rows, state = prompt_rows()
+        return {"store": state, "max_chars": prompt_library.MAX_CHARS,
+                "groups": [{"key": key, **group} for key, group in prompt_library.GROUPS.items()],
+                "prompts": [_prompt_meta(item, rows.get(item.key) if item.editable else None)
+                            for item in prompt_library.PROMPTS]}
+
+    @router.get("/prompts/{key}")
+    def read_prompt(key: str, request: Request) -> dict:
+        _admin(request)
+        item = known(key)
+        rows, state = prompt_rows()
+        row = rows.get(key) if item.editable else None
+        default = prompt_library.default_text(key)
+        history: list[dict] = []
+        if item.editable and state == "ready":
+            with contextlib.suppress(psycopg.Error):
+                history = prompts.history(key)
+        return {**_prompt_meta(item, row), "store": state,
+                "max_chars": prompt_library.MAX_CHARS, "default": default,
+                "text": row["body"] if row else default, "history": history}
+
+    @router.put("/prompts/{key}")
+    def save_prompt(key: str, payload: Payload, request: Request) -> dict:
+        user = _admin(request)
+        writable(key)
+        version = _version(payload)
+        text, problem = prompt_library.clean_text(payload.get("text"))
+        if problem:
+            raise _fail(422, "INVALID_FIELDS", {"text": problem})
+        try:
+            if text == prompt_library.default_text(key):
+                # The packaged text again: no edit is kept, so a later release's text applies.
+                if version and prompts.reset(key, version, user["username"]):
+                    prompt_changed(user, request, "prompt.reset", key)
+                return {"version": 0, "edited": False, "text": text}
+            saved = prompts.save(key, text, version, user["username"])
+        except prompt_library.PromptConflict:
+            raise _fail(409, "VERSION_CONFLICT") from None
+        except psycopg.Error:
+            raise _fail(503, "PROMPTS_UNAVAILABLE") from None
+        prompt_changed(user, request, "prompt.saved", key, {"chars": len(text)})
+        return {"version": saved, "edited": True, "text": text}
+
+    @router.post("/prompts/{key}/reset")
+    def reset_prompt(key: str, payload: Payload, request: Request) -> dict:
+        user = _admin(request)
+        writable(key)
+        version = _version(payload)
+        try:
+            if prompts.reset(key, version, user["username"]):
+                prompt_changed(user, request, "prompt.reset", key)
+        except prompt_library.PromptConflict:
+            raise _fail(409, "VERSION_CONFLICT") from None
+        except psycopg.Error:
+            raise _fail(503, "PROMPTS_UNAVAILABLE") from None
+        return {"version": 0, "edited": False, "text": prompt_library.default_text(key)}
 
     return router

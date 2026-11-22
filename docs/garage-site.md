@@ -71,6 +71,7 @@ defaults; sign-in answers `SITE_AUTH_NOT_CONFIGURED`.
 | Facebook section: the connection, the switches for everyone, the admin-account flag, deleting a customer's data, costs | no | yes |
 | Staff workspace `/staff` and `/api/v1/*` | yes | yes |
 | Texts, services, gallery | no | yes |
+| Prompts: read every model prompt, edit the live bot's | no | yes |
 | Accounts, audit log | no | yes |
 | Own password | yes | yes |
 
@@ -85,8 +86,9 @@ money reports, not the price list.
 
 Dashboard > **Live chats** (`/admin/live`) is for whoever is at the counter, employee or admin.
 Code: `site_live.py` (routes), `live_store.py` (SQL), `live_alerts.py` (what a turn means),
-`live_web.py` (the website chat's recorder), migrations `0015_live_chats` and
-`0016_live_waiting_dismiss`.
+`live_web.py` (the website chat's recorder), `static/admin/js/live-why.js` (why the bot found
+nothing, in words), migrations `0015_live_chats`, `0016_live_waiting_dismiss` and
+`0017_live_alert_detail`.
 
 - **Messages in real time.** What Messenger customers and website visitors wrote, with what the
   bot answered. The page asks `GET /api/admin/live/pulse` every 3 seconds (10 while its tab is
@@ -121,6 +123,31 @@ Code: `site_live.py` (routes), `live_store.py` (SQL), `live_alerts.py` (what a t
   handoff or a
   phone alarm into a "failed" one, so the system's closing of failed website alarms (when the
   visitor's bot answers again, or after 24 quiet hours) never closes what a person asked for.
+- **Why the bot found nothing** (user's request, 2026-11-21). A "Part not found" or "Bot needs
+  a human" card has a **Why** box built from facts the engine recorded of the turn
+  (`live_alerts.turn_detail`, kept in `garage.live_alerts.detail`, migration 0017), never from a
+  rule that guesses: every search the bot ran, with the words it searched with and what the
+  catalogue itself answered (rows that hold the words, how many are in stock, how many name the
+  car, what the part words, the car words and the make matched alone when nothing had all of
+  them, words that are on no row at all, similar catalogue spellings, how the rows that matched
+  name their cars), part numbers that are on no row, what the outside catalogues and the oil
+  selectors answered or that they did not answer in time; the rows it showed as out of stock
+  with their counts; the rows a shop rule took out and why; the limits that made it answer with
+  what it had (the turn's time, the search budget, its last step, an answer that failed the
+  checks) and stock figures too old to trust; the parts the reply itself says it could not
+  offer; and the line the model wrote for the staff. When searches returned rows for the car
+  and the bot offered none (or left a part out of a reply that offered others), the box says so
+  and that this was the bot's own judgement; no search is tied to one part. A failed turn names its cause first: the engine's status in
+  words, or for an internal error its class and the step it came from (reading the AI's reply,
+  a search, the checks, building the answer), which the log line `assistant_turn_failed` also
+  carries with the code location. A **stuck** Messenger chat shows the same cause, read from its
+  newest failed reply (`garage.messenger_replies.engine_status`, and the engine's own cause such
+  as `ValueError@model` from `error_text`; Meta's words for a refused send are not passed to the
+  Live page, they stay in the admin's Facebook section). The engine records the counts
+  once per search (`live_alerts.search_facts`; nothing new reaches the model), the detail is cut
+  to 6000 bytes, and the same request failing again for other reasons refreshes the box without
+  a sound (after the staff's hours it keeps the alarm's time, so a loud alarm stays loud for the
+  morning). A failure never replaces a handoff's box, and an alarm raised before 0017 shows none.
 - **Bot off for one customer**, employee or admin (`PUT /api/admin/live/chats/{key}/bot`). A
   Messenger chat uses its existing per-chat switch, which the worker checks before every send
   (audited as `messenger.chat_off`). A website visitor gets a new flag, which the recorder's
@@ -137,18 +164,39 @@ Code: `site_live.py` (routes), `live_store.py` (SQL), `live_alerts.py` (what a t
   files) work wherever staff are; a browser lets a page play sound only after one click, so a
   notice says so until then, and each person can mute the sound in their own browser. Anything
   that needs a person (an open alarm, a waiting or a stuck chat) repeats quietly every minute.
+- **Staff hours and the siren** (owner's decision, 2026-11-21; `automotive/shop_hours.py`, one
+  clock for everything: 10:00 to 19:00 every day, Tbilisi time; not read from the website's
+  opening hours, which are free text). A "Part not found" or "Bot needs a human" alarm sounds a
+  loud siren (a sawtooth wail through a compressor: as loud as the speakers allow without
+  clipping) and repeats it every 15 seconds until someone opens that chat on the Live page or
+  marks the alarm done, and only while the shop is open (`open_now` in the pulse, the server's
+  clock): one left open at 19:00 stops, and calls again at 10:00 if nobody saw it. "Seen" is
+  remembered in that browser (every tab, and after a reload; `garage.staff.alarm_seen` in
+  local storage); another computer stops only for Done. A browser
+  tab in the background may fire the repeat less often. A "Part not found" alarm whose newest
+  change came outside those hours is `quiet`: listed, with its toast, but never heard, not even
+  by the minute reminder or when a page opens; the customer asking again during the day makes
+  it sound. After hours the bot's turn carries `shop_closed` (customers only), and the model
+  then tells a customer whose part it could not find that the team will send the details
+  during working hours and asks once for a phone number (staff cannot answer a website visitor
+  from the dashboard; the number lands on the alarm), answering the parts it found as usual.
+  Nothing of this reaches a Messenger customer while the Messenger bot is switched off.
   If the poll cannot reach the server, or does not answer within 10 seconds, every page says the
   alarms are offline, and an ended session is shown on every page too (a form with unsaved
   changes can keep the person on the page): a silent failure would silence the alarms.
-- **Setup.** Migrations 0015 and 0016 come with `uv run python -m warehouse_sync --migrate`
+- **Setup.** Migrations 0015, 0016 and 0017 come with `uv run python -m warehouse_sync --migrate`
   (`messenger_setup --setup` applies only the Messenger migrations, on purpose). Restart the
   Messenger worker and the site afterwards. Until 0015 is applied every route answers
   `LIVE_NOT_SET_UP`, the page says so, and the worker and the website chat record nothing and
   work as before; "Delete data" and the daily purge check that the table exists. With 0015 but
   not 0016, alarms and website chats are recorded and only the pages say "not set up"
-  (`LiveStore.ready` / `pages_ready`).
+  (`LiveStore.ready` / `pages_ready`). Without 0017 alarms are raised and shown as before, with
+  no Why box (`LiveStore.details_ready`): the column is written only when it exists, in a
+  savepoint, so a detail the database refuses never costs the alarm.
 - **What it shows and keeps.** An alarm holds at most the customer's own words (200 characters),
-  a short note the model wrote for the staff and a phone number the customer typed. A Messenger
+  a short note the model wrote for the staff, a phone number the customer typed, and why the bot
+  found nothing (the words it searched with, the catalogue's counts and the brand's own numbers
+  of out-of-stock rows, never the shop's stock numbers). A Messenger
   customer's alarms go with "Delete data" (which fails, rather than skip them, when the login may
   not delete from `garage.live_alerts`) and after "Keep bot records for"; the website's after
   30 days. The website chats and messages themselves (`garage.live_web_*`) are kept for good. Both are counted from when the alarm was raised: closing or merging into one never
@@ -185,16 +233,15 @@ Code: `site_live.py` (routes), `live_store.py` (SQL), `live_alerts.py` (what a t
   coordinator (no paid catalogue, no Motorium), 500-character messages, per-address and
   whole-site daily caps, and a separate chat log
   (`AUTOMOTIVE_SITE_CHAT_LOG_PATH`, 30-day retention). Cards are rebuilt as name, fits,
-  brand, price and an availability label, and say why the part is offered: the `group`
+  brand, SAP code, price and an availability label, and say why the part is offered: the `group`
   it is listed under, a `reason` in one line and a `confidence` level (`confirmed`,
   `listed`, `check` or `spec`, shown as "Matches by part number", "Listed for this model
   and year", "Needs checking" or "Chosen by specification"; said once under the group's
   heading when it is the same for every part of the group, and left out for a level the
   page has no label for). The words of the catalogue row the choice rests on, stock
-  counts, codes and sources stay in `/staff`.
-  The assistant's sentences name a listed product by the shop's own stock number
-  (`product_code`), which means nothing to a visitor, so those numbers are taken out of
-  the text and of the choices offered, unless the visitor typed the number first. A
+  counts and sources stay in `/staff`.
+  Each card gets its SAP code from the shop's catalogue field `product_code`.
+  The code is kept out of the accompanying text and choices unless the visitor typed it first. A
   manufacturer's reference number may still appear in a sentence, as it does in item
   names: the fields that hold those also hold product descriptions and oil approvals
   (`MOBIL-1 0W40 (LL01; 229.5)`), and removing such words would damage ordinary answers.
@@ -223,8 +270,7 @@ Code: `site_live.py` (routes), `live_store.py` (SQL), `live_alerts.py` (what a t
   service, so at most 4 run at once and the rest are told to try again.
 - The answers are the assistant's own, the same ones the staff workspace gets. Since
   2026-11-10 they come from the assistant engine, which searches the catalogue itself and
-  asks with buttons ([automotive.md](automotive.md), "Assistant engine (model-driven)");
-  a visitor's conversation is never given the shop's own stock numbers. When an
+  asks with buttons ([automotive.md](automotive.md), "Assistant engine (model-driven)"). When an
   answer lists no parts and offers no choices to tap, the widget adds a shortcut to the
   part search, so the visitor is not left at a dead end. The chat can be switched off in
   the dashboard (Texts, Chat) without touching the rest of the site.
@@ -251,6 +297,39 @@ design, and the engine section's part names. The design includes three pictures 
 the owner's wall photos by `scripts/build_site_assets.py`: the Service mural in the
 services grid, the "More than a Garage" lettering, and the 1886 wall beside the story
 text. They are not gallery photos and do not change when the gallery does.
+
+## Prompts
+
+Dashboard > Prompts (`/admin/prompts`, admins only) lists every prompt this project sends to a
+language model, grouped by where it runs: the chatbot (Messenger and website), web research
+during a chat, the background knowledge checker, the catalogue readers run by hand, the older
+chat engines (switched off) and the accuracy tests. The list is `PROMPTS` in
+`automotive/prompt_library.py`; `tests/test_prompt_library.py` fails when a new prompt constant
+or a new model call appears without an entry there.
+
+Six can be edited, the ones the live bot sends: the bot's instructions (the system prompt,
+`assistant_prompt.SYSTEM_PROMPT`), its four reminders (reply through the tool, last search
+round, search budget used, time running out) and the web research instructions. Everything else is shown read-only
+with a copy button: tool and field descriptions are tied to the tools' schema, and the other
+prompts run in processes that do not read the dashboard's database.
+
+An edit is a row of `garage.llm_prompts` (migration 0019) with a version, who saved it and when;
+every save and reset is also kept in `garage.llm_prompt_history` and in the audit log. No row
+means the text in the code, so a release that improves a prompt reaches every prompt the owner
+has not changed, and saving the original text again keeps no edit. "Back to original" drops the
+edit; an earlier version can be put back in the editor from the history.
+
+The web process reads the edits with its own login (`garage_site`), the Messenger worker with
+its own (`garage_messenger`, which may read the key and text of an edit and nothing else). Each
+keeps them in memory and reads again at most every 30 seconds in the background, so a save
+reaches the website chat at its next reply and Messenger within a minute, and a turn never waits
+on the database. A failed read keeps the last copy; a missing table (0019 not applied) or a
+missing grant means the code's texts. Research answers already in the research cache are not
+redone when the research instructions change.
+
+The benches and evaluations always measure the code's prompts: their scores do not describe a
+prompt edited here. Try an edit on a few chats (test mode on Messenger, or the website chat)
+before leaving it on.
 
 ## Security model
 

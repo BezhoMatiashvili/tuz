@@ -360,7 +360,8 @@ class Catalog:
     # -- staff -------------------------------------------------------------------------
 
     def inventory(self, *, query: str = "", brand: str | None = None, make: str | None = None,
-                  state: str = "all", page: int = 1, size: int = 50) -> dict:
+                  state: str = "all", page: int = 1, size: int = 50,
+                  oil_labels: dict[str, dict] | None = None) -> dict:
         pool = self.items
         if state == "available":
             pool = self.available
@@ -369,7 +370,14 @@ class Catalog:
         matched = self._filter(pool, make=make, model=None, year=None, query=query, brand=brand)
         page, size = max(1, page), max(1, min(size, 100))
         start = (page - 1) * size
-        return {"items": [item.staff() for item in matched[start:start + size]], "page": page,
+        items = []
+        labels = oil_labels or {}
+        for item in matched[start:start + size]:
+            row = item.staff()
+            if item.sid in labels:
+                row["oil"] = labels[item.sid]
+            items.append(row)
+        return {"items": items, "page": page,
                 "total": len(matched), "has_more": start + size < len(matched)}
 
 

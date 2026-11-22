@@ -273,4 +273,12 @@ export const api = {
   setUserPassword: (id, password) => request('POST', `/api/admin/users/${id}/password`,
     { body: { password } }),
   revokeSessions: (id) => request('POST', `/api/admin/users/${id}/sessions/revoke`),
+
+  prompts: (signal) => request('GET', '/api/admin/prompts', { signal }),
+  prompt: (key, signal) => request('GET', `/api/admin/prompts/${encodeURIComponent(key)}`,
+    { signal }),
+  savePrompt: (key, version, text) => request('PUT',
+    `/api/admin/prompts/${encodeURIComponent(key)}`, { body: { version, text } }),
+  resetPrompt: (key, version) => request('POST',
+    `/api/admin/prompts/${encodeURIComponent(key)}/reset`, { body: { version } }),
 };

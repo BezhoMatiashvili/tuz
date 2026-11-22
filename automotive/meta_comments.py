@@ -18,6 +18,9 @@ The engine reads the words; this module only moves data and enforces the rules:
 - a commenter whose Messenger chat the admin switched off is left to the admin
   (``skipped_chat_off``), checked before the turn and again before the reply leaves. The chat is
   known only once an earlier private reply linked it: Meta names it in its answer to one;
+- while the bot is in test mode, only a commenter whose linked chat is marked as a tester is
+  answered (``skipped_not_tester`` otherwise, also for a commenter with no linked chat yet),
+  checked at the same two points;
 - one attempt per comment: ``messenger_replies`` is unique on (channel 'comment', comment id),
   so a redelivered or replayed event is never answered twice;
 - comment turns count against the shop's daily turn cap;
@@ -61,7 +64,7 @@ from automotive.messenger_render import (
 from automotive.meta_context import NotConnected
 from automotive.meta_crypto import TokenCipherError
 from automotive.meta_graph import GraphError
-from automotive.meta_store import forget_comments, forgotten_since
+from automotive.meta_store import bot_mode, forget_comments, forgotten_since
 from automotive.meta_sync import (
     DIGITS,
     SyncCount,
@@ -270,15 +273,20 @@ class CommentStore:
         """[B] Whether this commenter's Messenger chat is known (an earlier private reply
         linked it) and its switch is off: the admin took that customer over. Unknown chats
         are False; Meta names the chat only in the answer to a private reply."""
+        chat = self.linked_chat(author_id)
+        return chat is not None and not chat["bot_enabled"]
+
+    def linked_chat(self, author_id: str) -> dict | None:
+        """[B] The switches of this commenter's Messenger chat (``bot_enabled``, ``bot_tester``)
+        once an earlier private reply linked it; None while unknown."""
         if not author_id:
-            return False
+            return None
         with self.db.transaction() as conn:
-            row = conn.execute(
-                "SELECT t.bot_enabled FROM garage.meta_comments c "
+            return conn.execute(
+                "SELECT t.bot_enabled, t.bot_tester FROM garage.meta_comments c "
                 "JOIN garage.messenger_threads t ON t.psid = c.replied_psid "
                 "WHERE c.author_id = %s AND c.replied_psid <> '' "
                 "ORDER BY c.updated_at DESC LIMIT 1", (author_id,)).fetchone()
-        return row is not None and not row["bot_enabled"]
 
     def thread(self, psid: str) -> dict | None:
         """[W] A chat's name, source and engine state."""
@@ -483,6 +491,18 @@ def reply_skip(settings: Mapping[str, Any], *, created: datetime, now: datetime,
     return ""
 
 
+def chat_skip(settings: Mapping[str, Any], chat: Mapping[str, Any] | None) -> str:
+    """Why the commenter's linked Messenger chat stops a reply ('' when it does not): the admin
+    switched that chat off, or the bot is in test mode and the commenter is not a known tester
+    (Meta names the chat only in its answer to a private reply, so an unlinked commenter is not
+    one). The worker's own rule for chats is MessengerWorker._rules."""
+    if chat is not None and not chat.get("bot_enabled"):
+        return "skipped_chat_off"  # the admin took this customer's chat over
+    if bot_mode(settings) == "test" and not (chat is not None and chat.get("bot_tester")):
+        return "skipped_not_tester"
+    return ""
+
+
 # -- the webhook path -----------------------------------------------------------------------------
 
 
@@ -549,8 +569,8 @@ def handle_comment_event(ctx: Any, event: Any, engine: Any, *,
         return "comment_already_handled"
     settings = ctx.store.settings()
     skip = reply_skip(settings, created=created, now=now, text=event.message)
-    if not skip and comments.chat_switched_off(event.from_id):
-        skip = "skipped_chat_off"  # the admin took this customer's chat over
+    if not skip:
+        skip = chat_skip(settings, comments.linked_chat(event.from_id))
     if skip:
         comments.set_status(event.comment_id, skip)
         return f"comment_{skip}"
@@ -654,7 +674,7 @@ def _answer(ctx: Any, comments: CommentStore, event: CommentEvent, engine: Any, 
     fresh = store.settings()  # the switches, read again right before anything leaves
     blocked = ("skipped_off" if not fresh.get("comments_enabled")
                else "skipped_paused" if fresh.get("bot_paused_reason")
-               else "skipped_chat_off" if comments.chat_switched_off(event.from_id) else "")
+               else chat_skip(fresh, comments.linked_chat(event.from_id)))
     if blocked:
         store.finish_reply(reply_id, blocked, **record)
         comments.set_status(event.comment_id, blocked, force=True)

@@ -1,5 +1,6 @@
-// Facebook > Status & switches: the Messenger bot's main switch (turning it on asks for the
-// Auto reply confirmation), the comment-reply switch, warnings, today's numbers, the latest
+// Facebook > Status & switches: the Messenger bot's main switch (off, test mode for the chats
+// marked as testers, or on for everyone, which asks for the Auto reply confirmation), the
+// testers, the comment-reply switch, warnings, today's numbers, the latest
 // webhook events, the worker's background jobs, and the limits and texts. It refreshes itself
 // every 30 seconds while the page is visible, and only redraws when something changed; a
 // settings form with unsaved edits is never replaced.
@@ -14,7 +15,7 @@ import {
   openDialog, skeleton, switchControl, textInput, toast,
 } from '../ui.js';
 import {
-  describe, fbApi, label, notConfigured, restartCard, restartNeeded, usd,
+  describe, fbApi, label, notConfigured, personName, restartCard, restartNeeded, usd,
 } from './facebook-shared.js';
 
 const REFRESH_MS = 30000;
@@ -35,12 +36,14 @@ const WARNING_KIND = {
   bot_paused: 'critical', not_subscribed: 'critical', token_broken: 'critical',
   token_expired: 'critical', data_access_expired: 'critical', not_connected: 'warning',
   no_recent_webhook: 'warning', token_expiring: 'warning', data_access_expiring: 'warning',
-  auto_reply_not_confirmed: 'info',
+  auto_reply_not_confirmed: 'info', test_no_testers: 'warning',
 };
 // Warnings the Connect tab resolves carry a link to it.
 const TO_CONNECT = new Set(['not_connected', 'not_subscribed', 'token_broken', 'token_expired',
   'token_expiring', 'data_access_expired', 'data_access_expiring']);
-const BOT_GLYPH = { on: 'good', off: 'neutral', paused: 'warning' };
+const BOT_GLYPH = { on: 'good', off: 'neutral', paused: 'warning', test: 'pending' };
+const MODES = new Set(['off', 'test', 'on']);
+const NAMES_SHOWN = 10; // testers named in the test-mode question; the rest are counted
 
 function warningText(warning) {
   if (warning.code === 'no_recent_webhook' && !warning.last) {
@@ -116,6 +119,28 @@ function confirmOn(opener) {
   }).then((value) => value === true);
 }
 
+/** The test-mode question: who will be answered (or that nobody is marked yet), and that Meta's
+ * Auto reply may stay on. Nothing to tick: every other customer is left to the shop. */
+function confirmTest(opener, testers) {
+  const named = testers.slice(0, NAMES_SHOWN).map(personName);
+  const more = testers.length - named.length;
+  const names = more > 0 ? `${named.join(', ')} +${more}` : named.join(', ');
+  return openDialog({
+    title: t('fb.test.title'),
+    opener,
+    build: (close) => [
+      h('p', { class: 'dialog__text', text: t('fb.test.text') }),
+      testers.length
+        ? h('p', { class: 'dialog__text', text: t('fb.test.testers', { count: testers.length, names }) })
+        : notice('warning', t('fb.test.none')),
+      h('p', { class: 'field__hint', text: t('fb.test.auto_reply') }),
+      h('div', { class: 'dialog__actions' },
+        button(t('common.cancel'), { onClick: () => close(false), autofocus: true }),
+        button(t('fb.test.confirm'), { variant: 'primary', onClick: () => close(true) })),
+    ],
+  }).then((value) => value === true);
+}
+
 export function mountView(root, ctx) {
   const state = { status: 'loading', data: null, error: null, loadedAt: null };
   const form = { node: null, dirty: false };
@@ -181,17 +206,51 @@ export function mountView(root, ctx) {
     }
   }
 
+  // After a mode change the pressed button is gone; focus goes to the stop (or the start).
   async function turnOn(trigger) {
     if (await confirmOn(trigger)) {
-      await change(trigger, { bot_enabled: true, auto_reply_confirmed_off: true },
-        t('fb.bot.turned_on'), t('fb.bot.turning_on'));
+      await change(trigger, { bot_mode: 'on', auto_reply_confirmed_off: true },
+        t('fb.bot.turned_on'), t('fb.bot.turning_on'), 'bot-off');
+    }
+  }
+
+  async function turnTest(trigger) {
+    const testers = Array.isArray(state.data.testers) ? state.data.testers : [];
+    if (await confirmTest(trigger, testers)) {
+      await change(trigger, { bot_mode: 'test' }, t('fb.bot.turned_test'),
+        t('fb.bot.turning_test'), 'bot-off');
     }
   }
 
   // Off is never questioned: it is the emergency stop, and the server accepts it from a
-  // page that is out of date.
+  // page that is out of date. It ends test mode too.
   function turnOff(trigger) {
-    return change(trigger, { bot_enabled: false }, t('fb.bot.turned_off'), t('fb.bot.turning_off'));
+    return change(trigger, { bot_mode: 'off' }, t('fb.bot.turned_off'), t('fb.bot.turning_off'),
+      'bot-on');
+  }
+
+  async function removeTester(row, trigger) {
+    const restore = busy(trigger, t('common.saving'));
+    working = true;
+    try {
+      await fbApi.saveThread(row.psid, { bot_tester: false, version: row.version });
+      if (alive) {
+        toast(t('fb.testers.removed', { name: personName(row) }));
+        wantedKey = 'testers';
+        await load(true);
+      }
+    } catch (error) {
+      restore();
+      if (alive) {
+        toast(describe(error), 'critical');
+        refocus(trigger.dataset.key);
+        if (error instanceof ApiError && error.code === 'VERSION_CONFLICT') {
+          load(true);
+        }
+      }
+    } finally {
+      working = false;
+    }
   }
 
   async function resumeBot(trigger) {
@@ -202,7 +261,7 @@ export function mountView(root, ctx) {
       if (alive) {
         state.data.switches = result.switches;
         toast(t('fb.bot.resumed'));
-        wantedKey = 'bot'; // the resume button is gone; the main switch is next to it
+        wantedKey = 'bot-off'; // the resume button is gone; the stop is next to it
         draw();
         load(true);
       }
@@ -307,22 +366,61 @@ export function mountView(root, ctx) {
     return h('div', { class: 'toolbar' }, hint, refresh);
   }
 
+  /** The chats an admin marked as testers: each links to its chat and can be removed here;
+   * adding one happens in the chat itself (the customer must have written to the page). */
+  function testersBlock(testers) {
+    const titleId = uid('fb');
+    const items = testers.map((row) => {
+      const remove = button(t('fb.testers.remove'), {
+        small: true, variant: 'ghost', iconName: 'close',
+        'aria-label': t('fb.testers.remove_label', { name: personName(row) }),
+        onClick: (event) => removeTester(row, event.currentTarget),
+      });
+      remove.dataset.key = `tester-${row.psid}`;
+      return h('li', { class: 'audit__row' },
+        h('p', { class: 'audit__what' },
+          h('a', { class: 'audit__link', href: `/admin/facebook/chats/${row.psid}`,
+            dataset: { link: '' }, text: personName(row) }),
+          remove),
+        row.bot_enabled === false
+          ? h('p', { class: 'audit__when', text: t('fb.testers.chat_off') }) : null);
+    });
+    return [
+      h('h2', { class: 'card__title', id: titleId, tabindex: '-1', dataset: { key: 'testers' },
+        text: `${t('fb.testers.title')} (${testers.length})` }),
+      h('p', { class: 'card__text', text: t('fb.testers.hint') }),
+      items.length ? h('ul', { class: 'audit', 'aria-labelledby': titleId }, items)
+        : h('p', { class: 'card__text', text: t('fb.testers.empty') }),
+      h('div', {}, h('a', {
+        class: 'btn btn--secondary btn--small', href: '/admin/facebook/chats',
+        dataset: { link: '', key: 'open-chats' },
+      }, h('span', { class: 'btn__label', text: t('fb.testers.open_chats') }))),
+    ];
+  }
+
   function switchesCard(data) {
     const s = data.switches;
     const bot = BOT_GLYPH[s.bot_state] ? s.bot_state : 'off';
+    const mode = MODES.has(s.bot_mode) ? s.bot_mode : (s.bot_enabled ? 'on' : 'off');
+    const testers = Array.isArray(data.testers) ? data.testers : [];
     const titleId = uid('fb');
     const stateId = uid('fb');
-    const toggle = s.bot_enabled
-      ? button(t('fb.bot.turn_off'), {
-        variant: 'danger', block: true, iconName: 'lock',
-        onClick: (event) => turnOff(event.currentTarget),
-      })
-      : button(t('fb.bot.turn_on'), {
-        variant: 'primary', block: true, iconName: 'check',
-        onClick: (event) => turnOn(event.currentTarget),
+    const control = (key, label, variant, iconName, run) => {
+      const node = button(label, {
+        variant, block: true, iconName, onClick: (event) => run(event.currentTarget),
       });
-    toggle.dataset.key = 'bot';
-    toggle.setAttribute('aria-describedby', stateId);
+      node.dataset.key = key;
+      node.setAttribute('aria-describedby', stateId);
+      return node;
+    };
+    // Off: on for everyone, or test mode. Test: on for everyone, or off. On: test, or off.
+    const controls = [
+      mode !== 'on' ? control('bot-on', t('fb.bot.turn_on'), 'primary', 'check', turnOn) : null,
+      mode !== 'test' ? control('bot-test', t(mode === 'on' ? 'fb.bot.to_test' : 'fb.bot.turn_test'),
+        'secondary', 'users', turnTest) : null,
+      mode !== 'off' ? control('bot-off', t('fb.bot.turn_off'), 'danger', 'lock', turnOff) : null,
+    ];
+    const since = { on: 'fb.bot.since_on', test: 'fb.bot.since_test', off: 'fb.bot.since_off' };
     let resume = null;
     if (bot === 'paused') {
       resume = button(t('fb.bot.resume'), {
@@ -353,15 +451,20 @@ export function mountView(root, ctx) {
         h('p', { class: 'card__text', text: t(`fb.bot.${bot}_text`) })),
       s.bot_changed_at ? h('p', {
         class: 'tile__note',
-        text: t(s.bot_enabled ? 'fb.bot.since_on' : 'fb.bot.since_off',
-          { who, time: dateTime(s.bot_changed_at) }),
+        text: t(since[mode], { who, time: dateTime(s.bot_changed_at) }),
       }) : null,
-      s.bot_enabled && s.bot_enabled_at ? h('p', {
+      mode === 'on' && s.bot_enabled_at ? h('p', {
         class: 'tile__note', text: t('fb.bot.answers_after', { time: dateTime(s.bot_enabled_at) }),
       }) : null,
+      mode === 'test' && s.bot_test_at ? h('p', {
+        class: 'tile__note',
+        text: t('fb.bot.answers_after_test', { time: dateTime(s.bot_test_at) }),
+      }) : null,
       resume ? notice('critical', t('fb.bot.paused_text'), resume) : null,
-      toggle,
-      h('p', { class: 'page-note' }, icon('info', 16), h('span', { text: t('fb.bot.explain') })),
+      ...controls,
+      h('p', { class: 'page-note' }, icon('info', 16),
+        h('span', { text: t(mode === 'test' ? 'fb.bot.test_explain' : 'fb.bot.explain') })),
+      ...testersBlock(testers),
       h('h2', { class: 'card__title', id: commentsId, text: t('fb.comments.title') }),
       comments.node,
       h('p', { class: 'card__text', id: commentsHint, text: t('fb.comments.hint') }));

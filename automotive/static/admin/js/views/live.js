@@ -17,6 +17,7 @@ import {
   FILTERS, alertsOfChat, isPhone, mergeChats, mergeMessages, newestFirst, signature, toneOf,
 } from '../live-model.js';
 import * as watch from '../live-watch.js';
+import { stuckCause, whyLines } from '../live-why.js';
 import { has, t } from '../strings.js';
 import {
   busy, button, card, emptyState, errorState, field, iconButton, loadingBlock, notice, pageHead,
@@ -244,8 +245,8 @@ export function mountView(root, ctx, params) {
       snap.signedOut ? notice('critical', t('live.signed_out')) : null,
       reason ? notice('warning', t(`live.${reason}`)) : null,
       snap.offline ? notice('critical', t('live.offline')) : null,
-      !reason && (bot === 'off' || bot === 'paused')
-        ? notice('warning', t(bot === 'off' ? 'live.global_off' : 'live.global_paused'),
+      !reason && (bot === 'off' || bot === 'paused' || bot === 'test')
+        ? notice('warning', t(`live.global_${bot}`),
           ctx.isAdmin ? h('a', {
             class: 'btn btn--secondary btn--small', href: '/admin/facebook',
             dataset: { link: '' },
@@ -367,6 +368,22 @@ export function mountView(root, ctx, params) {
     return null;
   }
 
+  /** Why the bot found nothing (or could not answer): each search with what it found, and
+   * the rest of what the turn recorded (live-why.js). Nothing for an alarm without a detail. */
+  function whyBlock(alert) {
+    const found = whyLines(alert, t, has);
+    if (!found.length) {
+      return null;
+    }
+    const titleId = uid('why');
+    return h('div', { class: 'alarm__why', role: 'group', 'aria-labelledby': titleId },
+      h('p', { class: 'alarm__why-title', id: titleId, text: t('live.why.title') }),
+      h('ul', { class: 'alarm__why-list' }, found.map((line) => h('li', {
+        class: ['alarm__why-line', line.tone && `alarm__why-line--${line.tone}`],
+        text: line.text,
+      }))));
+  }
+
   /** One alarm. Open: open the chat, the bot's switch and "done". Handled: "reopen". */
   function alarmCard(alert, compact = false) {
     const tone = toneOf(alert.kind);
@@ -404,6 +421,7 @@ export function mountView(root, ctx, params) {
     reason ? h('p', { class: 'alarm__meta', text: reason }) : null,
     alert.car_label ? h('p', { class: 'alarm__meta', text: t('live.car', { car: alert.car_label }) })
       : null,
+    whyBlock(alert),
     earlier(alert),
     phoneLine(alert),
     closed ? h('p', { class: 'alarm__meta', text: t('live.handled_by', {
@@ -426,6 +444,8 @@ export function mountView(root, ctx, params) {
       h('p', { class: 'alarm__who', text: nameOf(chat) }),
       h('p', { class: 'alarm__note', text: t('live.stuck.text', {
         reason: label('fb.reason', chat.attention_reason) }) }),
+      // What its newest failed reply recorded: the exact cause (live-why.js).
+      ...stuckCause(chat, t, has).map((text) => h('p', { class: 'alarm__meta', text })),
       h('div', { class: 'alarm__actions' },
         h('a', {
           class: 'btn btn--secondary btn--small', href: `/admin/live/${chat.key}`,
@@ -981,6 +1001,7 @@ export function mountView(root, ctx, params) {
     }
     const left = state.key;
     state.key = wanted;
+    watch.setViewing(wanted); // its alarms are seen: the siren stops calling for them
     if (!el.wrap) {
       draw();
     }
@@ -1025,6 +1046,7 @@ export function mountView(root, ctx, params) {
       window.removeEventListener('blur', release);
       window.clearTimeout(pressTimer);
       deferred.clear();
+      watch.setViewing('');
       watch.setDetail(false);
       if (unsubscribe) {
         unsubscribe();

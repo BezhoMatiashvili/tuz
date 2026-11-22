@@ -4,7 +4,7 @@ The website's ``ConversationStore`` keeps a conversation in memory for minutes. 
 lasts for days and outlives restarts of the worker, so here every turn runs in a conversation of
 its own: ``MessengerEngine.respond`` restores the chat's saved state into a fresh conversation,
 runs one turn of the assistant engine for the public audience, reads the turn the way the
-website's chat widget does (``site_chat.public_turn``: no stock counts, no stock codes) and hands
+website's chat widget does (``site_chat.public_turn``) and hands
 back the state for ``messenger_threads.engine_state``.
 
 The store's own code does the work, and ``conversations.py`` is not edited. A saved state is
@@ -118,6 +118,9 @@ class EngineResult:
     error_code: str
     unsent_state: dict = field(default_factory=dict)
     alerts: TurnAlerts = field(default_factory=TurnAlerts)
+    # For a turn that ended in an error: its class and the engine step it came from
+    # ("ValueError@model"), which the stuck chat on dashboard > Live chats shows. '' otherwise.
+    cause: str = ""
 
 
 class MessengerConversations(ConversationStore):
@@ -365,7 +368,8 @@ class MessengerEngine:
         return EngineResult(status=status, public=public, state=state,
                             engine_status=engine_status, language=public["language"],
                             usage=_json_safe(usage) if isinstance(usage, dict) else {},
-                            error_code=code, unsent_state=unsent, alerts=alerts)
+                            error_code=code, unsent_state=unsent, alerts=alerts,
+                            cause="" if status == "ok" else _cause(payload))
 
     def close(self) -> None:
         """Stop the store and everything ``build_engine`` started (catalogue poller, search
@@ -494,6 +498,12 @@ def build_engine(meta_settings: Any, app_settings: Any = None) -> MessengerEngin
     shop = MetaDatabase(getattr(meta_settings, "database_url", ""),
                         application_name="garage-messenger-shop")
     content = SiteContent(ShopFacts(shop))
+    # The owner's prompt edits (dashboard > Prompts), read with the worker's own login, which
+    # migration 0019 lets read garage.llm_prompts and nothing more of them.
+    from automotive.prompt_library import PromptStore
+
+    chat_service.prompt_texts = PromptStore(MetaDatabase(
+        getattr(meta_settings, "database_url", ""), application_name="garage-messenger-prompts"))
     chat_service.assistant_extras = extras_for(settings, chat_service, repository,
                                                SimpleNamespace(content=content))
     public = build_public_chat(settings, chat_service, repository, vin_service, catalog_store,
@@ -661,6 +671,17 @@ def _export(conversation: dict) -> dict:
     return clean_state(state)
 
 
+def _cause(payload: Any) -> str:
+    """The error class and the engine step of a turn that ended in an error ("ValueError@model"),
+    as the engine recorded them (``diagnostics``), or ''. Code names only, never a message."""
+    diagnostics = payload.get("diagnostics") if isinstance(payload, dict) else None
+    if not isinstance(diagnostics, dict):
+        return ""
+    error = re.sub(r"[^A-Za-z0-9_]", "", str(diagnostics.get("error") or ""))[:60]
+    stage = re.sub(r"[^a-z]", "", str(diagnostics.get("stage") or ""))[:20]
+    return f"{error}@{stage}" if error and stage else error
+
+
 def _result(status: str, state: dict, unsent: dict, *, language: Any,
             error_code: str = "") -> EngineResult:
     return EngineResult(status=status, public={}, state=state, engine_status="",
@@ -789,7 +810,8 @@ def _fewer_rows(state: dict) -> bool:
 
 def _bare_memory(state: dict) -> bool:
     memory = _memory(state)
-    kept = {key: memory[key] for key in ("language", "car_label", "notes", "question", "phone")
+    kept = {key: memory[key] for key in ("language", "car_label", "notes", "question", "phone",
+                                        "followup", "engine_choices", "oil_question")
             if key in memory}
     if "memory" not in state or kept == memory:
         return False

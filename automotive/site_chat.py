@@ -3,9 +3,8 @@
 Visitors get their own ``ConversationStore`` and search coordinator (no paid catalogue, no
 staff capacity), every conversation id is checked here before the store is touched, and a
 turn leaves this module as answer text, the answers and next steps to tap, and cards
-rebuilt from a whitelist. Stock counts, code fields, warehouse names, sources, the vehicle
-record and token usage stay with the staff workspace, and the shop's stock numbers are
-taken out of the sentences.
+rebuilt from a whitelist. Each card can show the shop's SAP code. Stock counts, warehouse
+names, sources, the vehicle record and token usage stay with the staff workspace.
 """
 
 from __future__ import annotations
@@ -24,6 +23,7 @@ from fastapi import Path as PathParameter
 from pydantic import BaseModel, ConfigDict, Field
 
 from automotive import chat_contract
+from automotive.assistant_oil_quote import is_oil, oil_pack, pack_price
 from automotive.chat import VIN_PATTERN
 from automotive.conversations import ConversationError, ConversationStore, live_warning
 from automotive.replies import make_name
@@ -140,21 +140,29 @@ def _reason(card: dict, level: str, vehicle: Any, language: str, hidden: Any) ->
 
 def public_card(card: dict, catalog: Any, *, vehicle: Any = None, language: str = "ka",
                 hidden: Any = (), groups: Any = None) -> dict:
-    """Name, vehicle text, brand, price and an availability label, then why it is offered:
-    the group it is listed under, a reason and a confidence level. Nothing else.
+    """Name, vehicle text, brand, SAP code, price, availability and why the part is offered.
 
     ``groups`` maps the engine's group ids to the ones the turn hands out, ``vehicle`` is
     the turn's car (read here, never passed on) and ``language`` the reply's.
     """
     product = card.get("product") if isinstance(card.get("product"), dict) else {}
     item = catalog.by_id.get(str(product.get("source_product_id") or ""))
+    raw_code = product.get("product_code")
+    sap_code = html.unescape(raw_code).strip() if isinstance(raw_code, str) else ""
+    if not sap_code and item is not None:
+        sap_code = html.unescape(item.code).strip()
     level = chat_contract.confidence(card, vehicle)
+    price = item.price if item and item.price else None
+    if item and card.get("match_source") == "assistant" and is_oil(item.name):
+        litres = oil_pack(item.name)
+        price = pack_price(price, litres) if litres else None
     return {
         # Some source cells arrive HTML-escaped; the widget renders text, not markup.
         "name": html.unescape(str(product.get("product_name") or ""))[:200],
         "fits": html.unescape(str(product.get("product_model") or ""))[:200],
         "brand": html.unescape(str(product.get("brand") or ""))[:80],
-        "price": item.price if item and item.price else None,
+        "sap_code": sap_code,
+        "price": price,
         "availability": AVAILABILITY.get(card.get("availability_status"), "unknown"),
         "group": (groups or {}).get(chat_contract.group(card), ""),
         "reason": _reason(card, level, vehicle, language, hidden),
@@ -225,11 +233,9 @@ def _note(payload: dict, cards: list, language: str, hidden: Any = ()) -> str:
 def public_turn(payload: dict, catalog: Any, *, said: str = "", listed: Any = None) -> dict:
     """The widget's view of a turn. Built key by key so new engine fields never leak.
 
-    The engine's sentences name a listed product by the shop's stock number, which means
-    nothing to a visitor and which the cards leave out, so those numbers are taken out of
-    the text and the choices too. ``listed`` is every card of the turn when ``payload``
-    carries one page of them. ``said`` is what the visitor typed, as ``plain`` text: a
-    number they wrote themselves is left alone.
+    SAP codes are added to their product cards. To avoid repeating them, the facade removes
+    them from the answer and choices unless the visitor typed them in ``said``. ``listed``
+    contains all cards when ``payload`` carries only one page.
 
     What the reply asks and suggests is read through ``chat_contract``, as the staff route
     reads it. ``question`` holds the answers to tap and is None when the reply asks
@@ -510,6 +516,7 @@ def build_public_chat(settings: Any, chat_service: Any, repository: Any, vin_ser
     ``live`` is the Live chats recorder (``live_web.LiveRecorder``) or None."""
     owns_search = search_service is None
     if search_service is None:
+        from automotive.brembo import BremboClient
         from automotive.fuchs import FuchsClient
         from automotive.jsfilter import JsFilterClient
         from automotive.pakelo import PakeloClient
@@ -525,9 +532,11 @@ def build_public_chat(settings: Any, chat_service: Any, repository: Any, vin_ser
             shell_service=ShellOilClient() if settings.shell_enabled else None,
             pakelo_service=PakeloClient() if settings.pakelo_enabled else None,
             jsfilter_service=JsFilterClient() if settings.jsfilter_enabled else None,
+            brembo_service=BremboClient() if settings.brembo_enabled else None,
             catalog_service=None, rules=getattr(chat_service, "rules", None), cache=cache,
             fuchs_enabled=settings.fuchs_enabled, shell_enabled=settings.shell_enabled,
-            pakelo_enabled=settings.pakelo_enabled, jsfilter_enabled=settings.jsfilter_enabled)
+            pakelo_enabled=settings.pakelo_enabled, jsfilter_enabled=settings.jsfilter_enabled,
+            brembo_enabled=settings.brembo_enabled)
     chat_log = None
     if getattr(settings, "site_chat_log_path", ""):
         from automotive.chat_log import ChatLogger
@@ -542,7 +551,7 @@ def build_public_chat(settings: Any, chat_service: Any, repository: Any, vin_ser
         chat_service, search_service, ttl_seconds=600,
         turn_seconds=min(float(getattr(settings, "chat_turn_seconds", 60)), 60.0),
         maximum=40, chat_log=chat_log, live=live)
-    # A visitor's conversation: the assistant engine gives it none of the shop's own numbers.
+    # Public model tools omit the shop's codes. The facade adds them to the selected cards.
     store.audience = "public"
     # The assistant's index over each new catalogue snapshot is built on the snapshot's own
     # refresh thread before it is installed: no visitor's turn builds it or waits for it.

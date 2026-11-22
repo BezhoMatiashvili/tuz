@@ -113,6 +113,8 @@ class Settings:
     shell_enabled: bool = True
     pakelo_enabled: bool = True
     jsfilter_enabled: bool = True
+    # Live Brembo lookups for one car per brake question; never a bulk download.
+    brembo_enabled: bool = True
     allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1")
     allowed_origins: tuple[str, ...] = ("http://localhost:8767", "http://127.0.0.1:8767")
     rate_limit_per_minute: int = 60
@@ -206,6 +208,7 @@ class Settings:
             shell_enabled=_flag("SHELL_ENABLED"),
             pakelo_enabled=_flag("PAKELO_ENABLED"),
             jsfilter_enabled=_flag("JSFILTER_ENABLED"),
+            brembo_enabled=_flag("BREMBO_ENABLED"),
             chat_log_path=os.getenv("AUTOMOTIVE_CHAT_LOG_PATH", "data/chat_logs/chat_log.sqlite3"),
             chat_log_retention_days=_days("AUTOMOTIVE_CHAT_LOG_RETENTION_DAYS"),
             chat_rephrase=_flag("AUTOMOTIVE_CHAT_REPHRASE", "false"),

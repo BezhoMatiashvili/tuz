@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import logging
 import random
+import shutil
 import string
+import subprocess  # nosec B404
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from urllib.parse import quote, urljoin, urlsplit
 
 import requests
@@ -65,6 +68,50 @@ class SourcePaused(FetchError):
 
 class Interrupted(FetchError):
     """Shutdown was requested while waiting for the host's next slot."""
+
+
+class NetworkDown(FetchError):
+    """This machine is offline; the source waits and the host is not blamed."""
+
+
+def has_default_route(ipv4: str, ipv6: str) -> bool:
+    """A usable default route in `/proc/net/route` or `/proc/net/ipv6_route` text."""
+    for line in ipv4.splitlines()[1:]:
+        fields = line.split()
+        if len(fields) > 3 and fields[1] == "00000000" and int(fields[3], 16) & 0x1:
+            return True
+    for line in ipv6.splitlines():
+        fields = line.split()
+        # The kernel keeps an 'unreachable' default on lo; only a real interface counts.
+        if (len(fields) >= 10 and fields[0] == "0" * 32 and fields[1] == "00"
+                and fields[9] != "lo"):
+            return True
+    return False
+
+
+def network_up() -> bool:
+    """False only when this machine is clearly offline: no default route, or
+    NetworkManager's last known state is none/limited/portal. Nothing is sent anywhere;
+    an unknown platform counts as online, so the breaker keeps working there."""
+    try:
+        ipv4 = Path("/proc/net/route").read_text()
+        ipv6 = Path("/proc/net/ipv6_route").read_text() \
+            if Path("/proc/net/ipv6_route").exists() else ""
+    except OSError:
+        return True
+    if not has_default_route(ipv4, ipv6):
+        return False
+    nmcli = shutil.which("nmcli")
+    if nmcli is None:
+        return True
+    try:
+        # Fixed arguments, no shell, a local tool found by `which`.
+        state = subprocess.run(  # nosec B603
+            [nmcli, "-t", "-f", "CONNECTIVITY", "general"], capture_output=True, text=True,
+            timeout=3, check=False).stdout.strip().lower()
+    except (OSError, subprocess.SubprocessError):
+        return True
+    return state not in {"none", "limited", "portal"}
 
 
 @dataclass
@@ -128,7 +175,9 @@ class PoliteFetcher:
                  breaker_trips_to_pause: int = 3,
                  session_factory: Callable[[], requests.Session] = requests.Session,
                  clock: Callable[[], float] = time.monotonic,
-                 sleeper: Callable[[float], bool] | None = None) -> None:
+                 sleeper: Callable[[float], bool] | None = None,
+                 network_check: Callable[[], bool] = network_up) -> None:
+        self.network_check = network_check
         self.user_agent = user_agent
         self.robots_token = robots_token
         self.min_delay = min_delay
@@ -274,6 +323,10 @@ class PoliteFetcher:
             raise PermanentFetchError("BAD_URL") from None
         except requests.RequestException as error:
             kind = "TIMEOUT" if isinstance(error, requests.Timeout) else "NETWORK"
+            if not self.network_check():
+                # A dropped Wi-Fi or a laptop waking from sleep is not the site's fault:
+                # counting it would trip every source's breaker at once and pause them all.
+                raise NetworkDown(kind, retry_after=60.0) from None
             raise self._failure(state, RetryableFetchError(kind, retry_after=60.0)) from None
         except (UnicodeError, ValueError) as error:
             # requests decodes a redirect's Location header even with redirects off; a

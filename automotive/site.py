@@ -6,6 +6,7 @@ that the site adds is registered here, and the guard is added last so it runs fi
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from fastapi.responses import JSONResponse
 from automotive.live_store import LiveStore
 from automotive.live_web import LiveRecorder
 from automotive.meta_db import MetaDatabase
+from automotive.prompt_library import PromptStore
 from automotive.rules import Rules
 from automotive.site_admin import build_admin_router
 from automotive.site_auth import SiteAuth, build_auth_router
@@ -88,12 +90,20 @@ def _live_store(settings: Any) -> LiveStore | None:
     return LiveStore(MetaDatabase(url, application_name="garage-site-live")) if url else None
 
 
+def _prompt_store(settings: Any) -> PromptStore | None:
+    """The prompt edits on the site's own login (``garage_site``), or None while that login
+    is not configured: the bot then sends the packaged prompts."""
+    url = str(getattr(settings, "site_database_url", "") or "")
+    return PromptStore(MetaDatabase(url, application_name="garage-site-prompts")) if url else None
+
+
 def install_site(app: FastAPI, settings: Any, *, repository: Any, vin_service: Any,
                  chat_service: Any, search_service: Any = None,
                  site: dict | None = None) -> SiteContext:
     """Register the site's routes and middleware. ``site`` carries test doubles:
     ``repository`` (SiteRepository-like), ``catalog`` (a Catalog), ``public_search``,
-    ``buckets`` and ``live`` (``{"store": ...}``: the Live chats store, None for none).
+    ``buckets``, ``live`` (``{"store": ...}``: the Live chats store, None for none) and
+    ``prompts`` (a ``prompt_library.PromptStore``, None for none).
     ``search_service`` is the staff coordinator and is deliberately not reused for visitors."""
     overrides = site or {}
     origins = tuple(getattr(settings, "public_origins", ()) or ())
@@ -102,6 +112,12 @@ def install_site(app: FastAPI, settings: Any, *, repository: Any, vin_service: A
     auth = SiteAuth(site_repository,
                     secure_cookies=any(origin.startswith("https://") for origin in origins))
     content = SiteContent(site_repository)
+    # The owner's prompt edits (dashboard > Prompts), on the site's own login. The chat service
+    # carries them, so the staff chat and the public widget send the edited texts.
+    prompts = overrides["prompts"] if "prompts" in overrides else _prompt_store(settings)
+    if prompts is not None and getattr(chat_service, "prompt_texts", None) is None:
+        with contextlib.suppress(AttributeError):
+            chat_service.prompt_texts = prompts
     live_overrides = overrides.get("live", {})
     live_store = live_overrides["store"] if "store" in live_overrides else _live_store(settings)
     rules = getattr(chat_service, "rules", None)
@@ -160,7 +176,7 @@ def install_site(app: FastAPI, settings: Any, *, repository: Any, vin_service: A
     app.include_router(build_auth_router(auth))
     app.include_router(build_admin_router(
         auth=auth, repository=site_repository, content=content, catalog_store=catalog_store,
-        settings=settings, media_cache=media))
+        settings=settings, media_cache=media, prompts=prompts, inventory_repository=repository))
     app.include_router(build_meta_admin_router(settings, **overrides.get("meta", {})))
     app.include_router(build_meta_activity_router(settings, **overrides.get("meta_activity", {})))
     app.include_router(build_live_router(live_store))

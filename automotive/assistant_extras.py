@@ -85,10 +85,18 @@ def research_service(settings: Any, chat_service: Any, backend: Any = None) -> A
     path = str(getattr(settings, "assistant_research_cache_path", "") or "")
     if path:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
+    def instructions() -> str:
+        # The owner's edit on the dashboard, read when each job starts (prompt_library).
+        from automotive.assistant_research import RESEARCH_SYSTEM
+        from automotive.prompt_library import resolve
+
+        return resolve(getattr(chat_service, "prompt_texts", None), "research.system",
+                       RESEARCH_SYSTEM)
+
     return ResearchService(
         backend, cache_path=path or None,
         wait_seconds=float(getattr(settings, "assistant_research_seconds", 8.0) or 8.0),
-        fallback=fallback)
+        fallback=fallback, instructions=instructions)
 
 
 def bench_research(settings: Any, cache_path: str | os.PathLike | None = None) -> Any:

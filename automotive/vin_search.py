@@ -34,6 +34,7 @@ SOURCE_LABELS = {
     'maintenance': 'სერვისის მოთხოვნები და პროდუქტის დაშვებები', 'motorium': 'Motorium',
     'fuchs': 'Fuchs · ზეთის შერჩევა', 'shell': 'Shell · ზეთის შერჩევა',
     'pakelo': 'Pakelo · ზეთის შერჩევა', 'jsfilter': 'JS Asakashi · ფილტრები',
+    'brembo': 'Brembo · სამუხრუჭე ნაწილები',
     'catalog_api': 'კატალოგის API · OE და ნაწილების კოდები',
     'catalog_codes': 'ნაპოვნი კოდები ჩვენს საწყობში',
     'cross_reference': 'მიმართული გადაკვეთის მტკიცებულება',
@@ -42,8 +43,9 @@ TERMINAL = {'COMPLETE', 'PARTIAL', 'FAILED', 'CONFLICTED'}
 # Motorium is asked for the oil filter; oil itself is chosen by grade, not by code.
 OIL_CHANGE_QUERY = 'ზეთის ფილტრი'
 # Seconds a fallback source may take before it is abandoned (it is only a backup).
-FALLBACK_SECONDS = {'motorium': 7.0, 'jsfilter': 5.0, 'pakelo': 4.0, 'fuchs': 4.0, 'shell': 6.0}
-FALLBACK_SOURCES = {'motorium', 'jsfilter', 'pakelo', 'fuchs', 'shell'}
+FALLBACK_SECONDS = {'motorium': 7.0, 'jsfilter': 5.0, 'pakelo': 4.0, 'fuchs': 4.0, 'shell': 6.0,
+                    'brembo': 12.0}
+FALLBACK_SOURCES = {'motorium', 'jsfilter', 'pakelo', 'fuchs', 'shell', 'brembo'}
 # Source outcomes that are expected and never make an answer partial.
 QUIET_CODES = ('NOT_REQUESTED', 'VIN_REQUIRED', 'NOT_NEEDED')
 MAX_CODE_LOOKUPS = 60
@@ -116,9 +118,10 @@ class VINSearchCoordinator:
                  hmac_key: str, *, motorium_enabled: bool = True,
                  fuchs_service: Any = None, shell_service: Any = None,
                  pakelo_service: Any = None, jsfilter_service: Any = None,
-                 catalog_service: Any = None,
+                 catalog_service: Any = None, brembo_service: Any = None,
                  fuchs_enabled: bool = True, shell_enabled: bool = True,
                  pakelo_enabled: bool = True, jsfilter_enabled: bool = True,
+                 brembo_enabled: bool = True,
                  budget_seconds: float = 75, ttl_seconds: float = 300, rules: Any = None,
                  queries: tuple[str, ...] = DEFAULT_QUERIES, cache: Any = None) -> None:
         self.repository = repository
@@ -131,6 +134,7 @@ class VINSearchCoordinator:
             'shell': (shell_service, bool(shell_enabled and shell_service is not None)),
             'pakelo': (pakelo_service, bool(pakelo_enabled and pakelo_service is not None)),
             'jsfilter': (jsfilter_service, bool(jsfilter_enabled and jsfilter_service is not None)),
+            'brembo': (brembo_service, bool(brembo_enabled and brembo_service is not None)),
         }
         self._catalog = catalog_service
         self.cache = cache
@@ -651,6 +655,9 @@ class VINSearchCoordinator:
             return {'fuchs', 'shell', 'pakelo'}
         if category in ('oil_filter', 'air_filter', 'cabin_filter', 'fuel_filter'):
             return {'jsfilter'}
+        # Brembo answers one car per brake question; a broad search never asks it.
+        if category in ('brake_pads', 'brake_discs', 'brakes'):
+            return {'brembo'}
         return set()
 
     def _run(self, identifier: str, vin: str | None, query: str, year: int | None,
@@ -773,6 +780,7 @@ class VINSearchCoordinator:
                         # Shell is the first oil chooser; the others only back it up.
                         fluids_started = launched = True
                         start_fluid('shell', dict(job['vehicle']), FALLBACK_SECONDS['shell'])
+                        start_fluid('brembo', dict(job['vehicle']), FALLBACK_SECONDS['brembo'])
                     shell_settled = fluids_started and 'shell' not in pending.values()
                     if job['vehicle'] and shell_settled and not oil_fallback_decided:
                         oil_fallback_decided = launched = True

@@ -404,7 +404,8 @@ class AutomotivePostgresTests(unittest.TestCase):
                 "kind": "product_approval", "authority": "manufacturer",
                 "reuse_permission": "owned",
                 "payload": {"product_id": "p2", "approval": "TEST-OIL",
-                            "source_fingerprint": product["source_fingerprint"]},
+                            "approval_content_fingerprint":
+                                product["approval_content_fingerprint"]},
             },
         ])
         with self.psycopg.connect(self.url) as conn:
@@ -415,10 +416,140 @@ class AutomotivePostgresTests(unittest.TestCase):
             )
         service = RecommendationService(runtime)
         self.assertEqual(service.recommend_oil(vehicle)["status"], "VERIFIED")
+        self.assertEqual(service.oil_vehicles("p2")["items"][0]["vehicle"], vehicle)
+        with self.psycopg.connect(self.url) as conn:
+            conn.execute(
+                "UPDATE warehouse.warehouse_products "
+                "SET source_columns = source_columns || %s::jsonb, row_hash = %s "
+                "WHERE source_product_id='p2'", ('{"column_10": "5"}', "8" * 64),
+            )
+        self.assertNotEqual(runtime.get_product("p2")["source_fingerprint"],
+                            product["source_fingerprint"])
+        self.assertEqual(service.recommend_oil(vehicle)["status"], "VERIFIED")
+        self.assertEqual(service.oil_vehicles("p2")["items"][0]["vehicle"], vehicle)
         with self.psycopg.connect(self.url) as conn:
             conn.execute("UPDATE warehouse.warehouse_products SET brand='changed',row_hash=%s "
                          "WHERE source_product_id='p2'", ("9" * 64,))
         self.assertEqual(service.recommend_oil(vehicle)["status"], "INSUFFICIENT_DATA")
+        self.assertEqual(service.oil_vehicles("p2")["items"], [])
+
+    def test_oil_labels_follow_catalog_inserts_and_edits(self):
+        from automotive.oil_catalog import read_review
+
+        runtime = self._role_repository("automotive_runtime")
+        self.assertNotIn("oil-new", {row["product_id"] for _, row in read_review(runtime)})
+        with self.psycopg.connect(self.url) as conn:
+            conn.execute(
+                """INSERT INTO warehouse.warehouse_products (
+                    source_product_id, product_code, product_name, brand, source_columns,
+                    row_hash, integrity_tag, source_page, first_seen_run_id, last_seen_run_id
+                ) SELECT 'oil-new', 'NEW-OIL', 'ძრავის ზეთი Example 5W/30 4L', 'Example',
+                    '{"column_10":"2","column_12":"0"}', %s, %s,
+                    source_page, first_seen_run_id, last_seen_run_id
+                FROM warehouse.warehouse_products WHERE source_product_id='p1'""",
+                ("7" * 64, "8" * 64),
+            )
+        labels = {row["product_id"]: row for _, row in read_review(runtime)}
+        self.assertEqual(labels["oil-new"]["sae_grade_from_catalog"], "5W-30")
+        self.assertEqual(labels["oil-new"]["stock_store"], 2)
+        self.assertEqual(labels["oil-new"]["review_status"], "NEEDS_APPROVAL_REVIEW")
+        self.assertEqual(labels["oil-new"]["verified_approvals"], "")
+
+        with self.psycopg.connect(self.url) as conn:
+            conn.execute(
+                "UPDATE warehouse.warehouse_products SET product_name='Example engine oil SAE 30',"
+                " source_columns='{\"column_10\":\"0\",\"column_12\":\"4\"}'"
+                " WHERE source_product_id='oil-new'"
+            )
+        labels = {row["product_id"]: row for _, row in read_review(runtime)}
+        self.assertEqual(labels["oil-new"]["sae_grade_from_catalog"], "SAE 30")
+        self.assertEqual(labels["oil-new"]["stock_tuz11"], 4)
+
+        with self.psycopg.connect(self.url) as conn:
+            conn.execute("UPDATE warehouse.warehouse_products SET is_active=false "
+                         "WHERE source_product_id='oil-new'")
+        self.assertNotIn("oil-new", {row["product_id"] for _, row in read_review(runtime)})
+        with runtime._connect() as conn:
+            writable = conn.execute("SELECT has_table_privilege(current_user, "
+                                    "'automotive.oil_inventory', 'UPDATE') AS writable")
+            self.assertFalse(writable.fetchone()["writable"])
+        with self.psycopg.connect(self.url) as conn:
+            with conn.transaction(force_rollback=True):
+                for name in (
+                    "0022_oil_specification_research",
+                    "0021_oil_document_research",
+                    "0020_oil_inventory_labels",
+                ):
+                    conn.execute((ROOT / "migrations" / f"{name}.down.sql").read_text())
+                self.assertIsNone(conn.execute(
+                    "SELECT to_regclass('automotive.oil_inventory')").fetchone()[0])
+        self.assertIsInstance(read_review(runtime), list)
+
+    def test_oil_research_matches_require_approval_grade_and_current_identity(self):
+        from psycopg import sql
+
+        from automotive.repository import OIL_CONTENT_HASH
+
+        with self.psycopg.connect(self.url) as conn, conn.transaction(force_rollback=True):
+            conn.execute(
+                """UPDATE warehouse.warehouse_products
+                SET product_name='Example engine oil 0W-20'
+                WHERE source_product_id='p1'"""
+            )
+            fingerprint = conn.execute(
+                sql.SQL("SELECT {} FROM warehouse.warehouse_products p "
+                        "WHERE source_product_id='p1'").format(sql.SQL(OIL_CONTENT_HASH))
+            ).fetchone()[0]
+            conn.execute(
+                """INSERT INTO automotive.oil_product_research VALUES (
+                    'p1', %s, 'Example exact oil', 'APPROVAL_DOCUMENTED', '0W-20',
+                    ARRAY['https://example.test/oil'], ARRAY['VW 508 00'],
+                    ARRAY['VW 508 00', 'VW 509 00'],
+                    '', CURRENT_DATE)""", (fingerprint,),
+            )
+            conn.execute(
+                """INSERT INTO automotive.oil_vehicle_research VALUES
+                ('Test', 'Match', 2020, 'T1', 'US', '', 'VW 508 00',
+                 ARRAY['0W-20'], ARRAY['https://example.test/car'], '', true),
+                ('Test', 'Wrong grade', 2020, 'T2', 'US', '', 'VW 508 00',
+                 ARRAY['5W-30'], ARRAY['https://example.test/car'], '', true),
+                ('Test', 'Wrong approval', 2020, 'T3', 'US', '', 'VW 504 00',
+                 ARRAY['0W-20'], ARRAY['https://example.test/car'], '', true),
+                ('Test', 'Accepts specification', 2020, 'T4', 'US', '', 'VW 509 00',
+                 ARRAY['0W-20'], ARRAY['https://example.test/car'], '', true),
+                ('Test', 'Requires approval', 2020, 'T5', 'US', '', 'VW 509 00',
+                 ARRAY['0W-20'], ARRAY['https://example.test/car'], '', false),
+                ('Test', 'Wrong specification grade', 2020, 'T6', 'US', '', 'VW 509 00',
+                 ARRAY['5W-30'], ARRAY['https://example.test/car'], '', true)"""
+            )
+            conn.execute("SET LOCAL ROLE automotive_runtime")
+            self.assertEqual(conn.execute(
+                "SELECT engine_code FROM automotive.oil_research_vehicle_matches",
+            ).fetchall(), [("T1",)])
+            self.assertEqual(conn.execute(
+                "SELECT engine_code FROM automotive.oil_research_specification_matches",
+            ).fetchall(), [("T4",)])
+            conn.execute("RESET ROLE")
+            conn.execute(
+                "UPDATE automotive.oil_product_research SET status='PACKAGE_CHECK_REQUIRED' "
+                "WHERE source_product_id='p1'"
+            )
+            self.assertEqual(conn.execute(
+                "SELECT count(*) FROM automotive.oil_research_specification_matches",
+            ).fetchone()[0], 0)
+            conn.execute(
+                "UPDATE automotive.oil_product_research SET status='APPROVAL_DOCUMENTED' "
+                "WHERE source_product_id='p1'"
+            )
+            conn.execute("UPDATE warehouse.warehouse_products SET brand='Changed' "
+                         "WHERE source_product_id='p1'")
+            self.assertEqual(conn.execute(
+                "SELECT research_status FROM automotive.oil_inventory_research "
+                "WHERE source_product_id='p1'",
+            ).fetchone()[0], "RESEARCH_PENDING")
+            self.assertEqual(conn.execute(
+                "SELECT count(*) FROM automotive.oil_research_vehicle_matches",
+            ).fetchone()[0], 0)
 
     def test_runtime_cannot_enrich_or_read_as_public_and_import_cannot_approve(self):
         runtime = self._role_repository("automotive_runtime")

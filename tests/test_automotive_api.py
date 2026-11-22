@@ -114,6 +114,38 @@ class AutomotiveApiTests(unittest.IsolatedAsyncioTestCase):
         except asyncio.CancelledError:
             pass
 
+    async def test_reverse_oil_lookup_returns_only_reviewed_configurations(self):
+        vehicle = {"make": "Test", "model": "Example", "model_year": 2020,
+                   "engine_code": "TEST1", "market": "US"}
+        review = {"authority": "manufacturer", "reuse_permission": "owned",
+                  "review_status": "approved", "reviewed_by": "test reviewer"}
+
+        class OilRepository(FakeRepository):
+            def oil_approval_products(self, product_id=None):
+                if product_id not in (None, "oil/1"):
+                    return []
+                return [(
+                    {"source_product_id": "oil/1", "approval_content_fingerprint": "current"},
+                    [{**review, "product_id": "oil/1", "approval": "TEST-OIL",
+                      "approval_content_fingerprint": "current", "viscosity": "5W-30"}],
+                )]
+
+            def vehicle_specifications(self, configuration=None):
+                return [{**review, "applicability": vehicle, "category": "engine_oil",
+                         "approval": "TEST-OIL", "viscosity": "5W-30"}]
+
+        client = self.make_client(repository=OilRepository())
+        path = "/api/v1/recommendations/oil"
+        reverse = await client.get(f"{path}/vehicles", params={"product_id": "oil/1"})
+        self.assertEqual(reverse.status_code, 200)
+        self.assertEqual(reverse.json()["status"], "VERIFIED")
+        self.assertEqual(reverse.json()["items"][0]["vehicle"], vehicle)
+        matching = await client.post(path, json={"vehicle": vehicle})
+        self.assertEqual(matching.json()["items"][0]["product"]["source_product_id"], "oil/1")
+        unknown = await client.get(f"{path}/vehicles", params={"product_id": "oil/2"})
+        self.assertEqual(unknown.json()["status"], "INSUFFICIENT_DATA")
+        self.assertEqual(unknown.json()["items"], [])
+
     async def test_code_with_slash_and_catalog_allowlist(self):
         response = await self.client.get(
             "/api/v1/inventory/search", params={"code": "AP104/2", "manufacturer": "Example"}

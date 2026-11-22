@@ -6,7 +6,8 @@ TNLU's Messenger bot does, but without TNLU's MCP server. Customers who write to
 Messenger get an answer. A new comment on a Garage post gets a private reply on Messenger.
 The dashboard shows the chats, and page stats and Garage's own ad results come in read-only.
 An admin switches the bot on and off from the dashboard, or from their own Messenger with
-`#bot off` / `#bot on`.
+`#bot off` / `#bot on`. In between there is **test mode**: the bot answers only the chats an
+admin marked as testers (`#bot test`), and everyone else is left to the shop.
 
 Everything runs on this laptop. Only a small receiver for Meta's webhooks is reachable from
 the internet, through an ngrok tunnel; the dashboard stays on loopback.
@@ -345,6 +346,32 @@ the direct Anthropic account is unfunded today, so OpenRouter pays for the engin
 While the bot is on, real customers who write are answered too. Messages written before
 the switch went on are never answered.
 
+**Or test with a few people first (test mode).** Test mode answers only the chats marked
+as testers, so real customers are not touched and Meta's Auto reply may stay on:
+
+1. Each tester writes one message to the page from their own Facebook account (Messenger
+   ids are page-scoped, so a chat can be chosen only after it exists).
+2. In Chats, open their chat and switch on **Tester**. The Status tab lists the testers,
+   with a link to each chat and a Remove button; the Chats list has a Testers filter.
+3. In Status & switches, press **Start test mode** and confirm. No Auto reply tick is
+   needed. The same works from an admin account's Messenger with `#bot test`.
+4. Testers write again; only messages written after test mode started are answered.
+5. Afterwards, **Turn on for everyone** (asks for the Auto reply tick) or **Turn the bot
+   off**.
+
+With Meta's Auto reply on, a tester's first message in a new conversation may get Meta's
+greeting. That echo counts as the shop answering, so the bot leaves that one message and
+answers the tester's next one.
+
+**Starting a test over (Clear bot memory).** The bot remembers a chat: the car, the VIN,
+what was asked and what it showed. To run the next test as a new customer would, open the
+tester's chat in Chats and press **Clear bot memory**. The bot then forgets that chat and
+reads nothing the tester wrote before; the tester's next message starts a new conversation.
+The messages themselves stay on the Chats page (a line shows where the memory was cleared)
+and on Facebook. A reply the bot is writing at that moment is not sent, and a message it
+had not answered yet is never answered, so it no longer rings as waiting on Live chats. The
+button is there only for chats marked as testers; a customer's chat cannot be cleared.
+
 ### 11. Go live
 
 1. **Leave the bot on,** or turn it off until the day you choose.
@@ -362,8 +389,8 @@ audited.
 
 | Setting | Default | What it does |
 |---|---|---|
-| Messenger bot | off | The main switch. Turning it on stamps the time: only messages written after it are ever answered, so people already waiting are never bulk-answered. Turning it off always works, even with a stale page open. |
-| Auto reply confirmed off | not confirmed | The tick in the turn-on dialog. The bot cannot be turned on without it. |
+| Messenger bot | off | The main switch: **off**, **test mode** (only the chats marked as testers) or **on** (everyone). Each start stamps the time: only messages written after the bot began answering that customer are ever answered, so people already waiting are never bulk-answered. Switching from test mode to everyone therefore never answers what other customers wrote during the test, while a tester's reply already under way still goes out. Turning it off always works, even with a stale page open, and ends test mode. |
+| Auto reply confirmed off | not confirmed | The tick in the turn-on dialog. The bot cannot be turned on for everyone without it. Test mode does not need it, and starting test mode clears it (tests run with Auto reply on), so turning on for everyone afterwards asks again: `#bot on` is refused until the tick is given in the dashboard. |
 | Paused: AI provider | not paused | Set by the worker itself when the AI account fails every request: no credit (`PROVIDER_BILLING`), a refused key (`AUTHENTICATION_ERROR`, `ACCESS_DENIED`) or no key (`NOT_CONFIGURED`). It then sends nothing instead of a fallback to everyone. It is cleared by Resume, or by `#bot on`. |
 | Reply privately to comments | off | Its own switch. Comments made after it went on, and at most 7 days old, get one private reply each. A customer whose chat is switched off in Chats gets none, once an earlier private reply has linked their comments to that chat. |
 | Oldest message to answer | 1440 min (24 h) | 5-1440. Older messages are stored but not answered. |
@@ -373,6 +400,8 @@ audited.
 | Public reply to a comment | empty | Optional text posted under a comment after a successful private reply. Up to 300 characters. |
 | Keep bot records for | 365 days | 30-365. Reply attempts, job runs, comments and alarms; messages are kept for good. See [Data](#data-retention-and-deleting-a-customers-data). |
 | Bot in this chat (Chats) | on | Turn it off to take a chat over yourself; turn it on again afterwards. It also stops private replies to that customer's comments. |
+| Tester (Chats) | off | In test mode the bot answers only these chats. Status & switches lists them and can remove one. The chat must exist (the person wrote to the page once). With no tester marked, test mode answers nobody and the Status card warns. |
+| Clear bot memory (Chats, testers only) | - | A button, not a switch: the bot forgets that tester's chat and reads nothing written before. The stored messages stay. Audited as `messenger.chat_context_cleared`. |
 | Admin account (Chats) | off | That Facebook account may send `#bot` commands. Mark only your own. |
 | Needs attention (Chats) | off | Set by the worker when it could not answer properly. Clear it once handled; employees see it on Live chats as a stuck chat and may clear it there. |
 
@@ -397,8 +426,11 @@ stops the reply before it leaves (`skipped_off`). A customer's newest message is
 only when all of these hold:
 
 - the bot is on and not paused, and the chat's own switch is on;
-- the message was written after the bot was switched on, and is younger than the oldest
-  message to answer;
+- in test mode, the chat is marked as a tester (otherwise `skipped_not_tester`: no
+  warm-up, no engine turn, nothing counted against the limits, and Live chats shows the
+  customer as waiting for staff at once);
+- the message was written after the bot began answering this customer (test mode or on
+  for a tester, on for everyone else), and is younger than the oldest message to answer;
 - the shop has not answered since: a message typed in Business Suite or the Messenger app
   means the bot leaves it, and answers the customer's next message with the shop's words in
   view;
@@ -415,9 +447,8 @@ on their own.
 
 - **The answer.** It is split at sentence or line breaks into messages of at most 2,000
   characters. It follows the customer's language.
-- **Parts.** Up to 5 parts appear as lines: name, brand, price, availability. A "more"
-  button shows the rest. Stock counts and the shop's stock codes are left out, as on the
-  website.
+- **Parts.** Up to 5 parts appear as lines with their names, brands, SAP codes, prices and
+  availability. A "more" button shows the rest.
 - **Choices.** They become quick-reply buttons when there are 13 or fewer and every label
   fits in 20 characters. Otherwise they become a numbered list, and a reply of "2" picks the
   second choice.
@@ -440,12 +471,13 @@ message.
 | Message | Effect |
 |---|---|
 | `#bot off` | Turns the Messenger bot off and confirms it, or says it was already off. |
-| `#bot on` | Turns it on, clears an AI-provider pause, and confirms it. It is refused until Auto reply has been confirmed off in the dashboard. |
-| `#bot status` | On, off or paused; today's turns against the limit; comment replies; the last change; today's estimated cost. |
+| `#bot on` | Turns it on for everyone (also from test mode), clears an AI-provider pause, and confirms it. It is refused until Auto reply has been confirmed off in the dashboard. |
+| `#bot test` | Switches to test mode (only the chats marked as testers), clears an AI-provider pause, and confirms it with the number of testers. Needs no Auto reply confirmation. |
+| `#bot status` | On, test mode (with the number of testers), off or paused; today's turns against the limit; comment replies; the last change; today's estimated cost. |
 | any other `#bot …` | A short help text. |
 
 Commands never reach the engine and never count as turns. Each one is written to the audit
-log: `messenger.bot_off`, `messenger.bot_on`, `messenger.bot_on_refused`,
+log: `messenger.bot_off`, `messenger.bot_on`, `messenger.bot_test`, `messenger.bot_on_refused`,
 `messenger.bot_status` or `messenger.bot_help`. A customer who types `#bot` gets an
 ordinary answer. When the database refuses the change, the switch stays as it was and the
 answer says the command did not go through; send it again, or use the dashboard. A command
@@ -575,6 +607,7 @@ did not answer because of a rule:
 |---|---|
 | `skipped_off` | The bot was off, or the message was older than the switch-on time. |
 | `skipped_chat_off` | This chat's switch was off. |
+| `skipped_not_tester` | The bot was in test mode and this chat is not a tester (also on a comment whose author has no tester chat linked yet). |
 | `skipped_old` | Older than the maximum age, or outside Meta's 24-hour window. |
 | `skipped_shop_answered` | Staff answered first. |
 | `skipped_superseded` | A newer message took over. |
@@ -773,8 +806,8 @@ has its own login, and each login belongs to one role:
 | Role | Used by | May |
 |---|---|---|
 | `garage_webhook` | the receiver | Insert four columns of `garage.meta_inbox`, nothing else. It cannot read anything back, not even its own rows, and it has no privilege on the inbox's id sequence (0014). |
-| `garage_messenger` | the worker | Read and write the Facebook tables. Read `garage.site_sections` and `garage.services` (the shop facts). Append to `garage.audit_log`. Raise and update alarms in `garage.live_alerts`, never change an alarm's chat or kind (0015). No other staff table. |
-| `garage_site` | the dashboard | Change the switches, the connection and job requests. Read chats, comments, stats and ads. See only the inbox's bookkeeping columns, never a payload. Change only a chat's switch columns. Delete a customer's chat and comments, and record their hashed ids in `meta_forgotten` (0014). Read the Live chats tables, mark alarms done, switch a website visitor's bot, record the website chat and its alarms, and remove a deleted customer's alarms (0015). |
+| `garage_messenger` | the worker | Read and write the Facebook tables. Read `garage.site_sections` and `garage.services` (the shop facts). Append to `garage.audit_log`. Raise and update alarms in `garage.live_alerts`, never change an alarm's chat or kind (0015). Read the key and text of the owner's prompt edits in `garage.llm_prompts` (0019). No other staff table. |
+| `garage_site` | the dashboard | Change the switches, the connection and job requests. Read chats, comments, stats and ads. See only the inbox's bookkeeping columns, never a payload. Change only a chat's switch columns. Delete a customer's chat and comments, and record their hashed ids in `meta_forgotten` (0014). Read the Live chats tables, mark alarms done, switch a website visitor's bot, record the website chat and its alarms, and remove a deleted customer's alarms (0015). Mark a chat as a tester for test mode (0018). Edit the live bot's prompts and keep their history (`garage.llm_prompts`, `garage.llm_prompt_history`, 0019). Empty the bot's memory of a tester's chat through `garage.messenger_clear_context` (0023); it still cannot write a chat's `engine_state` itself. |
 
 `automotive_runtime`, the catalogue login the engine also uses, has no access to `garage`.
 
@@ -902,6 +935,19 @@ chats routes (`/api/admin/live/*`, both roles) are in `automotive/site_live.py`.
 Migration 0015 is applied by `uv run python -m warehouse_sync --migrate`, not by
 `messenger_setup --setup`; until it is, the worker records no alarms and is otherwise unaffected.
 
+Migration 0018 (test mode) must be applied **before** the services are restarted on code
+that has test mode: that code reads its columns, and the Live pages say "not set up" until
+it is in. Applying it first is safe for services still on older code. Test mode is stored
+apart from `bot_enabled`, so older code, or a rollback with 0018's down script, reads test
+mode as off and answers nobody.
+
+Migration 0023 (Clear bot memory) must likewise be applied **before** the services are
+restarted on code that has it: that code reads `messenger_threads.context_cleared_at` with
+every chat. Applying it first is safe for services still on older code. Its function,
+`garage.messenger_clear_context`, runs with its owner's rights (SECURITY DEFINER) so the
+dashboard login can empty a tester's bot memory without being able to write one; only the
+dashboard's and the worker's logins may call it.
+
 ## Verification
 
 ```bash
@@ -910,7 +956,8 @@ uv run python -m unittest tests.test_meta_foundation tests.test_meta_graph \
     tests.test_messenger_events tests.test_messenger_engine tests.test_messenger_render \
     tests.test_messenger_worker tests.test_messenger_setup tests.test_meta_comments \
     tests.test_meta_page_stats tests.test_meta_ads tests.test_site_meta_admin \
-    tests.test_site_meta_activity tests.test_messenger_e2e -v
+    tests.test_site_meta_activity tests.test_messenger_e2e \
+    tests.test_messenger_test_mode_database -v
 uv run ruff check automotive tests
 uv run bandit -q -r automotive
 ```

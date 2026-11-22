@@ -51,17 +51,20 @@ SOURCES = frozenset({"", "ads", "shortlink", "comment", "other"})
 REPLY_STATUSES = frozenset({
     "pending", "sent", "skipped_off", "skipped_chat_off", "skipped_old",
     "skipped_shop_answered", "skipped_superseded", "skipped_cap", "skipped_paused", "failed",
-    "blocked_by_meta", "fallback_sent", "paused_provider", "abandoned"})
+    "blocked_by_meta", "fallback_sent", "paused_provider", "abandoned", "skipped_not_tester"})
 # Reasons an attempt can stop before the engine runs. The caps count engine runs, which the
 # worker marks by setting engine_status (a skip after the engine ran still counts), and the
 # attempts still open or left open by a stopped worker (UNFINISHED), whose engine may have run.
 PRE_ENGINE_SKIPS = ("skipped_off", "skipped_chat_off", "skipped_old", "skipped_shop_answered",
-                    "skipped_cap", "skipped_paused")
+                    "skipped_cap", "skipped_paused", "skipped_not_tester")
 UNFINISHED = ("pending", "abandoned")
 RUN_STATUSES = frozenset({"ok", "error", "skipped"})
 THREAD_FILTERS = {"all": sql.SQL("TRUE"), "attention": sql.SQL("t.needs_attention"),
                   "off": sql.SQL("NOT t.bot_enabled"), "admin": sql.SQL("t.is_admin"),
-                  "ads": sql.SQL("t.source = 'ads'")}
+                  "ads": sql.SQL("t.source = 'ads'"), "tester": sql.SQL("t.bot_tester")}
+# The main switch: answers nobody, only the chats an admin marked as testers, or everyone.
+BOT_MODES = ("off", "test", "on")
+MAX_TESTERS_SHOWN = 200
 # Editable through update_settings; the switches have their own audited methods.
 # retention_days governs reply attempts, job runs and requests and the alarms, never the
 # messages (kept for good). The dashboard accepts 30-365; the column's own CHECK allows 3650.
@@ -73,9 +76,12 @@ REPLY_FIELDS = frozenset({"error_code", "error_subcode", "error_text", "engine_s
                           "sent_mids", "usage", "cost_usd", "duration_ms"})
 
 THREAD_COLUMNS = ("psid", "page_id", "customer_name", "conversation_id", "bot_enabled",
-                  "is_admin", "source", "source_ad_id", "first_seen_at", "last_customer_at",
-                  "last_shop_at", "last_bot_at", "needs_attention", "attention_reason",
-                  "engine_state_at", "updated_at", "version")
+                  "is_admin", "bot_tester", "source", "source_ad_id", "first_seen_at",
+                  "last_customer_at", "last_shop_at", "last_bot_at", "needs_attention",
+                  "attention_reason",
+                  "engine_state_at", "context_cleared_at", "updated_at", "version")
+# save_engine_state's default: store the state whatever the chat's context_cleared_at is.
+ANY_CONTEXT: Any = object()
 
 
 def _columns(*names: str, prefix: str = "") -> sql.Composed:
@@ -108,6 +114,10 @@ class AutoReplyNotConfirmed(ValueError):
     """Turning the bot on needs the admin's word that Meta's own "Auto reply" is off."""
 
 
+class NotTester(ValueError):
+    """The bot's memory is cleared only for a chat marked as a tester."""
+
+
 class InvalidFields(ValueError):
     """Field names mapped to a code (UNKNOWN, INVALID, EMPTY), like the dashboard's 422s."""
 
@@ -121,11 +131,39 @@ def mask_psid(psid: str | None) -> str:
     return "…" + str(psid)[-4:] if psid else ""
 
 
+def bot_mode(settings: Mapping[str, Any]) -> str:
+    """The main switch: 'off', 'test' (only chats marked as testers) or 'on' (everyone).
+
+    Test mode is stored apart from ``bot_enabled``, which keeps meaning "answers everyone"
+    (migration 0018 forbids both): code that knows only ``bot_enabled`` reads test mode as
+    off and answers nobody."""
+    if settings.get("bot_enabled"):
+        return "on"
+    return "test" if settings.get("bot_test_mode") else "off"
+
+
 def bot_state(settings: Mapping[str, Any]) -> str:
-    """'off', 'paused' (on, but stopped by the AI provider until resumed) or 'on'."""
-    if not settings.get("bot_enabled"):
+    """'off', 'test', 'on', or 'paused' (test or on, but stopped by the AI provider until
+    resumed)."""
+    mode = bot_mode(settings)
+    if mode == "off":
         return "off"
-    return "paused" if settings.get("bot_paused_reason") else "on"
+    return "paused" if settings.get("bot_paused_reason") else mode
+
+
+def answered_since(settings: Mapping[str, Any], *, tester: bool) -> datetime | None:
+    """Since when the bot answers this customer, or None when it answers them not at all now.
+
+    Testers from ``bot_test_at`` (the bot began answering testers: off -> test or off -> on,
+    kept while it stays on in either mode); everyone else from ``bot_enabled_at`` (stamped on
+    each change to 'on'), so people who wrote during a test are never bulk-answered."""
+    mode = bot_mode(settings)
+    if mode == "on":
+        return (settings.get("bot_test_at") or settings.get("bot_enabled_at")) if tester \
+            else settings.get("bot_enabled_at")
+    if mode == "test" and tester:
+        return settings.get("bot_test_at")
+    return None
 
 
 def _actor(actor: Any) -> tuple[int | None, str]:
@@ -376,32 +414,52 @@ class MetaStore:
 
     def set_bot(self, enabled: bool, actor: Any, auto_reply_confirmed: bool | None = None, *,
                 client_ip: str | None = None) -> dict:
-        """The admin's global switch.
+        """The admin's global switch: on for everyone, or off (which also ends test mode).
+        See ``set_bot_mode``."""
+        return self.set_bot_mode("on" if enabled else "off", actor, auto_reply_confirmed,
+                                 client_ip=client_ip)
 
-        ON requires ``auto_reply_confirmed_off``: already stored, or passed true now. Passing
-        false with ON refuses and leaves everything as it was; passing false with OFF stores
-        it. ``bot_enabled_at`` is stamped only when the switch goes
-        from off to on, so customers who wrote before that are never bulk-answered. Either way
-        a provider pause is cleared and the change is audited.
+    def set_bot_mode(self, mode: str, actor: Any, auto_reply_confirmed: bool | None = None, *,
+                     client_ip: str | None = None) -> dict:
+        """The admin's global switch: 'off', 'test' (only chats marked as testers) or 'on'.
+
+        'on' requires ``auto_reply_confirmed_off``: already stored, or passed true now. Passing
+        false with 'on' refuses and leaves everything as it was; passing it with another mode
+        stores it. 'test' needs no confirmation: Meta's Auto reply may stay on for the
+        customers the bot leaves alone, so unless the caller says otherwise test mode drops a
+        stored confirmation, and turning the bot on for everyone afterwards (the dashboard,
+        ``#bot on``) asks for it again. ``bot_enabled_at`` is stamped on each change to 'on'
+        and ``bot_test_at`` on each change from 'off' (answered_since), so customers who wrote
+        before the bot began answering them are never bulk-answered. Either way a provider
+        pause is cleared and the change is audited.
         """
+        if mode not in BOT_MODES:
+            raise ValueError("The bot mode is off, test or on")
         _, name = _actor(actor)
         with self.db.transaction() as conn:
             current = conn.execute("SELECT * FROM garage.meta_settings WHERE settings_id = 1 "
                                    "FOR UPDATE").fetchone()
-            confirmed = (current["auto_reply_confirmed_off"] if auto_reply_confirmed is None
-                         else bool(auto_reply_confirmed))
-            if enabled and not confirmed:
+            if auto_reply_confirmed is not None:
+                confirmed = bool(auto_reply_confirmed)
+            else:  # test mode is used with Auto reply left on: the stored word goes
+                confirmed = mode != "test" and bool(current["auto_reply_confirmed_off"])
+            if mode == "on" and not confirmed:
                 raise AutoReplyNotConfirmed("Confirm that Meta's Auto reply is off first")
             row = conn.execute(
-                "UPDATE garage.meta_settings SET bot_enabled = %(on)s, "
+                "UPDATE garage.meta_settings SET bot_enabled = %(on)s, bot_test_mode = %(test)s, "
                 "bot_enabled_at = CASE WHEN %(on)s AND NOT bot_enabled THEN now() "
-                "ELSE bot_enabled_at END, bot_changed_at = now(), bot_changed_by = %(by)s, "
+                "ELSE bot_enabled_at END, "
+                "bot_test_at = CASE WHEN %(answers)s AND NOT bot_enabled AND NOT bot_test_mode "
+                "THEN now() ELSE bot_test_at END, "
+                "bot_changed_at = now(), bot_changed_by = %(by)s, "
                 "bot_paused_reason = '', bot_paused_at = NULL, "
                 "auto_reply_confirmed_off = %(confirmed)s, version = version + 1, "
                 "updated_at = now() WHERE settings_id = 1 RETURNING *",
-                {"on": bool(enabled), "by": name, "confirmed": confirmed}).fetchone()
-            self.audit(actor, "messenger.bot_on" if enabled else "messenger.bot_off", "settings",
-                       {"changed": bool(enabled) != current["bot_enabled"],
+                {"on": mode == "on", "test": mode == "test", "answers": mode != "off",
+                 "by": name, "confirmed": confirmed}).fetchone()
+            before = bot_mode(current)
+            self.audit(actor, f"messenger.bot_{mode}", "settings",
+                       {"changed": mode != before, "from": before,
                         "was_paused": bool(current["bot_paused_reason"]),
                         "auto_reply_confirmed_off": confirmed},
                        client_ip=client_ip, connection=conn)
@@ -768,17 +826,72 @@ class MetaStore:
                             "messenger.chat_admin_on" if is_admin else "messenger.chat_admin_off",
                             expected_version, client_ip)
 
-    def save_engine_state(self, psid: str, state: Mapping[str, Any] | None) -> bool:
-        """Persist the engine's per-chat state after a turn (worker login)."""
+    def set_tester(self, psid: str, tester: bool, actor: Any, *,
+                   expected_version: int | None = None,
+                   client_ip: str | None = None) -> dict | None:
+        """Mark a chat as a tester: in test mode the bot answers only these (dashboard login;
+        the worker may too). None when the chat does not exist."""
+        return self._switch("bot_tester", psid, tester, actor,
+                            "messenger.chat_tester_on" if tester
+                            else "messenger.chat_tester_off", expected_version, client_ip)
+
+    def testers(self, limit: int = MAX_TESTERS_SHOWN) -> list[dict]:
+        """The chats marked as testers, by name: id, name, version, last customer message."""
+        with self.db.transaction() as conn:
+            return conn.execute(
+                "SELECT psid, customer_name, version, last_customer_at, bot_enabled "
+                "FROM garage.messenger_threads WHERE bot_tester "
+                "ORDER BY lower(customer_name), psid LIMIT %s",
+                (_limit(limit, MAX_TESTERS_SHOWN, MAX_TESTERS_SHOWN),)).fetchall()
+
+    def clear_context(self, psid: str, actor: Any, *, expected_version: int | None = None,
+                      client_ip: str | None = None) -> dict | None:
+        """Clear what the bot remembers of a tester's chat (both logins; migration 0023).
+
+        The engine state is emptied and ``context_cleared_at`` stamped: the bot starts the next
+        message as a new conversation and reads no customer message sent before the stamp. The
+        stored messages stay, so staff still see the whole chat. Everything written so far is
+        also marked as needing no reply (Live chats). Audited. None when the chat does not
+        exist; ``NotTester`` for a chat that is not marked as a tester; ``MetaConflict`` when
+        ``expected_version`` is stale."""
+        _digits(psid, "psid")
+        with self.db.transaction() as conn:
+            done = conn.execute("SELECT garage.messenger_clear_context(%s, %s::int) AS version",
+                                (psid, expected_version)).fetchone()
+            if done["version"] is None:
+                current = conn.execute("SELECT bot_tester FROM garage.messenger_threads "
+                                       "WHERE psid = %s", (psid,)).fetchone()
+                if current is None:
+                    return None
+                if not current["bot_tester"]:
+                    raise NotTester("thread")
+                raise MetaConflict("thread")
+            row = conn.execute(sql.SQL("SELECT {} FROM garage.messenger_threads "
+                                       "WHERE psid = %s").format(THREADS), (psid,)).fetchone()
+            self.audit(actor, "messenger.chat_context_cleared", mask_psid(psid),
+                       {"version": done["version"]}, client_ip=client_ip, connection=conn)
+        return row
+
+    def save_engine_state(self, psid: str, state: Mapping[str, Any] | None, *,
+                          cleared_at: Any = ANY_CONTEXT) -> bool:
+        """Persist the engine's per-chat state after a turn (worker login).
+
+        ``cleared_at``: the chat's ``context_cleared_at`` as the caller read it together with the
+        state this one was built from (None for a chat never cleared). The state is then stored
+        only while that value still stands: a chat cleared meanwhile keeps its empty memory, and
+        the answer is False."""
         value = None
         if state is not None:
             if len(json.dumps(state, ensure_ascii=False).encode("utf-8")) > MAX_ENGINE_STATE_BYTES:
                 raise ValueError("The engine state is larger than 256 KiB")
             value = Jsonb(dict(state))
+        unchecked = cleared_at is ANY_CONTEXT
         with self.db.transaction() as conn:
             row = conn.execute(
                 "UPDATE garage.messenger_threads SET engine_state = %s, engine_state_at = now(), "
-                "updated_at = now() WHERE psid = %s RETURNING psid", (value, psid)).fetchone()
+                "updated_at = now() WHERE psid = %s AND (%s::boolean "
+                "OR context_cleared_at IS NOT DISTINCT FROM %s::timestamptz) RETURNING psid",
+                (value, psid, unchecked, None if unchecked else cleared_at)).fetchone()
         return row is not None
 
     def flag_attention(self, psid: str, reason: str, *, needs: bool = True, actor: Any = None,
@@ -1003,6 +1116,10 @@ class MetaStore:
         """Customer messages newer than the chat's newest bot or shop message, oldest first.
 
         ``ignore_app_ids``: shop echoes sent through these apps do not count as an answer.
+        Never a message sent at or before the chat's ``context_cleared_at`` (a tester's bot
+        memory was cleared, ``clear_context``): this is the only way a stored customer message
+        reaches the bot, so those are out of its reach for good. (The shop's own words reach it
+        through the worker's echo handling, which applies the same cutoff.)
         """
         with self.db.transaction() as conn:
             return conn.execute(sql.SQL(
@@ -1013,7 +1130,9 @@ class MetaStore:
                 "SELECT {} FROM garage.messenger_messages m "
                 "WHERE m.psid = %(psid)s AND m.sender = 'customer' AND NOT EXISTS ("
                 "SELECT 1 FROM last_answer a WHERE (m.sent_at, m.message_id) "
-                "<= (a.sent_at, a.message_id)) ORDER BY m.sent_at, m.message_id")
+                "<= (a.sent_at, a.message_id)) AND NOT EXISTS ("
+                "SELECT 1 FROM garage.messenger_threads t WHERE t.psid = m.psid "
+                "AND m.sent_at <= t.context_cleared_at) ORDER BY m.sent_at, m.message_id")
                 .format(_columns(*MESSAGE_NAMES, prefix="m")),
                 {"psid": psid, "ignored": [str(app) for app in ignore_app_ids]}).fetchall()
 

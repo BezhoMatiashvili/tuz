@@ -279,9 +279,7 @@ class EngineTurnTests(unittest.TestCase):
         self.assertIsNone(two.state["pending"])
         self.assertEqual(len(two.state["memory"]["transcript"]), 2)
 
-    def test_the_reply_is_the_website_widgets_view_without_stock_numbers(self):
-        # The engine's own checks refuse prices in the text; a stock number is the website's
-        # redaction to make.
+    def test_the_reply_carries_the_sap_code_on_the_card(self):
         script = Script(done(reply="გვაქვს SATO ხუნდი (30023433).", outcome="offered",
                              car_label="Toyota Camry 2015", products=[product("r1")]))
         result = self.engine(script).respond({"memory": KNOWN}, "Camry 2015 წინა ხუნდები")
@@ -290,7 +288,7 @@ class EngineTurnTests(unittest.TestCase):
         self.assertFalse(keys_in(result.public) & FORBIDDEN_KEYS)
         self.assertEqual(set(result.public["cards"][0]), CARD_KEYS)
         self.assertEqual(result.public["cards"][0]["price"], 85.0)
-        self.assertNotIn("30023433", json.dumps(result.public, ensure_ascii=False))
+        self.assertEqual(result.public["cards"][0]["sap_code"], "30023433")
         self.assertEqual(result.public["answer"], "გვაქვს SATO ხუნდი.")
         self.assertGreater(result.usage["model_requests"], 0)
         # A number the customer typed in this chat, even in an earlier message, stays.

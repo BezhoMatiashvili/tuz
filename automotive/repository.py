@@ -26,6 +26,10 @@ PRODUCT_COLUMNS = f"""p.source_product_id, p.product_code, p.product_name, p.pro
 # Index freshness ignores the stock columns (see migration 0007). A row is stale
 # when it was never indexed, the parser changed, or its descriptive content changed.
 CONTENT_HASH = "automotive.content_hash(p.source_columns)"
+# Approval identity depends on the labels and codes that identify the oil formulation.
+OIL_CONTENT_HASH = """automotive.content_hash(jsonb_build_object(
+    'name', p.product_name, 'model', p.product_model, 'brand', p.brand,
+    'code', p.product_code, 'original', p.original_code, 'duplicate', p.duplicate_code))"""
 STALE_ROWS = f"""(s.source_product_id IS NULL OR s.parser_version <> %s
     OR (s.row_hash_seen IS DISTINCT FROM p.row_hash AND s.source_fingerprint <> {CONTENT_HASH}))"""
 # Name filters for engine-family items (engine-dependent parts only).
@@ -54,6 +58,8 @@ def _product(row: dict) -> dict:
         price=None, currency=None, stock=stock, status="PROVISIONAL",
         source_fingerprint=row.get("row_hash"),
     )
+    if "approval_content_fingerprint" in row:
+        result["approval_content_fingerprint"] = row["approval_content_fingerprint"]
     return result
 
 
@@ -230,9 +236,10 @@ class AutomotiveRepository:
     def get_product(self, product_id: str) -> dict | None:
         with self._connect() as conn:
             row = conn.execute(
-                sql.SQL("SELECT {} FROM warehouse.warehouse_products p "
+                sql.SQL("SELECT {}, {} AS approval_content_fingerprint "
+                        "FROM warehouse.warehouse_products p "
                 "WHERE p.source_product_id = %s AND p.is_active").format(
-                    sql.SQL(PRODUCT_COLUMNS)), (product_id,),
+                    sql.SQL(PRODUCT_COLUMNS), sql.SQL(OIL_CONTENT_HASH)), (product_id,),
             ).fetchone()
         return _product(row) if row else None
 
@@ -407,15 +414,57 @@ class AutomotiveRepository:
             )
         return {**result, "items": records, "candidates": candidates["items"]}
 
-    def vehicle_specifications(self, vehicle: dict) -> list[dict]:
-        from automotive.evidence import applies_to
+    def vehicle_specifications(self, vehicle: dict | None = None) -> list[dict]:
+        from automotive.evidence import applies_to, missing_oil_detail
 
-        return [row for row in self._evidence_rows("service_specification")
-                if applies_to(row, vehicle)]
+        rows = self._evidence_rows("service_specification")
+        if vehicle is None:
+            return rows
+        # Include scoped oil candidates so the recommender can identify a missing fact.
+        return [row for row in rows if applies_to(row, vehicle) or (
+            row.get("category") == "engine_oil"
+            and missing_oil_detail(row, vehicle))]
 
     def product_approvals(self, product_id: str) -> list[dict]:
         return [row for row in self._evidence_rows("product_approval")
                 if str(row.get("product_id", row.get("source_product_id", ""))) == product_id]
+
+    def oil_approval_products(self, product_id: str | None = None
+                              ) -> list[tuple[dict, list[dict]]]:
+        """Fetch products and their approval evidence together from one database snapshot."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                sql.SQL("""SELECT {columns}, {fingerprint} AS approval_content_fingerprint,
+                          to_jsonb(e) AS approval_record
+                    FROM automotive.product_approvals a
+                    JOIN automotive.evidence e USING (evidence_id)
+                    JOIN warehouse.warehouse_products p USING (source_product_id)
+                    WHERE p.is_active AND (%s::text IS NULL OR p.source_product_id = %s)
+                    ORDER BY {stock_order}, p.source_product_id, e.evidence_id""").format(
+                    columns=sql.SQL(PRODUCT_COLUMNS), fingerprint=sql.SQL(OIL_CONTENT_HASH),
+                    stock_order=sql.SQL(SQL_AVAILABLE_FIRST),
+                ), (product_id, product_id),
+            ).fetchall()
+        products: dict[str, tuple[dict, list[dict]]] = {}
+        for row in rows:
+            identifier = row["source_product_id"]
+            if identifier not in products:
+                products[identifier] = _product(row), []
+            products[identifier][1].append(_evidence(row["approval_record"]))
+        return list(products.values())
+
+    def oil_review_products(self) -> list[dict]:
+        """Read automatic oil labels and quantities from the current inventory."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                sql.SQL("""SELECT p.*, {} AS approval_content_fingerprint
+                    FROM automotive.oil_inventory p
+                    ORDER BY upper(p.brand), p.product_name, p.source_product_id
+                    """).format(sql.SQL(OIL_CONTENT_HASH)),
+            ).fetchall()
+        return [{**_product(row), **{key: row[key] for key in (
+            "price_raw", "sae_grades", "catalog_review_status",
+        )}} for row in rows]
 
     def get_cached_vin(self, vin_hash: str) -> dict | None:
         with self._connect() as conn:

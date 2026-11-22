@@ -12,6 +12,7 @@ import {
 
 const DEBOUNCE = 250;
 const STATES = ['all', 'available', 'out'];
+const CATEGORIES = ['all', 'engine_oil'];
 const STATE_ICON = {
   IN_STORE: 'good', WITHIN_1_2_HOURS: 'pending', UNAVAILABLE: 'neutral', UNKNOWN: 'unknown',
 };
@@ -31,11 +32,26 @@ function quantity(value) {
   return value === null || value === undefined ? '?' : qty(value);
 }
 
+function oilLabel(oil) {
+  if (!oil) {
+    return null;
+  }
+  return h('span', { class: 'inv__fits' },
+    h('span', { text: [oil.grade, t(`inventory.oil.${oil.status}`)].filter(Boolean).join(' · ') }),
+    oil.reviewed_approvals
+      ? h('span', { class: 'inv__fits', text: t('inventory.oil.approvals', {
+        codes: oil.reviewed_approvals,
+      }) })
+      : oil.catalog_specs && h('span', { class: 'inv__fits', text: t('inventory.oil.catalog', {
+        codes: oil.catalog_specs,
+      }) }));
+}
+
 function tableRows(items) {
   return items.map((item) => h('tr', {},
     h('th', { scope: 'row', class: 'inv__item' },
       h('span', { class: 'inv__name', text: item.name || item.code }),
-      item.fits && h('span', { class: 'inv__fits', text: item.fits })),
+      item.fits && h('span', { class: 'inv__fits', text: item.fits }), oilLabel(item.oil)),
     h('td', { text: item.brand || '' }),
     h('td', { class: 'code', text: item.code || '' }),
     h('td', { class: ['num', !item.price && 'muted'], text: priceText(item.price) }),
@@ -50,6 +66,7 @@ function cardRows(items) {
       h('p', { class: 'inv-card__name', text: item.name || item.code }),
       h('p', { class: ['inv-card__price', !item.price && 'muted'], text: priceText(item.price) })),
     item.fits && h('p', { class: 'inv-card__fits', text: item.fits }),
+    oilLabel(item.oil),
     h('p', { class: 'inv-card__meta' },
       item.brand && h('span', {},
         h('span', { class: 'visually-hidden', text: `${t('inventory.col.brand')}: ` }), item.brand),
@@ -83,6 +100,7 @@ export function mountView(root, ctx) {
     brand: query.get('brand') || '',
     make: query.get('make') || '',
     stock: STATES.includes(query.get('state')) ? query.get('state') : 'all',
+    category: CATEGORIES.includes(query.get('category')) ? query.get('category') : 'all',
     items: [], page: 0, total: 0, hasMore: false, options: null,
     status: 'loading', // loading | ready | error
     more: 'idle', // idle | loading | error
@@ -95,7 +113,8 @@ export function mountView(root, ctx) {
   let brandSelect = null;
   let makeSelect = null;
 
-  const filtered = () => Boolean(state.q || state.brand || state.make || state.stock !== 'all');
+  const filtered = () => Boolean(state.q || state.brand || state.make
+    || state.stock !== 'all' || state.category !== 'all');
 
   function syncUrl() {
     const search = new URLSearchParams();
@@ -110,6 +129,9 @@ export function mountView(root, ctx) {
     }
     if (state.stock !== 'all') {
       search.set('state', state.stock);
+    }
+    if (state.category !== 'all') {
+      search.set('category', state.category);
     }
     const text = search.toString();
     ctx.replaceUrl(text ? `/admin/inventory?${text}` : '/admin/inventory');
@@ -212,7 +234,8 @@ export function mountView(root, ctx) {
     drawResults();
     try {
       const response = await api.inventory({
-        q: state.q.trim(), brand: state.brand, make: state.make, state: state.stock, page,
+        q: state.q.trim(), brand: state.brand, make: state.make, state: state.stock,
+        category: state.category, page,
       }, signal);
       const items = Array.isArray(response.items) ? response.items : [];
       state.items = reset ? items : [...state.items, ...items];
@@ -262,6 +285,7 @@ export function mountView(root, ctx) {
     state.brand = '';
     state.make = '';
     state.stock = 'all';
+    state.category = 'all';
     draw();
     changed(true);
     root.querySelector('.input--search').focus(); // The button that was pressed is gone.
@@ -287,6 +311,13 @@ export function mountView(root, ctx) {
       state.make = makeSelect.value;
       changed(true);
     });
+    const categorySelect = select(CATEGORIES.map((value) => ({
+      value, label: t(`inventory.category.${value}`),
+    })), state.category);
+    categorySelect.addEventListener('change', () => {
+      state.category = categorySelect.value;
+      changed(true);
+    });
     fillSelects();
     const stock = segmented({
       label: t('inventory.state'), value: state.stock,
@@ -308,6 +339,7 @@ export function mountView(root, ctx) {
       h('div', { class: 'filters__search' }, searchField.node),
       field({ label: t('inventory.brand'), control: brandSelect }).node,
       field({ label: t('inventory.make'), control: makeSelect }).node,
+      field({ label: t('inventory.category'), control: categorySelect }).node,
       h('div', { class: 'field filters__state' },
         h('span', { class: 'field__label', 'aria-hidden': 'true', text: t('inventory.state') }), stock.node));
     form.addEventListener('submit', (event) => {

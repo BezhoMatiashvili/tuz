@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import unittest
 
+import requests
+
 from parts_crawler.http import (
     ChallengeDetected,
     CircuitOpen,
     Disallowed,
+    NetworkDown,
     PermanentFetchError,
     PoliteFetcher,
     RetryableFetchError,
     SourcePaused,
+    has_default_route,
     is_challenge,
     redirect_target,
 )
@@ -66,6 +70,8 @@ def fetcher(session, clock=None, sleeps=None, **options):
         clock.now += seconds
         return True
 
+    # Tests never depend on the test machine's own network state.
+    options.setdefault("network_check", lambda: True)
     return PoliteFetcher(user_agent="test", robots_token="TuzPartsCrawler", min_delay=5.0,
                          jitter=0.0, session_factory=lambda: session, clock=clock,
                          sleeper=sleeper, **options)
@@ -248,6 +254,43 @@ class FetcherTests(unittest.TestCase):
                                cookies={"lang": "EN"}, headers={"Accept": "application/json"})
         self.assertEqual((session.kwargs["cookies"], session.kwargs["headers"]),
                          ({"lang": "EN"}, {"Accept": "application/json"}))
+
+
+class OfflineTests(unittest.TestCase):
+    class Unreachable(FakeSession):
+        def request(self, method, url, **_kwargs):
+            self.requested.append((method, url))
+            raise requests.ConnectionError("Network is unreachable")
+
+    def test_offline_errors_wait_and_never_trip_the_breaker(self):
+        # 2026-11-21: one network drop tripped every source's breaker and paused them all.
+        online = [False]
+        client = fetcher(self.Unreachable([]), network_check=lambda: online[0],
+                         breaker_threshold=3, breaker_trips_to_pause=1)
+        for _ in range(10):
+            with self.assertRaises(NetworkDown) as caught:
+                client.fetch("https://example.com/a", allowed_hosts=HOSTS)
+            self.assertEqual(caught.exception.code, "NETWORK")
+        self.assertEqual(client.host("example.com").failures, 0)
+        # Online again, the same errors are the host's and the breaker works as before.
+        online[0] = True
+        for _ in range(2):
+            with self.assertRaises(RetryableFetchError):
+                client.fetch("https://example.com/a", allowed_hosts=HOSTS)
+        with self.assertRaises(SourcePaused):
+            client.fetch("https://example.com/a", allowed_hosts=HOSTS)
+
+    def test_default_route_from_proc_tables(self):
+        ipv4_header = "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\n"
+        ipv4_default = ipv4_header + "wlo1\t00000000\t0101A8C0\t0003\t0\t0\t600\t00000000\n"
+        ipv4_local = ipv4_header + "wlo1\t0001A8C0\t00000000\t0001\t0\t0\t600\t00FFFFFF\n"
+        lo_default = ("0" * 32 + " 00 " + "0" * 32 + " 00 " + "0" * 32
+                      + " ffffffff 00000001 00000000 00200200 lo\n")
+        wifi_default = lo_default.replace(" lo\n", " wlo1\n")
+        self.assertTrue(has_default_route(ipv4_default, ""))
+        self.assertFalse(has_default_route(ipv4_local, lo_default))
+        self.assertTrue(has_default_route(ipv4_local, wifi_default))
+        self.assertFalse(has_default_route("", ""))
 
 
 class BackoffTests(unittest.TestCase):

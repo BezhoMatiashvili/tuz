@@ -174,6 +174,7 @@ provider URLs, filesystem paths or model-selected write commands.
 | GET | `/parts/fitments?code=...&make=...&model=...&model_year=...&engine_code=...&market=...` | Applicable fitment evidence |
 | GET | `/parts/cross-references?code=...` | Outgoing directional code evidence |
 | POST | `/recommendations/oil` | `{vehicle: {...}}`; deterministic eligibility |
+| GET | `/recommendations/oil/vehicles?product_id=...&offset=0&limit=50` | Reviewed vehicle and engine configurations for this inventory row |
 | GET | `/evidence/{evidence_id}` | Source, permission, restrictions and review metadata |
 | POST | `/chat` | `{message, vehicle?, language: "ka" or "en"}` |
 | POST | `/chat/conversations` | Create an ephemeral conversation; returns 201 and an opaque `conversation_id` |
@@ -205,7 +206,22 @@ A failed/truncated source produces `PARTIAL` while preserving other sources' rec
 
 A named part runs only the sources that can answer it: engine oil uses the Fuchs, Shell
 and Pakelo choosers, oil/air/cabin filters use JS Asakashi (its filter codes are searched
-in the warehouse), and other categories run Motorium plus the local catalog. Unrequested
+in the warehouse), brake pads and discs ask Brembo (below), and other categories run
+Motorium plus the local catalog.
+
+**Brembo (`brembo`, `BREMBO_ENABLED`).** For a brake pad or disc question about one car,
+`automotive/brembo.py` asks bremboparts.com the way its own pages do: make → model →
+engine → that car's results page, plus the OE numbers of each product. It receives make,
+model, year and engine words, never a VIN. Its Brembo codes and OE numbers are matched
+against the warehouse like any supplier number, and `supplier_parts` also quotes Brembo's
+products (axle, size, line) under `brembo`. When the words name several Brembo models or
+engines, the report is `CONFLICTED` and lists Brembo's own titles; the assistant passes
+one back (`model`, or `trim` for the engine) or asks the customer. The site says its data
+and complete database may not be copied without TecAlliance's consent, so this is a live
+lookup only (owner's decision, 2026-11-21): nothing walks the catalogue, and only the
+usual one-day answer cache and a day's cache of the make/model/engine lists are kept. Any
+401, 403, redirect or 429 ends the lookup; the licence-plate search, which has a captcha,
+is never used. Unrequested
 sources report `SKIPPED` with `NOT_REQUESTED` and do not make a job `PARTIAL`; a long
 supplier result list is not a failure either. A job can start from make, model and year
 (no VIN): vPIC, Motorium and JS Asakashi report `VIN_REQUIRED`, while the local catalog
@@ -337,14 +353,49 @@ Superseded/revoked records remain visible and cannot authorize recommendations.
 `superseded_by` and `revoked` are preserved in payloads. For constrained cross-references,
 no unconditional interchange is asserted.
 
-Engine-oil specifications use `category: "engine_oil"`, `required_approvals` (an array)
-or `approval`/`specification`, and configuration-specific applicability binding
+Engine-oil specifications use `category: "engine_oil"`, `required_approvals` (all listed
+approvals required), or `approval`/`specification` for one code. Use `approval_options`
+for alternatives such as `[["VW 502 00"], ["VW 504 00"]]` when the same viscosity rules
+apply to either option. Configuration-specific applicability binds
 make/model/engine code and model year (or year range). If a viscosity requirement is
 provided, it must match verified product approval evidence. `viscosity`/`viscosities`
 accept an explicit SAE multigrade string such as `5W-30` or a list of alternatives;
 unsupported prose, conflicting fields or unsuitable asserted grades decline eligibility. Other unresolved restrictions must be reviewed rather than guessed.
-Product approval payloads use `product_id`, `approval`, and `source_fingerprint` copied
-from the **current** inventory response. A changed product invalidates its old approval.
+Product approval payloads use `product_id`, `approval`, `claim_type: "approval"`, the
+documented `viscosity`, and `approval_content_fingerprint` copied from the current oil
+review export. The fingerprint tracks the catalog name, brand, and codes through stock
+updates. Existing approvals with `source_fingerprint` still use the full row hash.
+Record performance claims separately from formal approvals.
+
+Migration `0020_oil_inventory_labels` creates the read-only
+`automotive.oil_inventory` view. Its catalog labels reflect active stock rows as soon
+as the warehouse sync commits inserts, edits, or stock updates. In the staff dashboard,
+select **Inventory → Product type → Engine oil**. The list shows the catalog grade and
+any stated standards, followed by the current approval review status. The existing
+evidence import and owner review workflow controls verified vehicle matches.
+
+Export the active catalog review queue with
+`.venv/bin/python -m automotive.oil_catalog data/oil-review.csv`. The CSV carries the
+product and pack identifiers, catalog grade and claims, review status, current fingerprint,
+and any reviewed product evidence. Use a new output path for every snapshot. An engine oil
+can have documented approvals while awaiting a reviewed engine requirement.
+
+Apply the migration before deploying code that reads the view. For a local rollback,
+restore the prior application code before removing the view with the paired down script.
+The migration only adds a view and leaves sync records and approval evidence intact.
+
+Migration `0021_oil_document_research` adds the staff research views
+`automotive.oil_inventory_research` and `automotive.oil_research_vehicle_matches`.
+The first shows dated product document checks, stated specifications, and formal
+approvals with source links. The second links documented approvals to specific
+researched vehicle configurations and carries their market and usage conditions.
+New stock can be identified in the research view before its document lookup. A
+change to the identity fields invalidates the existing lookup. The reviewed evidence
+workflow continues to control verification in customer recommendations.
+
+For local removal, export the research tables before running the paired `0021`
+down script, which removes their rows and views. Remove `0021` before `0020` if
+rolling back both local additions.
 
 Every import enters `pending`, regardless of supplied `VERIFIED`, `review_status` or
 `reviewed_by` labels. Source authority, reuse permission, applicability and review are
@@ -363,6 +414,10 @@ an applicable verified specification and current fingerprint-bound verified appr
 for the actual inventory product. Missing evidence returns `INSUFFICIENT_DATA` with
 clarification; conflicting requirements return `CONFLICTED`. Capacity and filter
 references remain unknown in this MVP, even when other oil evidence exists.
+
+The assistant's `oil_guide` uses reviewed oil matches for an exact configuration before
+consulting supplier selectors. A confirmed oil card is tied to its current warehouse row.
+The reverse API uses the same approval and viscosity rules for each reviewed configuration.
 
 ## VIN privacy and provider limits
 
@@ -844,8 +899,8 @@ when the customer starts to write, not when the message is sent.
 | `shop_info` | The shop's own facts from the site content (phone, address, hours, services), in Georgian and English. |
 | `finish` | Ends the turn (see step 4). |
 
-All tools are read-only. Rows reach the model under per-conversation handles (`r1`, `r2`),
-and the shop's own stock numbers are given only in the staff chat.
+All tools are read-only. Rows reach the model under per-conversation handles (`r1`, `r2`).
+The customer-facing chat attaches the shop's SAP code to each offered part from the catalogue.
 
 ### Confidence levels
 

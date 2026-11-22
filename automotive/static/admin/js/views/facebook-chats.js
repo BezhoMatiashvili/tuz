@@ -1,7 +1,9 @@
 // Facebook > Chats: the page's Messenger conversations. The list filters by state and grows
 // with "show more"; a chat opens at /admin/facebook/chats/<id> with its messages (customer,
-// bot, shop), its own bot switch, the admin-account flag that lets that Facebook account send
-// "#bot off", "#bot on" and "#bot status", "needs attention", and deleting the customer's data.
+// bot, shop), its own bot switch, the tester flag (in test mode the bot answers only testers),
+// the admin-account flag that lets that Facebook account send "#bot off", "#bot on", "#bot test"
+// and "#bot status", "needs attention", clearing the bot's memory of a tester's chat, and
+// deleting the customer's data.
 
 import { ApiError, isAbort } from '../api.js';
 import { h, icon, mount, uid } from '../dom.js';
@@ -17,7 +19,7 @@ import {
 
 const PAGE = 30;
 const MESSAGES = 50;
-const FILTERS = ['all', 'attention', 'off', 'ads', 'admin'];
+const FILTERS = ['all', 'attention', 'off', 'ads', 'admin', 'tester'];
 const PSID = /^[0-9]{1,30}$/;
 
 function attachmentsText(items) {
@@ -72,6 +74,7 @@ function listView(root, memory) {
         thread.needs_attention ? h('span', { class: 'chip', text: t('fb.chip.attention') }) : null,
         thread.bot_enabled ? null : h('span', { class: 'chip', text: t('fb.chip.bot_off') }),
         thread.is_admin ? h('span', { class: 'chip', text: t('fb.chip.admin') }) : null,
+        thread.bot_tester ? h('span', { class: 'chip', text: t('fb.chip.tester') }) : null,
         thread.source === 'ads' ? h('span', { class: 'chip', text: t('fb.chip.ad') }) : null),
       h('span', { class: 'user__username', text: preview })),
     h('span', { class: 'menu__trail' },
@@ -242,6 +245,38 @@ function detailView(root, ctx, psid, memory) {
     }
   }
 
+  /** A tester's chat: the bot forgets it and reads nothing written before. The messages stay. */
+  async function clearMemory(trigger) {
+    const sure = await confirmDialog({
+      opener: trigger, title: t('fb.chat.clear_title'), text: t('fb.chat.clear_text'),
+      extra: t('fb.chat.clear_extra'), confirmLabel: t('fb.chat.clear_confirm'),
+    });
+    if (!sure) {
+      return;
+    }
+    const restore = busy(trigger, t('fb.chat.clearing'));
+    try {
+      const result = await fbApi.clearContext(psid, state.thread.version);
+      if (alive) {
+        state.thread = result.thread;
+        toast(t('fb.chat.cleared'));
+        redrawKeeping(root, render, 'clear');
+      }
+    } catch (error) {
+      restore();
+      if (!alive) {
+        return;
+      }
+      if (error instanceof ApiError && error.code === 'VERSION_CONFLICT') {
+        toast(t('fb.chat.conflict'), 'critical');
+        await load(false);
+      } else {
+        toast(describe(error), 'critical');
+      }
+      refocus('clear');
+    }
+  }
+
   async function loadOlder() {
     if (!state.messages.length) {
       return;
@@ -304,16 +339,49 @@ function detailView(root, ctx, psid, memory) {
         }
         await save({ is_admin: on }, t(on ? 'fb.chat.admin_on' : 'fb.chat.admin_off'), 'admin');
       });
+    const tester = toggle('tester', Boolean(thread.bot_tester), 'fb.chat.tester_switch',
+      'fb.chat.tester_hint', (on) => save({ bot_tester: on },
+        t(on ? 'fb.chat.tester_on' : 'fb.chat.tester_off'), 'tester'));
     const attention = toggle('attention', thread.needs_attention, 'fb.chat.attention_switch',
       'fb.chat.attention_hint', (on) => save({ needs_attention: on },
         t(on ? 'fb.chat.attention_on' : 'fb.chat.attention_off'), 'attention'));
+    let memoryNode = null;
+    if (thread.bot_tester) { // only a tester's chat can be cleared (the server refuses others)
+      const hintId = uid('fb');
+      const hint = [t('fb.chat.clear_hint')];
+      if (thread.context_cleared_at) {
+        hint.push(t('fb.chat.clear_last', { time: dateTime(thread.context_cleared_at) }));
+      }
+      const clear = button(t('fb.chat.clear'), {
+        iconName: 'refresh', 'aria-describedby': hintId,
+        onClick: (event) => clearMemory(event.currentTarget),
+      });
+      clear.dataset.key = 'clear';
+      memoryNode = h('div', { class: 'field' }, h('div', {}, clear),
+        h('p', { class: 'field__hint', id: hintId, text: hint.join(' ') }));
+    }
     return card({ class: 'stack', 'aria-labelledby': titleId },
       h('h2', { class: 'card__title', id: titleId, tabindex: '-1', dataset: { key: 'title' },
         text: personName(thread) }),
       h('p', { class: 'card__text', text: facts.join(' · ') }),
       thread.needs_attention && thread.attention_reason ? notice('warning', t('fb.chat.reason',
         { reason: label('fb.reason', thread.attention_reason) })) : null,
-      bot.node, admin.node, attention.node);
+      bot.node, tester.node, memoryNode, admin.node, attention.node);
+  }
+
+  /** Where the bot's memory was last cleared, among the messages shown: the index of the first
+   * message sent after it (the line goes before that one, or after the last message), or -1
+   * when the clear lies before everything loaded so far. */
+  function clearedBefore() {
+    const cleared = Date.parse(state.thread && state.thread.context_cleared_at);
+    if (Number.isNaN(cleared)) {
+      return -1;
+    }
+    const index = state.messages.findIndex((message) => Date.parse(message.sent_at) > cleared);
+    if (index === 0) {
+      return -1;
+    }
+    return index < 0 ? state.messages.length : index;
   }
 
   function messagesCard() {
@@ -343,6 +411,12 @@ function detailView(root, ctx, psid, memory) {
         message.referral_ad_id ? h('p', { class: 'audit__when',
           text: t('fb.chat.from_ad', { id: message.referral_ad_id }) }) : null);
     });
+    const cut = clearedBefore();
+    if (cut > 0) {
+      items.splice(cut, 0, h('li', { class: 'audit__row audit__row--cleared' },
+        h('p', { class: 'audit__when', text: t('fb.chat.cleared_line',
+          { time: dateTime(state.thread.context_cleared_at) }) })));
+    }
     return card({ 'aria-labelledby': titleId },
       h('h2', { class: 'block__title', id: titleId, text: t('fb.chat.messages') }),
       older,

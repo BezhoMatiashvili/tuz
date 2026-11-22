@@ -13,6 +13,7 @@ alternative parts can be offered. Every row is a source assertion, never reviewe
 | MANN-FILTER pages (`mann`) | `en.sitemap-commerce.xml`, then product pages | OE numbers and main applications from JSON-LD. Superseded by `mann_api`; kept as the fallback that stays inside robots.txt. |
 | CatCar (`catcar`) | Catalog steps per brand (see *CatCar*) | Vehicle taxonomy with frame, model and engine codes for Toyota/Lexus, Nissan/Infiniti, Mitsubishi, Subaru, Honda, Hyundai, Kia, Mazda (USA), BMW/Mini, Mercedes/Smart, Audi/VW/Seat/Skoda. OEM part numbers for vehicles you seed. 10 s between requests. |
 | NGK UK part finder (`ngk`) | product type → make → model → year | Engine, dates, NGK part number and stock number. The site has no JSON API. |
+| NiBK brakes (`jnbk`) | The site's own AJAX calls on www.jnbk-brakes.com: maker list → `get_application_models/{maker}/1/0` → `get_applications/{model}/1/0/0/0` → part pages | Per vehicle (years, engine volume and code, chassis code): NiBK pads, shoes and discs for each brake position, plus the car maker's own number where the site lists one. Per part: NiBK variants and cross references (OE numbers, Akebono, Bendix, FMSI and others). robots.txt is empty and the site has no terms page. The AJAX calls need `X-Requested-With: XMLHttpRequest`, as the site's pages send. Part dimensions are in the stored raw pages but not parsed yet. |
 | RockAuto (`rockauto`) | Catalog tree pages | The site stopped answering this network address after about 620 pages at the 5 s pace (2026-11-09). Resumed 2026-11-20 at one page per 30 s and 1,500 a day; the breaker pauses it again if the site stops answering. Nothing hides the crawler or changes its address. |
 | RealOEM (`realoem`), Partsouq (`partsouq`) | `import-har` only | Cloudflare challenges automated clients, and RealOEM's robots.txt excludes AI crawlers. Import only pages you browsed yourself. Left out of `--source all`. |
 | NHTSA vPIC (`import-vpic`) | Official PostgreSQL dump → schema `vpic` | Offline VIN decoding (`SELECT * FROM vpic.spVinDecode('...')`), plus `parts_catalog.wmi` (14,191 VIN prefixes → make, manufacturer, country) and road-vehicle make/model pairs. |
@@ -22,7 +23,11 @@ alternative parts can be offered. Every row is a source assertion, never reviewe
 | FAPI format (`import-fapi`) | `manufacturer_list`, `product_list`, `analog_list` | For the purchasable full cross-reference set only. The GitHub sample is licensed for evaluation and has been removed from the database (`purge-source --source fapi`). |
 
 Not sources: 7zap (its terms forbid bots, manual extraction and building databases; its
-data is sold through the Levam API), TecDoc and Auto Care (licensed products).
+data is sold through the Levam API), TecDoc and Auto Care (licensed products), and the
+Brembo Parts catalogue (its page footer says the data and the complete database "may not
+be copied" without TecAlliance's prior consent; its app terms forbid bots and scraping).
+The assistant asks Brembo live about one car at a time instead; see `brembo` in
+docs/automotive.md.
 
 ## Setup
 

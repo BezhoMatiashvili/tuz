@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Event, RLock, Thread
 from typing import Any
 
-from automotive import dialogue
+from automotive import assistant_followup, dialogue
 from automotive.chat import VIN_PATTERN, _redact, engine_name
 from automotive.vin import validate_vin
 
@@ -427,12 +427,24 @@ class ConversationStore:
             if self._outstanding >= self.maximum:
                 raise ConversationError("CHAT_WORKER_CAPACITY", 429)
             old_vin, current = conversation["vin"], conversation["vehicle"]
+            memory = conversation.get("memory") or {}
+            last = (memory.get("followup") or {}).get("vehicle") or memory.get("vin_facts") or {}
+            stated = assistant_followup.stated_vehicle(safe_message) if old_vin else {}
+            switched_in_message = bool(old_vin and not typed_vin and
+                                       assistant_followup.conflicts(last or current, stated))
             # A new VIN is another car. So is a staff form that contradicts the car on
             # record, and then the VIN on record no longer describes it.
             contradicted = vehicle is not None and any(
                 vehicle.get(key) and (current.get(key) or old_vin)
                 and not _same(vehicle.get(key), current.get(key)) for key in IDENTITY)
-            if incoming_vin is not None and incoming_vin != old_vin:
+            reset_fitment = bool(switched_in_message or contradicted or
+                                 (old_vin and incoming_vin and incoming_vin != old_vin))
+            if switched_in_message:
+                conversation["vehicle"] = {}
+                conversation["vin"] = incoming_vin if incoming_vin != old_vin else None
+                conversation["vin_typed"] = False
+                conversation["vehicle_revision"] += 1
+            elif incoming_vin is not None and incoming_vin != old_vin:
                 conversation["vehicle"] = self._safe(vehicle or {})
                 conversation["vin"] = incoming_vin
                 conversation["vin_typed"] = typed_vin
@@ -463,6 +475,7 @@ class ConversationStore:
                      "audience": self.audience,
                      "vin_source": "message" if conversation.get("vin_typed") else "form",
                      "pending": copy.deepcopy(conversation["pending"]),
+                     "reset_fitment": reset_fitment,
                      "vehicle_revision": conversation["vehicle_revision"]}
             turn_id = secrets.token_urlsafe(24)
             turn = {"status": "RUNNING", "cancel": Event(), "language": language,

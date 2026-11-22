@@ -14,7 +14,9 @@ import {
   badgeCount,
   chatMatches,
   diffAlerts,
+  isOpenNow,
   isPhone,
+  isQuiet,
   mergeChats,
   mergeMessages,
   messagesOfChat,
@@ -23,7 +25,10 @@ import {
   nextDelay,
   openTotal,
   patternOf,
+  reminderCount,
   signature,
+  sirenAlerts,
+  SIREN_KINDS,
   sortChats,
   soundFor,
   toneOf,
@@ -245,6 +250,67 @@ test('polling slows down on failures and after a "not set up" answer', () => {
   assert.equal(nextDelay({ failures: 3 }), 12000);
   assert.equal(nextDelay({ failures: 3, visible: false }), 12000);
   assert.equal(nextDelay({ setup: true, failures: 2 }), 60000);
+});
+
+test('a quiet alarm (part not found after hours) is shown but never heard', () => {
+  const night = alert(1, { quiet: true });
+  assert.equal(isQuiet(night), true);
+  assert.equal(isQuiet(alert(2)), false);
+  const added = alarmEvents({ alerts: [], waiting: 0, attention: 0 },
+    { alerts: [night], waiting: 0, attention: 0 });
+  assert.equal(added[0].type, 'new'); // still a toast
+  assert.equal(soundFor(added), null);
+  const first = alarmEvents(null, { alerts: [night], waiting: 0, attention: 0 }, { first: true });
+  assert.equal(first[0].type, 'first');
+  assert.equal(soundFor(first), null); // overnight alarms do not ring when the page opens
+  const repeat = alarmEvents({ alerts: [night], waiting: 0, attention: 0 },
+    { alerts: [{ ...night, occurrences: 2, summary: 'rear pads' }], waiting: 0, attention: 0 });
+  assert.equal(soundFor(repeat), null); // asked again, still after hours
+});
+
+test('a page opened on a quiet and a loud alarm sounds for the loud one', () => {
+  const first = alarmEvents(null, {
+    alerts: [alert(1, { quiet: true }), alert(2, { kind: 'visit_request' })],
+    waiting: 0, attention: 0,
+  }, { first: true });
+  assert.equal(soundFor(first), 'visit');
+});
+
+test('a quiet alarm the customer raises again in the day wakes up as a new one', () => {
+  const night = alert(1, { quiet: true });
+  const day = { ...night, quiet: false, occurrences: 2, summary: 'rear pads' };
+  const events = alarmEvents({ alerts: [night], waiting: 0, attention: 0 },
+    { alerts: [day], waiting: 0, attention: 0 });
+  assert.equal(events[0].type, 'new');
+  assert.equal(soundFor(events), 'not_found');
+  const woke = diffAlerts([night], [{ ...night, quiet: false }]).updated;
+  assert.equal(woke.length, 1);
+  assert.equal(woke[0].woke, true);
+});
+
+test('the siren calls for loud, unseen part and staff alarms while the shop is open', () => {
+  assert.deepEqual(SIREN_KINDS, ['part_not_found', 'needs_staff']);
+  const list = [alert(1), alert(2, { kind: 'needs_staff' }), alert(3, { kind: 'visit_request' }),
+    alert(4, { quiet: true })];
+  assert.deepEqual(sirenAlerts(list).map((item) => item.alert_id), [2, 1]);
+  assert.deepEqual(sirenAlerts(list, { acked: new Set([2]) }).map((item) => item.alert_id), [1]);
+  assert.deepEqual(sirenAlerts(list, { openNow: false }), []); // after 19:00: silence
+  assert.deepEqual(sirenAlerts(null), []);
+});
+
+test('the shop counts as open only when the server says so', () => {
+  assert.equal(isOpenNow({ open_now: false }), false);
+  assert.equal(isOpenNow({ open_now: true }), true);
+  assert.equal(isOpenNow({}), false); // an older server cannot tell night from day
+  assert.equal(isOpenNow(null), false);
+});
+
+test('the soft reminder leaves quiet alarms out', () => {
+  const pulse = { open: { total: 2 }, waiting: 0, attention: 0 };
+  assert.equal(reminderCount(pulse, [alert(1, { quiet: true }), alert(2)]), 1);
+  assert.equal(reminderCount(pulse, [alert(1, { quiet: true }), alert(2, { quiet: true })]), 0);
+  assert.equal(reminderCount({ ...pulse, waiting: 1 }, [alert(1, { quiet: true })]), 2);
+  assert.equal(reminderCount(pulse, null), 2);
 });
 
 let failed = 0;

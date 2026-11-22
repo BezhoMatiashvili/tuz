@@ -11,8 +11,9 @@ from __future__ import annotations
 import contextlib
 import unittest
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 import psycopg
 from psycopg import errors, sql
@@ -309,6 +310,27 @@ class LiveStoreDatabaseTests(unittest.TestCase):
         self.assertEqual((rows[0]["occurrences"], rows[0]["version"], rows[0]["car_label"]),
                          (1, 1, "Honda Fit 2014"))
 
+    def test_a_part_not_found_after_hours_is_quiet_until_asked_for_again_in_the_day(self):
+        tbilisi = timezone(timedelta(hours=4))
+        night = datetime(2026, 11, 20, 22, 0, tzinfo=tbilisi)
+        first = self.worker.raise_alert("messenger", PSID, draft())
+        self.worker.raise_alert("messenger", PSID, draft("visit_request", "", "come in"))
+        self.admin_sql("UPDATE garage.live_alerts SET updated_at = %s", (night,))
+        listed = {row["kind"]: row["quiet"] for row in self.site.list_alerts("open")}
+        self.assertEqual(listed, {"part_not_found": True, "visit_request": False})
+        with patch("automotive.shop_hours.now", return_value=night + timedelta(hours=1)):
+            again = self.worker.raise_alert("messenger", PSID, draft())  # still night
+        self.assertFalse(again.changed)
+        part = [row for row in self.alert_rows() if row["kind"] == "part_not_found"]
+        self.assertEqual(part[0]["version"], first.version)
+        day = datetime(2026, 11, 21, 10, 30, tzinfo=tbilisi)
+        with patch("automotive.shop_hours.now", return_value=day):
+            woke = self.worker.raise_alert("messenger", PSID, draft())  # the same words
+        self.assertTrue(woke.changed and not woke.created)
+        row = next(row for row in self.alert_rows() if row["kind"] == "part_not_found")
+        self.assertEqual((row["version"], row["occurrences"]), (first.version + 1, 1))
+        self.assertNotEqual(row["updated_at"], night)  # its newest change is now
+
     def test_a_new_note_is_kept_beside_the_earlier_ones(self):
         self.worker.raise_alert("messenger", PSID, draft(summary="brake pads"))
         merged = self.worker.raise_alert("messenger", PSID, draft(
@@ -476,6 +498,7 @@ class LiveStoreDatabaseTests(unittest.TestCase):
                                          "service_booking": 0, "needs_staff": 1, "total": 3})
         self.assertEqual((pulse["waiting"], pulse["attention"]), (0, 0))
         self.assertEqual(pulse["messenger_bot"], "off")  # the global switch ships off
+        self.assertIsInstance(pulse["open_now"], bool)
         self.assertIsNotNone(pulse["stamp"])
         self.assertEqual(pulse["cursor"], {"m": 2, "w": 0})
 

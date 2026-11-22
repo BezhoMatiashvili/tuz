@@ -2385,11 +2385,16 @@ main:focus {
 }
 
 .card__meta,
+.card__sap,
 .card__why {
   grid-column: 1 / -1;
   color: var(--paper-500);
   font-size: 0.875rem;
   line-height: 1.45;
+}
+
+.card__sap {
+  overflow-wrap: anywhere;
 }
 
 /* Availability has a row of its own on every card, so the cards of a list line up. */

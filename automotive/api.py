@@ -35,6 +35,7 @@ class VehicleConfiguration(StrictModel):
     trim: str | None = Field(default=None, max_length=100)
     fuel: str | None = Field(default=None, max_length=100)
     fuel_type: str | None = Field(default=None, max_length=100)
+    dpf: bool | None = None
     displacement_l: float | None = Field(default=None, gt=0, le=20)
     engine_cylinders: int | None = Field(default=None, ge=1, le=24)
     generation: str | None = Field(default=None, max_length=100)
@@ -427,6 +428,7 @@ def create_app(
     search_service: Any = None,
     site: Any = None,
 ) -> FastAPI:
+    from automotive.brembo import BremboClient
     from automotive.config import Settings
     from automotive.fuchs import FuchsClient
     from automotive.jsfilter import JsFilterClient
@@ -486,10 +488,12 @@ def create_app(
         shell_service=ShellOilClient() if settings.shell_enabled else None,
         pakelo_service=PakeloClient() if settings.pakelo_enabled else None,
         jsfilter_service=JsFilterClient() if settings.jsfilter_enabled else None,
+        brembo_service=BremboClient() if settings.brembo_enabled else None,
         catalog_service=catalog_service, rules=rules,
         cache=source_cache,
         fuchs_enabled=settings.fuchs_enabled, shell_enabled=settings.shell_enabled,
         pakelo_enabled=settings.pakelo_enabled, jsfilter_enabled=settings.jsfilter_enabled,
+        brembo_enabled=settings.brembo_enabled,
         **({"knowledge": knowledge} if knowledge else {}),
     )
     from automotive.chat_log import ChatLogger
@@ -734,6 +738,15 @@ def create_app(
 
         return RecommendationService(repository).recommend_oil(
             payload.vehicle.model_dump(exclude_none=True)
+        )
+
+    @app.get("/api/v1/recommendations/oil/vehicles", response_model=StructuredResult)
+    def oil_vehicles(product_id: Code, offset: Annotated[int, Query(ge=0)] = 0,
+                     limit: Annotated[int, Query(ge=1, le=100)] = 50) -> Any:
+        from automotive.recommendations import RecommendationService
+
+        return RecommendationService(repository).oil_vehicles(
+            product_id, offset=offset, limit=limit,
         )
 
     @app.get("/api/v1/evidence/{evidence_id}", response_model=StructuredResult)

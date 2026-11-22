@@ -22,6 +22,7 @@ from parts_crawler.http import (
     CircuitOpen,
     Disallowed,
     Interrupted,
+    NetworkDown,
     PermanentFetchError,
     PoliteFetcher,
     RetryableFetchError,
@@ -315,6 +316,14 @@ class Scheduler:
             stats.error(error.code)
             store.record_error(name, error.code, trip=error.code == "CIRCUIT_OPEN")
             self.stop.wait(min(error.retry_after or 60.0, 1800.0))
+            return False
+        except NetworkDown as error:
+            # The laptop is offline: hand the page back untouched (no attempt is used up)
+            # and look again in a minute.
+            store.release(item)
+            stats.state = "offline, waiting"
+            stats.error(f"OFFLINE {error.code}")
+            self.stop.wait(error.retry_after or 60.0)
             return False
         except SourcePaused as error:
             store.release(item)

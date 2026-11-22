@@ -49,6 +49,8 @@ from automotive.meta_store import (
     InvalidFields,
     MetaConflict,
     MetaStore,
+    NotTester,
+    bot_mode,
     bot_state,
 )
 from automotive.site_admin import _address, _admin, _fail
@@ -61,7 +63,9 @@ PREFIX = "/api/admin/facebook"
 # loads the worker and its engine; a name the worker does not know would be "unknown_job".
 JOBS = ("subscription", "catchup", "names", "comments", "posts", "page_stats", "ads",
         "token_health", "purge")
-THREAD_FILTERS = ("all", "attention", "off", "ads", "admin")
+THREAD_FILTERS = ("all", "attention", "off", "ads", "admin", "tester")
+BOT_MODES = ("off", "test", "on")
+TESTER_SHOWN = ("psid", "customer_name", "version", "last_customer_at", "bot_enabled")
 EVENTS_SHOWN = 10
 # Connected, yet nothing from Meta for this long: the tunnel, the receiver or the subscription.
 WEBHOOK_QUIET = timedelta(hours=24)
@@ -78,10 +82,10 @@ PAGE_SHOWN = ("page_id", "page_name", "app_id", "subscribed_fields", "subscribed
               "connected_at", "connected_by")
 TOKEN_SHOWN = ("purpose", "subject_name", "scopes", "expires_at", "data_access_expires_at",
                "status", "status_detail", "checked_at", "connected_at", "connected_by")
-THREAD_SHOWN = ("psid", "customer_name", "bot_enabled", "is_admin", "source", "source_ad_id",
-                "first_seen_at", "last_customer_at", "last_shop_at", "last_bot_at",
+THREAD_SHOWN = ("psid", "customer_name", "bot_enabled", "is_admin", "bot_tester", "source",
+                "source_ad_id", "first_seen_at", "last_customer_at", "last_shop_at", "last_bot_at",
                 "needs_attention", "attention_reason", "version", "last_sender", "last_body",
-                "last_message_at")
+                "last_message_at", "context_cleared_at")
 # sent_at orders the chat; a bot reply's sent_at is the answered message's time plus 1 ms (the
 # worker's choice), so the browser shows stored_at, the real time, for the bot's rows.
 MESSAGE_SHOWN = ("message_id", "sender", "body", "attachments", "referral_ad_id", "sent_at",
@@ -122,7 +126,10 @@ class SettingsChange(_Strict):
     messages are kept for good."""
 
     version: int = Field(ge=1, le=MAX_VERSION)
+    # The main switch: bot_mode off / test (testers only) / on, or the older bot_enabled
+    # (true = on for everyone, false = off), never both in one body.
     bot_enabled: bool | None = None
+    bot_mode: str | None = Field(default=None, pattern="^(" + "|".join(BOT_MODES) + ")$")
     auto_reply_confirmed_off: bool | None = None
     comments_enabled: bool | None = None
     max_reply_age_minutes: int | None = Field(default=None, ge=5, le=1440)
@@ -144,12 +151,17 @@ class SettingsChange(_Strict):
 class ThreadChange(_Strict):
     bot_enabled: bool | None = None
     is_admin: bool | None = None
+    bot_tester: bool | None = None
     needs_attention: bool | None = None
     version: int | None = Field(default=None, ge=1, le=MAX_VERSION)
 
 
 class Confirm(_Strict):
     confirm: bool = False
+
+
+class ClearContextBody(Confirm):
+    version: int | None = Field(default=None, ge=1, le=MAX_VERSION)
 
 
 class DisconnectBody(Confirm):
@@ -228,7 +240,7 @@ def _scrub(value: Any, secret: str) -> Any:
 def _switches(row: Mapping[str, Any]) -> dict:
     """The settings row (switches with who/when, limits, texts, version) and the bot state."""
     return {**{key: value for key, value in row.items() if key != "settings_id"},
-            "bot_state": bot_state(row)}
+            "bot_mode": bot_mode(row), "bot_state": bot_state(row)}
 
 
 def _days_left(when: datetime | None, now: datetime) -> int | None:
@@ -252,12 +264,14 @@ def _token_view(row: Mapping[str, Any], now: datetime, app_id: str) -> dict:
 
 
 def _warnings(settings: Mapping[str, Any], page: Mapping[str, Any] | None, tokens: list[dict],
-              last: Mapping[str, Any] | None, now: datetime) -> list[dict]:
+              last: Mapping[str, Any] | None, now: datetime, testers: int = 0) -> list[dict]:
     """What the owner should act on, most urgent first. Codes only; the browser words them."""
     found: list[dict] = []
     if settings.get("bot_paused_reason"):
         found.append({"code": "bot_paused", "reason": settings["bot_paused_reason"],
                       "since": settings.get("bot_paused_at")})
+    if bot_mode(settings) == "test" and not testers:
+        found.append({"code": "test_no_testers"})  # test mode answers nobody until one is marked
     if page is None:
         found.append({"code": "not_connected"})
     else:
@@ -286,10 +300,12 @@ def _status(ctx: MetaContext) -> dict:
     page = store.page()
     tokens = [_token_view(row, now, ctx.settings.app_id) for row in store.token_rows()]
     last = store.last_event_at()
+    testers = [{key: row.get(key) for key in TESTER_SHOWN} for row in store.testers()]
     return {
         "configured": True,
         "connected": page is not None,
         "switches": _switches(settings),
+        "testers": testers,
         "page": None if page is None else {key: page.get(key) for key in PAGE_SHOWN},
         "tokens": tokens,
         "last_event": last,
@@ -298,7 +314,7 @@ def _status(ctx: MetaContext) -> dict:
         "runs": sorted(store.latest_runs(), key=lambda run: run["job"]),
         "jobs": list(JOBS),
         "required_scopes": list(REQUIRED_SCOPES),
-        "warnings": _warnings(settings, page, tokens, last, now),
+        "warnings": _warnings(settings, page, tokens, last, now, len(testers)),
         "checked_at": now,
     }
 
@@ -389,9 +405,12 @@ def build_meta_admin_router(site_settings: Any, *, store: Any = None, graph: Any
     def save_settings(request: Request, admin: Admin, payload: Payload) -> dict:
         """Switches, limits and texts in one call.
 
-        Turning the bot on needs Meta's Auto reply confirmed off (stored, or in the same body);
-        ``bot_enabled_at`` is stamped by the store on off->on only. ``version`` must be the one
-        last read, except for a body that only turns the bot off: that stop always works."""
+        The main switch is ``bot_mode``: off, test (only the chats marked as testers) or on
+        (everyone); the older ``bot_enabled`` true/false means on/off. Turning it on for
+        everyone needs Meta's Auto reply confirmed off (stored, or in the same body); test mode
+        does not (the bot leaves every other customer to the shop). The store stamps the times
+        that keep a backlog unanswered. ``version`` must be the one last read, except for a
+        body that only turns the bot off: that stop always works, test mode included."""
         body = _parse(SettingsChange, payload)
         changes = {name: getattr(body, name) for name in body.model_fields_set
                    if name != "version"}
@@ -400,14 +419,19 @@ def build_meta_admin_router(site_settings: Any, *, store: Any = None, graph: Any
             raise _fail(422, "INVALID_FIELDS", nulls)
         if not changes:
             raise _fail(422, "INVALID_FIELDS", {"": "REQUIRED"})
+        if "bot_mode" in changes and "bot_enabled" in changes:
+            raise _fail(422, "INVALID_FIELDS", {"bot_mode": "INVALID"})  # one way to say it
         store, user, ip = admin.ctx.store, admin.user, _address(request)
         current = store.settings()
-        if changes != {"bot_enabled": False} and body.version != current["version"]:
+        if (changes not in ({"bot_enabled": False}, {"bot_mode": "off"})
+                and body.version != current["version"]):
             raise _fail(409, "VERSION_CONFLICT")
         confirmed = changes.get("auto_reply_confirmed_off")
-        enabled = changes.get("bot_enabled", current["bot_enabled"])
-        if enabled and not (current["auto_reply_confirmed_off"] if confirmed is None
-                            else confirmed):
+        mode = changes.get("bot_mode") or bot_mode(current)
+        if "bot_enabled" in changes:
+            mode = "on" if changes["bot_enabled"] else "off"
+        if mode == "on" and not (current["auto_reply_confirmed_off"] if confirmed is None
+                                 else confirmed):
             # Checked before anything is written, so a refused body changes nothing.
             raise _fail(409, "AUTO_REPLY_NOT_CONFIRMED")
         limits = {name: value for name, value in changes.items() if name in SETTINGS_FIELDS}
@@ -415,11 +439,11 @@ def build_meta_admin_router(site_settings: Any, *, store: Any = None, graph: Any
         try:
             if limits:
                 row = store.update_settings(limits, user, body.version, client_ip=ip)
-            # Only a real change: set_bot also clears a provider pause, and that takes the
-            # explicit Resume, never a repeated "on".
-            if enabled != row["bot_enabled"] or (
+            # Only a real change: set_bot_mode also clears a provider pause, and that takes
+            # the explicit Resume, never a repeated "on".
+            if mode != bot_mode(row) or (
                     confirmed is not None and confirmed != row["auto_reply_confirmed_off"]):
-                row = store.set_bot(enabled, user, confirmed, client_ip=ip)
+                row = store.set_bot_mode(mode, user, confirmed, client_ip=ip)
             if "comments_enabled" in changes:
                 row = store.set_comments(changes["comments_enabled"], user, client_ip=ip)
         except MetaConflict:
@@ -493,7 +517,7 @@ def build_meta_admin_router(site_settings: Any, *, store: Any = None, graph: Any
             raise _fail(422, "CONFIRM_REQUIRED")
         store, user, ip = admin.ctx.store, admin.user, _address(request)
         current = store.settings()
-        if current["bot_enabled"]:
+        if bot_mode(current) != "off":  # test mode too
             store.set_bot(False, user, client_ip=ip)
         if current["comments_enabled"]:
             store.set_comments(False, user, client_ip=ip)
@@ -546,11 +570,12 @@ def build_meta_admin_router(site_settings: Any, *, store: Any = None, graph: Any
 
     @router.put("/threads/{psid}")
     def change_thread(psid: PsidPath, request: Request, admin: Admin, payload: Payload) -> dict:
-        """The chat's own bot switch, its admin-account flag (accepts '#bot off|on|status' from
-        that Facebook account) and "needs attention". Each change is audited by the store."""
+        """The chat's own bot switch, its admin-account flag (accepts '#bot off|on|test|status'
+        from that Facebook account), the tester flag (test mode answers only testers) and
+        "needs attention". Each change is audited by the store."""
         body = _parse(ThreadChange, payload)
         changes = {name: getattr(body, name) for name in ("bot_enabled", "is_admin",
-                                                          "needs_attention")
+                                                          "bot_tester", "needs_attention")
                    if getattr(body, name) is not None}
         if not changes:
             raise _fail(422, "INVALID_FIELDS", {"": "REQUIRED"})
@@ -563,7 +588,8 @@ def build_meta_admin_router(site_settings: Any, *, store: Any = None, graph: Any
         expected = body.version
         try:
             for name, method in (("bot_enabled", store.set_thread_switch),
-                                 ("is_admin", store.set_admin)):
+                                 ("is_admin", store.set_admin),
+                                 ("bot_tester", store.set_tester)):
                 if name in changes and changes[name] != current[name]:
                     row = method(psid, changes[name], user, expected_version=expected,
                                  client_ip=ip)
@@ -578,6 +604,26 @@ def build_meta_admin_router(site_settings: Any, *, store: Any = None, graph: Any
                                         actor=user, client_ip=ip):
                 raise _fail(404, "NOT_FOUND")
         row = store.get_thread(psid)
+        if row is None:
+            raise _fail(404, "NOT_FOUND")
+        return _plain({"thread": _thread_view(row)})
+
+    @router.post("/threads/{psid}/clear-context")
+    def clear_context(psid: PsidPath, request: Request, admin: Admin, payload: Payload) -> dict:
+        """Clear what the bot remembers of a tester's chat, so the next test starts as a new
+        conversation: the bot's memory of the chat is emptied and it reads nothing the tester
+        wrote before. The stored messages stay on this page. Only for a chat marked as a tester
+        (409 NOT_TESTER otherwise); audited by the store."""
+        body = _parse(ClearContextBody, payload)
+        if not body.confirm:
+            raise _fail(422, "CONFIRM_REQUIRED")
+        try:
+            row = admin.ctx.store.clear_context(psid, admin.user, expected_version=body.version,
+                                                client_ip=_address(request))
+        except NotTester:
+            raise _fail(409, "NOT_TESTER") from None
+        except MetaConflict:
+            raise _fail(409, "VERSION_CONFLICT") from None
         if row is None:
             raise _fail(404, "NOT_FOUND")
         return _plain({"thread": _thread_view(row)})

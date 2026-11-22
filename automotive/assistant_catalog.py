@@ -1112,12 +1112,13 @@ class CatalogIndex:
                                                       self._order[position]))[:limit]
         return [(str(self._rows[position].id), found[position]) for position in ordered]
 
-    def by_codes(self, numbers: Sequence[str],
-                 limit_per_number: int = 20) -> dict[str, list[dict]]:
+    def by_codes(self, numbers: Sequence[str], limit_per_number: int = 20, *,
+                 article_only: bool = False) -> dict[str, list[dict]]:
         """Rows that carry each number as their own code, shop code or a cross code.
 
         Punctuation and spacing are ignored. `matched` is the number as the row writes it,
         which is longer than the number asked for when only its stem was given.
+        Supplier article numbers use whole product identifiers and cross-references only.
         """
         if isinstance(numbers, str):
             numbers = [numbers]
@@ -1130,19 +1131,30 @@ class CatalogIndex:
             given = str(number)
             key = normalize_code(given)
             hits: list[tuple[tuple, int, str, str]] = []
-            positions = (*_unpack(self._numbers.get(key)), *_unpack(self._partial.get(key)))
+            positions = _unpack(self._numbers.get(key))
+            if not article_only:
+                positions = (*positions, *_unpack(self._partial.get(key)))
             for position in positions if len(key) >= MIN_NUMBER else ():
                 # The best place the row writes this number: whole before stem, own first.
-                partial, _, written, field = min(
+                match = min((
                     (not whole, FIELD_ORDER[field], written, field)
                     for code, written, field, whole in _row_codes(self._rows[position])
-                    if code == key)
-                hits.append(((partial, field == "cross", self._rank[position],
-                              self._order[position]), position, written, field))
+                    if code == key and (not article_only or whole and field != "shop_code")),
+                    default=None)
+                if match is not None:
+                    partial, _, written, field = match
+                    cross, rank = field == "cross", self._rank[position]
+                    priority = (False, rank, cross) if article_only else (partial, cross, rank)
+                    hits.append(((*priority, self._order[position]), position, written, field))
             hits.sort()
             found[given] = [{"row": self._array(position), "matched": written, "field": field}
                             for _, position, written, field in hits[:limit]]
         return found
+
+    def article_numbers(self, row: Row) -> set[str]:
+        """Whole own and cross numbers as used in car-specific supplier searches."""
+        return {key for key, _, field, whole in _row_codes(row)
+                if whole and field != "shop_code"}
 
     def equivalents(self, product_id: str, limit: int = 30) -> list[dict]:
         """Other rows that share a number with this row, the most shared numbers first.
