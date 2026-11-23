@@ -19,7 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "bandit==1.8.3",
+    "bandit==1.9.4",
     "cyclonedx-bom==8.0.0",
     "pip-audit==2.10.1",
     "pytest==9.0.3",
