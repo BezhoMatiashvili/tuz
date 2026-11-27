@@ -462,7 +462,6 @@ class Toolbox:
         self.stated_vehicle: dict = {}
         self.followup_vehicle: dict = {}
         self._engine_choices: set[tuple[str, ...]] = set()
-        self.oil_guide_result: dict = {}
         self.customer_vehicle_text = ""
         self.customer_message = ""
         self._crawled_down = False
@@ -1477,20 +1476,22 @@ class Toolbox:
                              "products": list(dict.fromkeys(
                                  name for item in variants for name in item["products"]))[:6]}
             data["catalogue_codes"] = list(dict.fromkeys(codes))
-            note = ("Supplier-asserted. Match the exact product code and approved grade. "
-                    "Offer no oil by viscosity alone.")
+            note = ("The oil maker's catalogue names these grades for this car. Offer the shop's "
+                    "engine oils of these grades; for a diesel with a particle filter only rows "
+                    "whose own name states the standard.")
         elif variants:
             data["variants"] = variants
             note = ("The selectors disagree. Decide by the engine the customer has, or ask "
                     "which it is.")
         else:
-            note = ("The selectors gave no oil for this car. That says nothing about the "
-                    "car: ask for the engine or go on with the grade the customer names.")
+            note = ("The selectors gave no oil for this car. If you did not use the European "
+                    "model name, call again with it; otherwise hand over to the shop's team, "
+                    "or go on with the grade the customer names.")
         if undecided:
             data["engine_variants"] = undecided
             note += (" The selectors list several engines. If the conversation decides the "
                      "engine, call oil_guide again with trim, engine_code, engine_litres "
-                     "and fuel filled; otherwise ask which engine it is.")
+                     "and fuel filled; otherwise ask once which engine it is.")
         if running:
             note += (" Some selectors were still working after "
                      f"{SUPPLIER_SECONDS:g} seconds; the same call next turn returns the "

@@ -53,6 +53,15 @@ def stated_vehicle(text: str) -> dict:
     return parsed.as_vehicle()
 
 
+def stated_market(text: str) -> str:
+    """The sales market a whole message names, as an answer to the question about it."""
+    return {
+        "აშშ": "US", "us": "US", "usa": "US", "united states": "US", "сша": "US",
+        "ევროპა": "Europe", "europe": "Europe", "европа": "Europe", "eu": "Europe",
+        "იაპონია": "Japan", "japan": "Japan", "япония": "Japan", "jp": "Japan",
+    }.get(text.strip().casefold(), "")
+
+
 def engine_question(text: str) -> bool:
     return bool(_ENGINE_QUESTION.search(text))
 

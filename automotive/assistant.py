@@ -37,7 +37,6 @@ import anthropic
 import psycopg
 
 from automotive import assistant_followup as followup
-from automotive import assistant_oil_intake as oil_intake
 from automotive import assistant_prompt as prompt
 from automotive import prompt_library, shop_hours, stock
 from automotive.assistant_oil_quote import (
@@ -69,10 +68,9 @@ from automotive.assistant_tools import (
     tool_definitions,
     typed_tokens,
 )
-from automotive.codes import codes_in_text, normalize_code
+from automotive.codes import codes_in_text
 from automotive.live_alerts import clean_phone, search_facts
 from automotive.model_client import out_of_credit
-from automotive.oil_match import normalize_grade
 from automotive.rules import Rules
 
 LOGGER = logging.getLogger(__name__)
@@ -907,7 +905,6 @@ class AssistantTurn:
             if not failed:
                 self.seen.update(dict.fromkeys(self.toolbox.rows_in(value)))
             if not failed and call.get("name") == "oil_guide":
-                self.toolbox.oil_guide_result = payload
                 needs = payload.get("needs") or {}
                 self.requirements = {key: needs[key] for key in (
                     "grades", "capacity_l", "engine_code", "sources") if key in needs}
@@ -1002,9 +999,10 @@ class AssistantTurn:
         return messages
 
     def _clear_fitment(self) -> None:
-        for key in ("notes", "car_label", "shown", "held", "seen", "sourced", "handles",
-                    "vin_key", "vin_facts", "transcript", "engine_choices", "question",
-                    "suggestions", "oil_question"):
+        """Another car or engine: what was gathered for the last one does not carry over. The
+        conversation itself (its turns, the notes, the row handles) stays."""
+        for key in ("car_label", "shown", "held", "seen", "sourced", "vin_key", "vin_facts",
+                    "engine_choices", "question", "suggestions"):
             self.memory.pop(key, None)
         self.question = self.choice = None
 
@@ -1031,20 +1029,16 @@ class AssistantTurn:
         vehicle.update(engine)
         grade = followup.oil_grade(self.message)
         context = {} if reset or engine_changed else {
-            key: saved[key] for key in ("oil_grade", "oil_litres", "oil_product", "oil_spec")
+            key: saved[key] for key in ("oil_grade", "oil_litres", "oil_product")
             if key in saved}
-        pending = self.memory.get("oil_question")
-        if pending == "year" and re.fullmatch(r"(?:19[89]|20)\d{2}", self.message.strip()):
-            vehicle["model_year"] = int(self.message)
-        if pending == "dpf":
+        # The answer to the model's own question about a detail a reviewed oil depends on.
+        if self.question and re.search(r"dpf|დპფ", self.question["text"], re.IGNORECASE):
             answer = self.message.strip().casefold()
             if answer in {"with dpf", "dpf აქვს", "с dpf", "yes", "კი", "да"}:
                 vehicle["dpf"] = True
             elif answer in {"no dpf", "dpf არ აქვს", "без dpf", "no", "არა", "нет"}:
                 vehicle["dpf"] = False
-        if pending == "spec" and (spec := oil_intake.stated_spec(self.message)):
-            context["oil_spec"] = spec
-        if pending == "market" and (market := oil_intake.stated_market(self.message)):
+        if market := followup.stated_market(self.message):
             vehicle["market"] = market
         if grade and grade != context.get("oil_grade"):
             context.pop("oil_product", None)
@@ -1681,80 +1675,7 @@ class AssistantTurn:
         packs, price = total
         return OIL_TOTAL[language].format(packs=packs, size=oil["pack_litres"], total=price)
 
-    def _oil_clarification(self, decision: dict) -> dict:
-        if self.toolbox is None:
-            return decision
-        guide = self.toolbox.oil_guide_result
-        pending = self.memory.get("oil_question")
-        vehicle = {**self.form, **self.followup["vehicle"], **self.facts}
-        fitment = oil_intake.fitment_request(self.message, bool(self.vin or vehicle.get("model")))
-        quoted_oil = (followup.refers_to_oil(self.message) and self.followup.get("oil_grade")
-                      and self.followup.get("oil_product") and decision.get("oil_quote"))
-        active = (fitment or (bool(guide) and not followup.oil_grade(self.message)
-                              and not quoted_oil)
-                  or (pending and (oil_intake.answers_question(self.message)
-                                   or followup.stated_vehicle(self.message)
-                                   or oil_intake.stated_market(self.message))))
-        if not active:
-            return decision
-
-        spec = self.followup.get("oil_spec")
-        grades = set((guide.get("needs") or {}).get("grades", []))
-        codes = (set(guide.get("catalogue_codes", []))
-                 if guide.get("status") == "answered" else set())
-        verified = {row[0] for row in guide.get("rows", [])} if guide.get("status") == "verified" \
-            else set()
-        products, matched = [], False
-        for item in decision["products"]:
-            row = item["row"]
-            if not oil_intake.oil_candidate(row.name, row.code):
-                products.append(item)
-                continue
-            current = self._current(item["product"])
-            current = current if isinstance(current, dict) else {}
-            name = current.get("product_name") or row.name
-            grade = normalize_grade(name)
-            code = normalize_code(current.get("original_code") or row.code)
-            if ((item["handle"] in verified and
-                 self._verified_oil(item["product"], current))
-                    or (grade in grades and code in codes)
-                    or (spec and (not grades or grade in grades)
-                        and oil_intake.states_spec(name, spec))):
-                products.append(item)
-                matched = True
-        if matched:
-            return decision if len(products) == len(decision["products"]) else {
-                **decision, "products": products,
-                "reply": oil_intake.MATCH[decision["language"]], "oil_quote": None,
-            }
-
-        language = decision["language"]
-        field = guide.get("detail")
-        if not field and (guide.get("engine_variants")
-                          or guide.get("status") == "engine_ambiguous"):
-            field = "engine"
-        if not field:
-            field = "spec" if guide.get("status") == "answered" else oil_intake.needed(vehicle)
-        if field == "vehicle" and self.vin:
-            field = "vehicle_after_vin"
-        if oil_intake.unsure(self.message) and pending and field != "spec":
-            field = "spec"
-        handoff = (bool(spec) or guide.get("status") == "verified"
-                   or (pending == "spec" and oil_intake.unsure(self.message)))
-        question = None if handoff else oil_intake.question(field, language)
-        choices = (followup.engine_options(self.toolbox.engine_variants, language)
-                   if field == "engine" and question else [])
-        if choices:
-            question = {"text": followup.ENGINE_QUESTION[language], "options": choices}
-        return {**decision, "products": products, "question": question,
-                "reply": "" if question else oil_intake.FALLBACK[language],
-                "outcome": "asked" if question else "handoff", "oil_quote": None,
-                "engine_choices": {option["label"]: option["meaning"] for option in choices},
-                "oil_question": field if question else None}
-
     def _respond(self, decision: dict, status: str | None = None) -> dict:
-        if status in (None, "OK", "CLARIFICATION"):
-            decision = self._oil_clarification(decision)
         language = decision["language"]
         cards = [self._card(item, language) for item in decision["products"]]
         # Groups in the model's order; inside a group what is in the shop comes first.
@@ -1879,7 +1800,6 @@ class AssistantTurn:
             "vin_key": self.memory.get("vin_key"), "vin_facts": self.memory.get("vin_facts"),
             "followup": context,
             "engine_choices": decision.get("engine_choices") or {},
-            "oil_question": decision.get("oil_question"),
             "phone": self._phone_state(decision),
         }
 

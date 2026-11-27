@@ -1159,10 +1159,10 @@ class ToolTests(unittest.TestCase):
             done(products=[product("r1", evidence="5W-30", group="ძრავის ზეთი")]))
         result = run(service(script), "ზეთი Camry 2015",
                      search_service=agreed, dialogue={"memory": {"handles": {"r1": "p5"}}})
-        self.assertEqual((result["status"], len(result["cards"])), ("CLARIFICATION", 0))
-        self.assertIn("დაშვებას", result["question"]["text"])
+        self.assertEqual((result["status"], len(result["cards"])), ("OK", 1))  # the model's own
         content, is_error = tool_results(script.requests[1])[0]
         self.assertEqual((content["status"], is_error), ("answered", False))
+        self.assertIn("engine oils of these grades", content["note"])
         self.assertEqual(content["needs"], {
             "grades": ["0W-20"], "capacity_l": 4.4, "engine_code": "2AR-FE",
             "sources": ["Shell", "Pakelo"], "approvals": ["API SN"],
@@ -1311,34 +1311,6 @@ class ToolTests(unittest.TestCase):
             dialogue={"memory": asked["memory"], "choice": 2, "pending": asked["pending"]})
         self.assertEqual(chosen.started[0][3]["trim"], "Camry 3.5 (2GR-FE)")
 
-    def test_oil_customer_gets_one_missing_detail_at_a_time(self):
-        memory = {}
-        for message, field in (
-                ("I need engine oil", "vehicle"),
-                ("Toyota Camry", "year"),
-                ("2015", "engine"),
-                ("Not sure", "spec"),
-                ("Not sure", None)):
-            script = Script(done(language="en", reply="Nothing found.", outcome="nothing_found"))
-            response = run(service(script), message, dialogue={"memory": memory})
-            memory = response["memory"]
-            self.assertEqual(memory["oil_question"], field)
-            self.assertEqual(response["outcome"], "asked" if field else "handoff")
-            self.assertEqual(response["cards"], [])
-            self.assertNotIn("Nothing found", response["answer"])
-        self.assertIn("shop", response["answer"])
-
-    def test_vin_without_engine_requests_engine_without_offering_a_guess(self):
-        script = Script(done(language="en", reply="This oil fits.",
-                             products=[product("r5", confidence="spec", evidence="5W-30")],
-                             outcome="offered"))
-        result = run(service(script), f"Which engine oil fits {VIN}?",
-                     dialogue={"memory": {"handles": {"r5": "p5"}}})
-        self.assertEqual(result["outcome"], "asked")
-        self.assertIn("engine", result["question"]["text"])
-        self.assertEqual(result["cards"], [])
-        self.assertNotIn(VIN, result["answer"])
-
     def test_oil_asks_for_dpf_and_retries_verified_match_after_reply(self):
         vehicle = {"make": "TOYOTA", "model": "Camry", "model_year": 2015, "engine_code": "2AR-FE"}
         reviewed = {"authority": "manufacturer", "reuse_permission": "owned",
@@ -1356,12 +1328,13 @@ class ToolTests(unittest.TestCase):
                          "source_fingerprint": "f" * 16}])]
 
         lookup = says(use("oil_guide", car()))
-        first = Script(lookup, done(language="en", reply="Nothing found.", outcome="nothing_found"))
+        first = Script(lookup, done(language="en", reply="One detail decides the oil.",
+                                    question="Does it have a particle filter (DPF)?",
+                                    options=["With DPF", "No DPF"], outcome="asked"))
         asked = run(service(first, repository=OilRepository()),
                     "Which oil for Toyota Camry 2015, engine code 2AR-FE?")
-        self.assertEqual(asked["memory"]["oil_question"], "dpf")
-        self.assertEqual(asked["quick_replies"], ["With DPF", "No DPF", "Not sure"])
-        self.assertEqual(asked["cards"], [])
+        content, _ = tool_results(first.requests[1])[0]
+        self.assertEqual((content["status"], content["detail"]), ("needs_detail", "dpf"))
 
         second = Script(lookup, done(language="en", reply="This is the oil for your engine.",
                                     products=[product("r1", confidence="confirmed",
@@ -2890,6 +2863,39 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(turn.cards[0].evidence)  # Evidence records stay on the server.
         self.assertEqual(ConversationTurn(conversation_id="c", turn_id="t",
                                           status="RUNNING").model_dump()["question"], None)
+
+
+class ConversationKeptTests(unittest.TestCase):
+    """The model's own answer reaches the customer, and a changed car keeps the conversation."""
+
+    def test_the_models_oil_answer_is_not_replaced_by_a_canned_question(self):
+        camry = {"followup": {"vehicle": {"make": "TOYOTA", "model": "Camry", "model_year": 2015}}}
+        asked_year = {"question": {"act": "clarify", "question": "რომელი წლისაა მანქანა?",
+                                   "options": []}, "oil_question": "year"}
+        for message, memory in (("ტოიოტა ქემრი 2.5 2018, რომელი ზეთი უხდება?", {}),
+                                ("2015 წლის", asked_year), ("შელის ზეთი გაქვთ?", camry)):
+            with self.subTest(message):
+                script = Script(
+                    says(use("oil_guide", car(make="Toyota", model="Camry", year=2018))),
+                    done(reply="აი, ეს ზეთი გვაქვს.", outcome="offered",
+                         products=[product("r5", confidence="spec", evidence="5W-30")]))
+                result = run(service(script), message,
+                             dialogue={"memory": {**memory, "handles": {"r5": "p5"}}})
+                self.assertEqual(result["answer"], "აი, ეს ზეთი გვაქვს.")
+                self.assertIsNone(result["question"])
+                self.assertEqual([card["product"]["source_product_id"]
+                                  for card in result["cards"]], ["p5"])
+
+    def test_a_changed_year_or_engine_keeps_the_conversation(self):
+        opening = "Toyota Camry 2015, engine code 2AR-FE, წინა ხუნდები"
+        first = run(service(Script(done(reply="ხუნდები ქვემოთაა.", notes="Camry front pads"))),
+                    opening)
+        for later in ("Toyota Camry 2016", "engine code: 2AR-FXE"):
+            with self.subTest(later):
+                script = Script(done())
+                run(service(script), later, dialogue={"memory": copy.deepcopy(first["memory"])})
+                self.assertEqual(script.requests[0]["messages"][0]["content"], opening)
+                self.assertEqual(context_of(script.requests[0])["notes"], "Camry front pads")
 
 
 class EngineSelectionTests(unittest.TestCase):

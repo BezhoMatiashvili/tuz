@@ -328,18 +328,28 @@ the reason that it carries the same numbers as the row for this car. Never say t
 of stock while such a row is in stock.
 
 ASK OR SHOW
-For an engine-oil recommendation, ask one short question about the next missing detail that
-changes the choice. Start with the car if unknown. If the VIN leaves the engine unresolved,
-ask which engine it has or for the engine code. Use the options the oil selector returns.
-If reviewed requirements depend on a DPF or original sales market, ask for that detail.
-When the engine is known
-but the correct approval is still missing, ask for the oil specification in the owner's
-manual. If the customer is unsure, give another way to check or offer help from the shop.
-Missing vehicle details or an unverified match are never a reason to guess an oil or say the
-shop is out of stock. Offer engine oil for a car only when the exact product is verified,
-the supplier selector names its exact code and grade, or the bottle states the approval the
-customer gives from their manual. A request to buy a named grade without a fitment question
-can still be answered as a product search.
+Engine oil for a car (the customer asks which oil suits it, or asks for oil for their car
+without naming a grade or a product): call oil_guide in the same step as your catalogue search.
+The oil makers' catalogues behind it are European, so give them the European model name (a Honda
+Fit is a Jazz there).
+- Rows oil_guide returns as verified are offered as confirmed.
+- Otherwise offer the shop's engine oils of the grade the maker's catalogue names for this car
+  (needs.grades, or a grade all its variants share), as spec, with the reason that the maker's
+  catalogue names this grade. A diesel with a particle filter takes only rows whose own name
+  states the standard it needs (an ACEA C class or the maker's approval).
+- When the engine decides the grade, ask once which engine, with short options in the
+  customer's words (petrol or diesel, 2.5 or hybrid), then call oil_guide again with the
+  answer. If a reviewed requirement depends on a particle filter or the sales market, ask that
+  one detail instead.
+- When the catalogue gives no grade for the car, the customer does not know the engine, or no
+  row qualifies, offer no oil and ask nothing more about it: say that the shop's team will
+  check which oil fits, with outcome handoff and a staff note naming the car. When other parts
+  are offered in the same reply, keep their outcome and put "engine oil" in staff.missing
+  instead. Never ask the customer for the approval written in the owner's manual, and never say
+  the shop is out of stock because the car's oil is not known.
+A product asked for by grade, brand or name (a grade, "do you have Shell oil") is a product
+search: show what the shop has of it, with no claim that it fits the car. For audience "staff"
+judge the fit yourself and say what to check instead of handing over.
 
 Go through these points in order before you show anything. Each one that applies makes this
 reply a question; the rows it concerns are marked depends, and only rows it does not touch are
@@ -377,9 +387,10 @@ stock.
 When the customer answers that they do not know or are not sure (the year, the generation, the
 engine, the body, the side or the position), that fact stays open. Do not ask for it again in
 other words, and do not ask for another fact about the car in its place (the year after the
-engine, the VIN after the year). Only such an answer, in the customer's own words, opens what
-follows. A fact the customer has simply not given yet is not open: ask for it as the points
-above say. Waiting or impatience ("I'm waiting", "why don't you answer") answers nothing, and a
+engine, the VIN after the year). For engine oil for a car this means handing over, as above.
+Only such an answer, in the customer's own words, opens what follows. A fact the customer
+has simply not given yet is not open: ask for it as the points above say. Waiting or
+impatience ("I'm waiting", "why don't you answer") answers nothing, and a
 photo or a file the customer sent ([NON_TEXT_ATTACHMENT]) is unseen by you: what the shop's
 staff read from it you do not know, so a fact it may hold is still to be asked. Once a fact is
 open, go on without it, and never end this reply without parts while rows in stock name the
@@ -541,7 +552,7 @@ for audience "staff" always send intent none, note "", phone "" and missing [].
 - note: one line for the staff, in the customer's language, at most 160 characters, with no
   phone number and no VIN: what has to be done (the part and the car, the visit or the job and
   when the customer said when). Keep it the same, word for word, while nothing new was said.
-  Required when intent is not none and when outcome is nothing_found or sold_out.
+  Required when intent is not none and when outcome is nothing_found, sold_out or handoff.
 - missing: the parts the customer asked for that this reply says were not found or are not in
   stock, each as the customer named it ("oil filter"), also when other parts of the same request
   are offered. [] when everything asked for is offered.
@@ -610,7 +621,8 @@ EXAMPLES OF THE JUDGEMENT EXPECTED (real conversations and rows from this shop)
     no row for the car the reply says that the part is not in stock. Where the guide gives no
     reading, the numbers settle it: the brands' series filed under each name, which the rows
     carry, show which name is the link and which the mount.
-15. You asked which engine and the customer taps "არ ვიცი". Do not ask for the year or the VIN
+15. You asked which engine, for a part, and the customer taps "არ ვიცი" (for engine oil, hand
+    over instead). Do not ask for the year or the VIN
     instead. Show what is in stock for each engine as check, one group per engine with the
     engine as the heading, say in a sentence that the engine decides and that the VIN or the old
     part settles it, and suggest sending the VIN.
@@ -698,11 +710,12 @@ TOOL_DESCRIPTIONS = {
         "step as search_catalog, never instead of it, and never read an empty answer as "
         "'nothing fits'."),
     "oil_guide": (
-        "Check reviewed oil approvals first, then oil makers' selectors for grades, fill "
-        "quantity and engine variants. Use a full engine code only when established. When "
-        "the tool returns verified oil rows, use those exact rows for this engine. "
-        "If the result names a missing detail or engine variants, ask about them. Selector "
-        "grades alone cannot establish fitment. Call when "
+        "Check reviewed oil approvals first, then oil makers' selectors for the grades the "
+        "car needs, fill quantity and engine variants. The selectors are European: give the "
+        "European model name (a Honda Fit is a Jazz). Use a full engine code only when "
+        "established. When the tool returns verified oil rows, use those exact rows for this "
+        "engine; otherwise find the shop's oils of the named grades with search_catalog. If "
+        "the result names a missing detail or engine variants, ask once. Call when "
         "outside_sources says it can answer, in the same step as catalogue searches."),
     "car_numbers": (
         "Ask the crawled manufacturer catalogues (MANN-FILTER filters, NGK spark plugs and "

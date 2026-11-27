@@ -811,7 +811,7 @@ def _fewer_rows(state: dict) -> bool:
 def _bare_memory(state: dict) -> bool:
     memory = _memory(state)
     kept = {key: memory[key] for key in ("language", "car_label", "notes", "question", "phone",
-                                        "followup", "engine_choices", "oil_question")
+                                        "followup", "engine_choices")
             if key in memory}
     if "memory" not in state or kept == memory:
         return False
