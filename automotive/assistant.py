@@ -198,6 +198,16 @@ def _bare(value: Any) -> str:
     return "".join(DASHES.sub("-", str(value or "").casefold()).split())
 
 
+def _quoted(evidence: str, text: Any) -> bool:
+    """Whether a row holds the quoted fragment. A grade or a part number may be written with
+    or without its dashes and spaces (`5W-30`, `5W30`): of three Latin letters or digits or
+    more, those alone are compared."""
+    if _bare(evidence) in _bare(text):
+        return True
+    letters = plain(evidence)
+    return evidence.isascii() and len(letters) >= 3 and letters in plain(text)
+
+
 def _letters(text: str) -> dict[str, int]:
     """How many letters of a text are Georgian, Cyrillic and Latin."""
     counts = {"ka": 0, "ru": 0, "en": 0}
@@ -1472,7 +1482,7 @@ class AssistantTurn:
                 bad(f"{handle} has no evidence.",
                     "Quote one fragment of that row (name, vehicle text, brand or a number) "
                     "that supports offering it.")
-            elif not any(_bare(evidence) in _bare(value) for value in fields) and not (
+            elif not any(_quoted(evidence, value) for value in fields) and not (
                     len(plain(evidence)) >= 4 and plain(evidence) in row_numbers(row)):
                 bad(f"The evidence for {handle} (\"{evidence[:80]}\") is not text of that "
                     "row.",
@@ -1570,7 +1580,7 @@ class AssistantTurn:
                 products.append({
                     "handle": handle, "product": product_id, "row": row,
                     "confidence": confidence,
-                    "evidence": evidence if evidence and _bare(evidence) in _bare(text) else "",
+                    "evidence": evidence if evidence and _quoted(evidence, text) else "",
                     "reason": "" if PRICE.search(reason) or self._handles(reason) else reason,
                     "group": "" if self._handles(group) else group})
         if not (kept or question or products):

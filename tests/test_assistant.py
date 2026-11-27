@@ -1227,11 +1227,15 @@ class ToolTests(unittest.TestCase):
                                      engine_code="2AR-FE"))),
             done(),
         )
-        run(service(guessed, repository=OilRepository()), "Camry 2015 ზეთი")
+        selectors = Search()
+        run(service(guessed, repository=OilRepository()), "Camry 2015 ზეთი",
+            search_service=selectors)
         content, is_error = tool_results(guessed.requests[1])[0]
         self.assertFalse(is_error)
-        self.assertEqual((content["status"], content["detail"]), ("needs_detail", "engine"))
+        # A code the customer never typed verifies nothing, and the catalogues are still asked.
+        self.assertNotEqual(content["status"], "verified")
         self.assertNotIn("rows", content)
+        self.assertEqual(len(selectors.started), 1)
 
     def test_oil_and_filter_quote_uses_pack_count_and_current_stock(self):
         rows = [dict(item) for item in ROWS]
@@ -2896,6 +2900,37 @@ class ConversationKeptTests(unittest.TestCase):
                 run(service(script), later, dialogue={"memory": copy.deepcopy(first["memory"])})
                 self.assertEqual(script.requests[0]["messages"][0]["content"], opening)
                 self.assertEqual(context_of(script.requests[0])["notes"], "Camry front pads")
+
+
+class OilFindingTests(unittest.TestCase):
+    """The shop writes grades without a dash; catalogues differ in what else they report."""
+
+    def test_a_grade_quoted_with_a_dash_matches_a_row_written_without_it(self):
+        rows = [*ROWS, row("o9", "30032222", "ზეთი SHELL HELIX ULTRA 5W30 4L", "UNIVERSAL",
+                           "SHELL", "550040", "", "120", "3", "0")]
+        script = Script(done(products=[product("r7", confidence="spec", evidence="5W-30")],
+                             outcome="offered"))
+        result = run(service(script, rows=rows), "5W-30 ზეთი გაქვთ?",
+                     dialogue={"memory": {"handles": {"r7": "o9"}}})
+        self.assertEqual([card["product"]["source_product_id"] for card in result["cards"]],
+                         ["o9"], result["diagnostics"]["corrections"])
+        self.assertEqual(len(script.requests), 1)
+
+    def test_catalogues_agree_on_a_shared_grade(self):
+        def report(provider, grades, **extra):
+            return {"provider": provider, "status": "PROVISIONAL", "candidates": [],
+                    "items": [{"kind": "oil", "product_name": f"{provider} {grade}",
+                               "viscosity": grade, "product_code": "550046", "approvals": [],
+                               **extra} for grade in grades]}
+
+        source = Search(fluids=[report("Shell", ["0W-20", "5W-30"], capacity="4.4"),
+                                report("Fuchs", ["0W-20"])])
+        script = Script(says(use("oil_guide", car(make="Toyota", model="Camry", year=2015))),
+                        done())
+        run(service(script), "Camry 2015 ზეთი", search_service=source)
+        content, _ = tool_results(script.requests[1])[0]
+        self.assertEqual((content["status"], content["needs"]["grades"]), ("answered", ["0W-20"]))
+        self.assertEqual(content["needs"]["capacity_l"], 4.4)
 
 
 class CustomerHandoverTests(unittest.TestCase):

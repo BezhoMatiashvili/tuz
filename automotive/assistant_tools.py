@@ -1423,18 +1423,17 @@ class Toolbox:
     def _oil(self, args: dict) -> Output:
         vin, configuration = self._car(args, "oil_guide")
         vehicle = self._confirmed_oil_vehicle(vin, configuration)
-        if configuration.get("engine_code") and not vehicle.get("engine_code"):
-            return Output({"status": "needs_detail", "detail": "engine",
-                           "note": "The requested engine code is unconfirmed or conflicts "
-                                   "with the established vehicle. Ask which engine is installed."})
+        # A code the customer never gave verifies nothing (`vehicle` is then empty); the
+        # catalogues are asked all the same.
         verified = self._verified_oil(vehicle)
         if verified is not None:
             return verified
         if self._local_oil_configured() and (
                 self.search_service is None or self._able("engine_oil", vin is not None) == []):
             return Output({"status": "no_answer",
-                           "note": "No reviewed oil match for this exact configuration. "
-                                   "Ask for any missing engine or market details."})
+                           "note": "No reviewed oil match for this exact configuration. If "
+                                   "one engine or market detail is missing, ask it once; "
+                                   "otherwise hand over to the shop's team."})
         snapshot, running = self._federation("engine_oil", OIL_QUERY, args, "oil_guide")
         reports = [report for report in snapshot.get("fluids") or []
                    if isinstance(report, dict)]
@@ -1458,9 +1457,11 @@ class Toolbox:
                 **summary, **({"approvals": approvals} if approvals else {}),
                 "products": list(dict.fromkeys(
                     item["name"] for item in need["recommended"]))[:4]})
-        agreed = len({(tuple(sorted(item["grades"])), item.get("capacity_l"),
-                       tuple(sorted(item.get("approvals", []))),
-                       item.get("engine_code")) for item in variants}) <= 1
+        # Catalogues agree when they share a grade. One that reports no fill quantity or engine
+        # code, or more grades than another, does not disagree.
+        shared = set.intersection(*(set(item["grades"]) for item in variants)) \
+            if variants else set()
+        agreed = not variants or bool(shared)
         undecided = list(dict.fromkeys(
             str(label) for report in reports if report.get("status") == "CONFLICTED"
             for label in report.get("candidates") or []))[:12]
@@ -1470,6 +1471,9 @@ class Toolbox:
                       "still_running" if running else "no_answer"}
         if variants and agreed and not undecided:
             merged = oil_match.summary(oil_match.requirements(answered))
+            merged["grades"] = [grade for grade in merged["grades"] if grade in shared]
+            if len({item["capacity_l"] for item in variants if item.get("capacity_l")}) > 1:
+                merged.pop("capacity_l", None)
             approvals = sorted({value for item in variants
                                 for value in item.get("approvals", [])})
             data["needs"] = {**merged, **({"approvals": approvals} if approvals else {}),
