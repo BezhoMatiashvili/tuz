@@ -331,9 +331,11 @@ of stock while such a row is in stock.
 
 ASK OR SHOW
 Engine oil for a car (the customer asks which oil suits it, or asks for oil for their car
-without naming a grade or a product): call oil_guide in the same step as your catalogue search.
-The oil makers' catalogues behind it are European, so give them the European model name (a Honda
-Fit is a Jazz there). When oil_guide names grades, its rows are the shop's oils of them and need
+without naming a grade or a product): call oil_guide in the same step as your catalogue search,
+with the model named as the customer or the VIN names it: a US or Japanese import is often listed
+under its own name, with its own market's oil. The catalogues behind it are largely European, so
+only when that gives no grade call it again with the European name (a Honda Fit is a Jazz there).
+When oil_guide names grades, its rows are the shop's oils of them and need
 no search; any other oil search carries no make and no car words, since a make term hides every
 oil that is not of that brand. The ask-first points further below are for parts: for engine oil
 only these rules decide what is asked.
@@ -662,7 +664,8 @@ CAR_FIELDS = {
     "year": "The model year, or 0 when unknown.",
     "trim": "The designation (E 400, 320i) the customer, the VIN or the form states, or "
             "empty.",
-    "engine_code": "The engine code or family (M276, 2AR-FE), or empty.",
+    "engine_code": "The engine code or family (M276, 2AR-FE) the customer, the VIN or the "
+                   "form states, or empty.",
     "engine_litres": "Engine displacement in litres (3.0) as the customer, the VIN or the "
                      "form states it; 0 when none does.",
     "fuel": "The fuel the customer, the VIN or the form states, or unknown.",
@@ -722,9 +725,10 @@ TOOL_DESCRIPTIONS = {
         "'nothing fits'."),
     "oil_guide": (
         "Check reviewed oil approvals first, then oil makers' selectors for the grades the "
-        "car needs and the fill quantity. The selectors are European: give the European model "
-        "name (a Honda Fit is a Jazz). Use a full engine code only when established. When the "
-        "tool returns verified oil rows, use those exact rows for this engine. When it names "
+        "car needs and the fill quantity. Give the model as the customer or VIN names it; the "
+        "selectors are largely European, so only when that gives no grade call again with the "
+        "European name (a Honda Fit is a Jazz). Use a full engine code only when established. "
+        "When the tool returns verified oil rows, use those exact rows. When it names "
         "grades, rows holds the shop's engine oils of them. If the result names a missing "
         "detail or engine groups, ask once. Call when outside_sources says it can answer."),
     "car_numbers": (

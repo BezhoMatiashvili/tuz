@@ -1233,10 +1233,12 @@ class ToolTests(unittest.TestCase):
             search_service=selectors)
         content, is_error = tool_results(guessed.requests[1])[0]
         self.assertFalse(is_error)
-        # A code the customer never typed verifies nothing, and the catalogues are still asked.
+        # A code the customer never typed verifies nothing and narrows nothing, and the
+        # catalogues are still asked.
         self.assertNotEqual(content["status"], "verified")
         self.assertNotIn("rows", content)
         self.assertEqual(len(selectors.started), 1)
+        self.assertNotIn("engine_code", selectors.started[0][3])
 
     def test_oil_and_filter_quote_uses_pack_count_and_current_stock(self):
         rows = [dict(item) for item in ROWS]
@@ -3006,6 +3008,16 @@ class OilGuideRowsTests(unittest.TestCase):
         self.assertEqual(content["status"], "engine_ambiguous")
         self.assertEqual([group["grades"] for group in content["engine_groups"]],
                          [["0W-20"], ["5W-30"]])
+
+    def test_one_grade_for_petrol_and_diesel_still_asks_which(self):
+        report = self.engines("Shell", (["0W-30"], ["X5 35 i (P)", "X5 30 d (D)"]))
+        report["grade_groups"][0]["fuels"] = ["diesel", "petrol"]
+        content = self.guide(report)
+        self.assertEqual(content["status"], "engine_ambiguous")
+        self.assertIn("petrol or diesel", content["note"])
+        self.assertNotIn("rows", content)
+        report["grade_groups"][0]["fuels"] = ["diesel"]
+        self.assertEqual(self.guide(report)["status"], "answered")
 
     def test_one_fill_quantity_for_every_engine_is_reported(self):
         report = self.engines("Shell", (["0W-20"], ["Prius 1.8"]))

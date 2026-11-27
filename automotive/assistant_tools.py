@@ -1426,8 +1426,10 @@ class Toolbox:
     def _oil(self, args: dict) -> Output:
         vin, configuration = self._car(args, "oil_guide")
         vehicle = self._confirmed_oil_vehicle(vin, configuration)
-        # A code the customer never gave verifies nothing (`vehicle` is then empty); the
-        # catalogues are asked all the same.
+        # A code the customer never gave verifies nothing (`vehicle` is then empty), and the
+        # catalogues are asked without it: it would hide the other engines they list.
+        if configuration.get("engine_code") and not vehicle.get("engine_code"):
+            args = {**args, "engine_code": ""}
         verified = self._verified_oil(vehicle)
         if verified is not None:
             return verified
@@ -1470,11 +1472,18 @@ class Toolbox:
         # A catalogue that lists several engines still answers when all of them take a grade
         # in common; otherwise the engine decides the grade.
         split: list[dict] = []
+        by_fuel = False  # one grade, but a diesel's oil must also state its standard
         for report in reports:
             groups = report.get("grade_groups") if report.get("status") == "CONFLICTED" else None
             if not groups:
                 continue
             common = set.intersection(*(set(group["grades"]) for group in groups))
+            fuels = {fuel for group in groups for fuel in group.get("fuels") or []}
+            if common and {"diesel", "petrol"} <= fuels:
+                by_fuel = True
+                split.append({"grades": sorted(common),
+                              "engines": [name for group in groups for name in group["engines"]]})
+                continue
             if not common:
                 split.extend({key: group[key] for key in ("grades", "engines")}
                              for group in groups)
@@ -1528,9 +1537,12 @@ class Toolbox:
                         "shop lists no engine oil of them: say so and hand over.")
         elif split:
             data["engine_groups"] = split
-            note = ("The engine decides the grade (engine_groups). Ask once which engine, in "
-                    "the customer's words (petrol or diesel, litres, hybrid), unless the "
-                    "conversation already says; then call oil_guide again with it.")
+            decides = ("Petrol and diesel engines are listed, and a diesel's oil must also "
+                       "state its standard: ask once petrol or diesel" if by_fuel else
+                       "The engine decides the grade (engine_groups). Ask once which engine, "
+                       "in the customer's words (petrol or diesel, litres, hybrid)")
+            note = (f"{decides}, unless the conversation already says; then call oil_guide "
+                    "again with it.")
         elif variants:
             data["variants"] = variants
             note = ("The selectors disagree. Decide by the engine the customer has, or ask "

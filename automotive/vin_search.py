@@ -785,7 +785,10 @@ class VINSearchCoordinator:
                     shell_settled = fluids_started and 'shell' not in pending.values()
                     if job['vehicle'] and shell_settled and not oil_fallback_decided:
                         oil_fallback_decided = launched = True
-                        if job['sources']['shell']['status'] != 'OK':
+                        # Shell that read every engine's grade needs no backup either.
+                        grouped = any(report.get('provider') == 'Shell'
+                                      and report.get('grade_groups') for report in job['fluids'])
+                        if job['sources']['shell']['status'] != 'OK' and not grouped:
                             for name in ('pakelo', 'fuchs'):
                                 start_fluid(name, dict(job['vehicle']),
                                             FALLBACK_SECONDS[name])
