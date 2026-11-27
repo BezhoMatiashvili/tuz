@@ -19,8 +19,6 @@ _PRODUCT_FOLLOWUP = re.compile(
     r"\b(?:with (?:the )?filter|the same oil|that oil|და ფილტრ[ა-ჰ]*|ფილტრ[ა-ჰ]* ერთად|"
     r"ეს ზეთი|с фильтром|это масло)\b", re.IGNORECASE,
 )
-_VOLUME_FOLLOWUP = re.compile(r"\b(?:total|altogether|ჯამში|სულ|итого|вместе)\b",
-                              re.IGNORECASE)
 _UNKNOWN_ENGINE = {"ka": "არ ვიცი", "en": "Not sure", "ru": "Не знаю"}
 ENGINE_QUESTION = {
     "ka": "რომელი ძრავი აქვს მანქანას?",
@@ -98,10 +96,6 @@ def oil_litres(text: str, grade: str | None) -> float | None:
 
 def refers_to_oil(text: str) -> bool:
     return bool(_PRODUCT_FOLLOWUP.search(text))
-
-
-def asks_for_total(text: str) -> bool:
-    return bool(_VOLUME_FOLLOWUP.search(text))
 
 
 def from_transcript(transcript: Any) -> dict:

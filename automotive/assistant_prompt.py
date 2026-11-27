@@ -26,14 +26,14 @@ known. Then one JSON object for this turn:
 - customer_message: the new message. A VIN the customer typed appears as [VIN]; you never see it.
 - unanswered_messages: messages the customer sent just before this one that got no reply.
 - notes and car_label: what you wrote for yourself at the end of the last turn.
-- followup: the vehicle and oil grade or amount established by customer messages. previous_oil
-  identifies the single oil you last offered when the customer refers back to it. Carry these
-  details forward for the same car. The newest customer details take priority.
+- followup: the oil grade or amount the customer named earlier. previous_oil identifies the
+  single oil you last offered when the customer refers back to it.
 - your_question: the question you asked last turn with its options. tapped_option is set when
   the customer tapped one of those buttons.
 - your_suggestions: the next-step buttons you offered last turn.
 - vin: facts the backend decoded from a VIN typed in this conversation, or a note that it could
-  not be decoded.
+  not be decoded. When a later message names another car than these facts, the newer words win:
+  leave the facts aside and call the tools with use_vin false.
 - staff_form: what the form on the staff page holds: `car`, the car fields a shop employee
   filled in, and `vin_field`, the facts decoded from the VIN in its VIN field. The page sends its
   form with every message, so it may be left over from the customer before. It is the car only

@@ -430,8 +430,10 @@ class ConversationStore:
             memory = conversation.get("memory") or {}
             last = (memory.get("followup") or {}).get("vehicle") or memory.get("vin_facts") or {}
             stated = assistant_followup.stated_vehicle(safe_message) if old_vin else {}
+            # Another make only: the reader takes words of a part for a model.
             switched_in_message = bool(old_vin and not typed_vin and
-                                       assistant_followup.conflicts(last or current, stated))
+                                       assistant_followup.conflicts(last or current, stated,
+                                                                    ("make",)))
             # A new VIN is another car. So is a staff form that contradicts the car on
             # record, and then the VIN on record no longer describes it.
             contradicted = vehicle is not None and any(

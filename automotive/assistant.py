@@ -392,7 +392,9 @@ class AssistantTurn:
         previous = saved.get("vehicle") or self.memory.get("vin_facts")
         previous = previous if isinstance(previous, dict) else {}
         stated = followup.stated_vehicle(self.message)
-        changed = followup.conflicts(previous, stated)
+        # Only another make is another car to the code: its reader takes words of a part for a
+        # model ("Toyota zeti"). Another year or model is the model's to read.
+        changed = followup.conflicts(previous, stated, ("make",))
         old_vin = self.memory.get("vin_key")
         new_vin = bool(self.vin and old_vin and old_vin != self._vin_key())
         if changed and not found and not new_vin and self.vin_typed:
@@ -1030,10 +1032,11 @@ class AssistantTurn:
             if chosen:
                 engine.setdefault("trim", chosen)
         engine_changed = followup.conflicts(previous, {**stated, **engine}, followup.DETAILS)
-        if reset or engine_changed:
+        if reset:
             self._clear_fitment()
         vehicle = {} if reset else dict(previous)
-        if engine_changed:
+        # Another model, year or engine: the details remembered were the old one's.
+        if engine_changed or followup.conflicts(previous, stated):
             for key in followup.DETAILS:
                 vehicle.pop(key, None)
         vehicle.update(stated)
@@ -1099,6 +1102,7 @@ class AssistantTurn:
                 staff_form["vin_field"], vin = vin, None
         known = [*(self.memory.get("shown") or []), *(self.memory.get("held") or [])]
         focus = dict(self.followup)
+        focus.pop("vehicle", None)  # the car is what the model reads in the conversation
         product_id = focus.pop("oil_product", None)
         if (product_id and followup.refers_to_oil(self.message)
                 and self.toolbox.index.row(product_id) is not None):
@@ -1675,11 +1679,10 @@ class AssistantTurn:
             return ""
         if litres == 0 and oil["fitment_status"] == "VERIFIED":
             litres = self.toolbox.oil_capacities.get(oil["product"]["source_product_id"])
-        elif litres not in requested_litres(self.message):
-            if (not (followup.asks_for_total(self.message) or followup.refers_to_oil(self.message))
-                    or oil["product"]["source_product_id"] != self.followup.get("oil_product")
-                    or litres != self.followup.get("oil_litres")):
-                return ""
+        elif litres not in requested_litres("\n".join([self.message, *self.unanswered, *(
+                str(turn.get("user") or "") for turn in self.memory.get("transcript") or []
+                if isinstance(turn, dict))])):
+            return ""  # a quantity the customer never named
         if litres is None or not 0 < litres <= 100:
             return ""
         total = oil_filter_total(oil, oil_filter, litres)

@@ -1294,7 +1294,7 @@ class ToolTests(unittest.TestCase):
                       dialogue={"memory": result["memory"]}, search_service=switched)
         context = context_of(switch.requests[0])
         self.assertNotIn("rows", context)
-        self.assertNotIn("oil_grade", context["followup"])
+        self.assertNotIn("oil_grade", context.get("followup", {}))
         self.assertEqual(switched.started[0][3]["model"], "Accord")
         self.assertNotIn("engine_code", changed["memory"]["followup"]["vehicle"])
 
@@ -2551,7 +2551,8 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(third["engine_status"], "OK")
         context = context_of(self.script.requests[-1])
         self.assertNotIn("vin", context)
-        self.assertEqual(context["followup"]["vehicle"]["model"], "Accord")
+        memory = self.store._conversations[self.cid]["memory"]
+        self.assertEqual(memory["followup"]["vehicle"]["model"], "Accord")
 
     def test_memory_choice_and_the_pending_question_go_round_through_the_store(self):
         self.assertTrue(self.store.ai_led)
@@ -3042,6 +3043,51 @@ class AnswerToEngineQuestionTests(unittest.TestCase):
         self.assertNotIn("engine_code", configuration)
         self.assertNotIn("displacement_l", configuration)
         self.assertEqual(context_of(script.requests[0])["notes"], "Camry 2015 oil")
+
+
+class CarWordsTests(unittest.TestCase):
+    """Only another make, or a new VIN, drops what the conversation holds about the car."""
+
+    def setUp(self):
+        self.script = Script()
+        self.store = ConversationStore(service(self.script), Search())
+        self.addCleanup(self.store.close)
+        self.cid = self.store.create()["conversation_id"]
+
+    def turn(self, message, step):
+        self.script.steps.append(step)
+        submitted = self.store.submit(self.cid, message)
+        until = time.monotonic() + 5
+        while time.monotonic() < until:
+            if self.store.get(self.cid, submitted["turn_id"])["status"] != "RUNNING":
+                return context_of(self.script.requests[-1])
+            time.sleep(0.005)
+        self.fail("The turn did not finish")
+
+    def test_words_of_the_same_make_keep_the_vin_and_the_open_question(self):
+        asked = done(language="en", reply="One thing.", question="Front or rear?",
+                     options=["Front", "Rear"], outcome="asked")
+        self.turn(f"Pads for {VIN}", asked)
+        for message in ("Toyota zeti 2012", "2016 Camry"):
+            with self.subTest(message):
+                context = self.turn(message, done(language="en", reply="One thing.",
+                                                  question="Front or rear?",
+                                                  options=["Front", "Rear"], outcome="asked"))
+                self.assertIn("vin", context)
+                self.assertEqual(context["your_question"]["text"], "Front or rear?")
+                self.assertNotIn("vehicle", context.get("followup", {}))
+
+    def test_a_litre_figure_from_an_earlier_message_totals_the_oil_and_filter(self):
+        rows = [dict(item) for item in ROWS]
+        rows[4].update(price_raw="20,25", stock_store="9")
+        offered = done(products=[product("r5", confidence="spec", evidence="5W-30"),
+                                 product("r4", evidence="M276")], outcome="offered",
+                       oil_quote={"oil_id": "r5", "filter_id": "r4", "litres": 5})
+        first = run(service(Script(done()), rows=rows), "5W-30 5 ლიტრი მინდა",
+                    dialogue={"memory": {"handles": {"r5": "p5", "r4": "p4"}}})
+        result = run(service(Script(offered), rows=rows), "ფილტრიანად რამდენი?",
+                     dialogue={"memory": first["memory"]})
+        self.assertIn("212.00 ₾", result["answer"])
 
 
 class CustomerHandoverTests(unittest.TestCase):
