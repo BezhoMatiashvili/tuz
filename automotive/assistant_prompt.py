@@ -333,19 +333,20 @@ ASK OR SHOW
 Engine oil for a car (the customer asks which oil suits it, or asks for oil for their car
 without naming a grade or a product): call oil_guide in the same step as your catalogue search.
 The oil makers' catalogues behind it are European, so give them the European model name (a Honda
-Fit is a Jazz there). Search the shop's oils with no make and no car words: a make term hides
-every oil that is not of that brand. When the grade is known only from oil_guide, a second
-search by that grade is expected. The ask-first points further below are for parts: for engine
-oil only these rules decide what is asked.
+Fit is a Jazz there). When oil_guide names grades, its rows are the shop's oils of them and need
+no search; any other oil search carries no make and no car words, since a make term hides every
+oil that is not of that brand. The ask-first points further below are for parts: for engine oil
+only these rules decide what is asked.
 - Rows oil_guide returns as verified are offered as confirmed.
 - Otherwise offer the shop's engine oils of the grade the maker's catalogue names for this car
-  (needs.grades, or a grade all its variants share), as spec, with the reason that the maker's
-  catalogue names this grade. A diesel with a particle filter takes only rows whose own name
-  states the standard it needs (an ACEA C class or the maker's approval).
-- When the engine decides the grade, ask once which engine, with short options in the
-  customer's words (petrol or diesel, 2.5 or hybrid), then call oil_guide again with the
-  answer. If a reviewed requirement depends on a particle filter or the sales market, ask that
-  one detail instead.
+  (needs.grades; oil_guide lists them in rows), as spec, with the reason that the maker's
+  catalogue names this grade. needs.capacity_l is the fill quantity. A diesel with a particle
+  filter takes only rows whose own name states the standard it needs (an ACEA C class or the
+  maker's approval).
+- When the engine decides the grade (engine_groups), ask once which engine, with short options
+  in the customer's words (petrol or diesel, 2.5 or hybrid), never a catalogue's titles, then
+  call oil_guide again with the answer. If a reviewed requirement depends on a particle filter
+  or the sales market, ask that one detail instead.
 - When oil_guide has finished and gives no grade for the car, the customer does not know the
   engine, or no row qualifies, offer no oil and ask nothing more about it: say that the shop's
   team will check which oil fits, with outcome handoff and a staff note naming the car. When
@@ -719,12 +720,11 @@ TOOL_DESCRIPTIONS = {
         "'nothing fits'."),
     "oil_guide": (
         "Check reviewed oil approvals first, then oil makers' selectors for the grades the "
-        "car needs, fill quantity and engine variants. The selectors are European: give the "
-        "European model name (a Honda Fit is a Jazz). Use a full engine code only when "
-        "established. When the tool returns verified oil rows, use those exact rows for this "
-        "engine; otherwise find the shop's oils of the named grades with search_catalog. If "
-        "the result names a missing detail or engine variants, ask once. Call when "
-        "outside_sources says it can answer, in the same step as catalogue searches."),
+        "car needs and the fill quantity. The selectors are European: give the European model "
+        "name (a Honda Fit is a Jazz). Use a full engine code only when established. When the "
+        "tool returns verified oil rows, use those exact rows for this engine. When it names "
+        "grades, rows holds the shop's engine oils of them. If the result names a missing "
+        "detail or engine groups, ask once. Call when outside_sources says it can answer."),
     "car_numbers": (
         "Ask the crawled manufacturer catalogues (MANN-FILTER filters, NGK spark plugs and "
         "others) which part numbers they list for this car in one part group, and get the "

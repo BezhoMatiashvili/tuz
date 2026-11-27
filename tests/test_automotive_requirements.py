@@ -10,7 +10,7 @@ from automotive import engine_match, oil_match, stock
 from automotive.categories import category_for_query, matches_category
 from automotive.oats import OatsCatalog
 from automotive.repository import _product
-from tests.test_automotive_fluids import FakeHttp
+from tests.test_automotive_fluids import VIN, FakeHttp
 
 COUPE = 'E-CLASS Coupe (C207) E 400 245kW (M 276.850) (P) (2015)'
 
@@ -277,10 +277,17 @@ class ChooserResolutionTests(unittest.TestCase):
         ]
         vehicle = {'make': 'MERCEDES-BENZ', 'model': 'E-Class', 'model_year': 2015,
                    'body': 'Coupe', 'displacement_l': '3.0'}
-        client = self.client(equipment)
-        result = client.lookup(None, vehicle)
+        client = self.client(equipment, *[detail('Helix Ultra 0W-30')] * 3)
+        result = client.lookup(VIN, vehicle)
         self.assertEqual(result['status'], 'CONFLICTED')
-        self.assertEqual(len(client.http.calls), 1)  # Nothing is read or guessed.
+        self.assertEqual(result['items'], [])  # Nothing is guessed,
+        # and with a decoder's size the grade is read for each engine offered: the 3.5 L too.
+        self.assertEqual(len(client.http.calls), 4)
+        self.assertEqual(len(result['grade_groups'][0]['engines']), 3)
+        # A size the customer states counts the engines of that size only.
+        client = self.client(equipment, *[detail('Helix Ultra 0W-30')] * 2)
+        result = client.lookup(None, vehicle)
+        self.assertEqual(len(result['grade_groups'][0]['engines']), 2)
         self.assertEqual(client.http.calls[0][2]['q'], 'MERCEDES-BENZ E-Class Coupe 2015')
         options = engine_match.engine_options(result['candidates'])
         self.assertEqual(options, [{'trim': 'E 320', 'fuel': 'Gasoline'},
@@ -304,24 +311,33 @@ class ChooserResolutionTests(unittest.TestCase):
         self.assertEqual(result['status'], 'PROVISIONAL')
         self.assertEqual(len(client.http.calls), 5)  # The search and all four variants.
         self.assertEqual(client.http.calls[0][2]['q'], 'MERCEDES-BENZ GLE 350 d 2015')
-        # A variant that disagrees stops the reads: nothing is guessed.
-        client = self.client(equipment, same, detail('Helix HX8 5W-40'))
+        # A variant that disagrees: nothing is guessed, and each variant is fetched once for
+        # the grades it takes.
+        client = self.client(equipment, same, detail('Helix HX8 5W-40'), same, same)
         self.assertEqual(client.lookup(None, vehicle)['status'], 'CONFLICTED')
-        self.assertEqual(len(client.http.calls), 3)
+        self.assertEqual(len(client.http.calls), 5)
 
-    def test_more_than_eight_variants_are_not_read(self):
-        equipment = [item(f'v{n}aa', f'Car E 400 {200 + n}kW (P) (2015)') for n in range(9)]
+    def test_more_than_sixteen_variants_are_not_read(self):
+        equipment = [item(f'v{n}aa', f'Car E 400 {200 + n}kW (P) (2015)') for n in range(17)]
         client = self.client(equipment)
         self.assertEqual(client.lookup(None, self.vehicle)['status'], 'CONFLICTED')
         self.assertEqual(len(client.http.calls), 1)
+        # Between the two: no oil is picked, and the grades are read.
+        equipment = equipment[:9]
+        client = self.client(equipment, *[detail('Helix Ultra 5W-40')] * 9)
+        result = client.lookup(None, self.vehicle)
+        self.assertEqual((result['status'], result['items']), ('CONFLICTED', []))
+        self.assertEqual(result['grade_groups'][0]['grades'], ['5W-40'])
 
-    def test_no_trim_means_several_engines_are_not_read_or_guessed(self):
+    def test_no_trim_means_several_engines_are_not_guessed(self):
         client = self.client([item('first1', 'Car 2.0 (P)', '2.0'),
-                              item('second1', 'Car 2.4 (P)', '2.4')])
+                              item('second1', 'Car 2.4 (P)', '2.4')],
+                             detail('Helix Ultra 0W-20'), detail('Helix Ultra 0W-20'))
         vehicle = {k: v for k, v in self.vehicle.items()
                    if k not in {'trim', 'displacement_l'}}
-        self.assertEqual(client.lookup(None, vehicle)['status'], 'CONFLICTED')
-        self.assertEqual(len(client.http.calls), 1)
+        result = client.lookup(None, vehicle)
+        self.assertEqual((result['status'], result['items']), ('CONFLICTED', []))
+        self.assertEqual([group['grades'] for group in result['grade_groups']], [['0W-20']])
 
 
 class CategoryTests(unittest.TestCase):

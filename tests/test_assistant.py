@@ -12,6 +12,7 @@ import re
 import time
 import unittest
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -1162,7 +1163,7 @@ class ToolTests(unittest.TestCase):
         self.assertEqual((result["status"], len(result["cards"])), ("OK", 1))  # the model's own
         content, is_error = tool_results(script.requests[1])[0]
         self.assertEqual((content["status"], is_error), ("answered", False))
-        self.assertIn("engine oils of these grades", content["note"])
+        self.assertIn("lists no engine oil of them", content["note"])  # none is a 0W-20
         self.assertEqual(content["needs"], {
             "grades": ["0W-20"], "capacity_l": 4.4, "engine_code": "2AR-FE",
             "sources": ["Shell", "Pakelo"], "approvals": ["API SN"],
@@ -2930,6 +2931,65 @@ class OilFindingTests(unittest.TestCase):
         run(service(script), "Camry 2015 ზეთი", search_service=source)
         content, _ = tool_results(script.requests[1])[0]
         self.assertEqual((content["status"], content["needs"]["grades"]), ("answered", ["0W-20"]))
+        self.assertEqual(content["needs"]["capacity_l"], 4.4)
+
+
+class OilGuideRowsTests(unittest.TestCase):
+    """The catalogues name the grade; the tool answers with the shop's own oils of it."""
+
+    @classmethod
+    def setUpClass(cls):
+        names = json.loads((Path(__file__).parent / "fixtures" / "shop_oil_names.json")
+                           .read_text("utf-8"))
+        cls.rows = [row(f"o{number}", str(5000 + number), oil["name"], oil["fits"],
+                        oil["brand"].upper(), "", "", "40", "2", "0")
+                    for number, oil in enumerate(names)]
+
+    def guide(self, *fluids):
+        script = Script(says(use("oil_guide", car(make="Toyota", model="Camry", year=2015))),
+                        done())
+        run(service(script, rows=self.rows), "Toyota Camry 2015 რომელი ზეთი უხდება?",
+            search_service=Search(fluids=list(fluids)))
+        content, error = tool_results(script.requests[1])[0]
+        self.assertFalse(error, content)
+        return content
+
+    @staticmethod
+    def engines(provider, *groups, **extra):
+        return {"provider": provider, "status": "CONFLICTED", "items": [],
+                "candidates": [engine for _, engines in groups for engine in engines],
+                "grade_groups": [{"grades": grades, "engines": engines}
+                                 for grades, engines in groups], **extra}
+
+    def test_a_grade_every_engine_takes_is_answered_with_the_shops_oils(self):
+        content = self.guide(self.engines("Shell", (["0W-20"], ["Camry 2.5", "Camry 3.5"])),
+                             {"provider": "Fuchs", "status": "CONFLICTED", "items": [],
+                              "candidates": ["Camry 2.5", "Camry 3.5"]})
+        self.assertEqual((content["status"], content["needs"]["grades"]), ("answered", ["0W-20"]))
+        offered = [item[1] for item in content["rows"]]
+        self.assertTrue(offered)
+        for name in offered:
+            self.assertIn("0W20", name.replace("-", ""))
+        self.assertNotIn("engine_variants", content)
+
+    def test_engines_that_take_different_grades_are_the_one_question(self):
+        content = self.guide(self.engines("Shell", (["0W-20"], ["Camry 2.5"]),
+                                          (["5W-30"], ["Camry 3.5"])))
+        self.assertEqual(content["status"], "engine_ambiguous")
+        self.assertEqual([group["grades"] for group in content["engine_groups"]],
+                         [["0W-20"], ["5W-30"]])
+        self.assertNotIn("rows", content)
+
+    def test_a_named_grade_brings_rows_though_a_make_search_finds_none(self):
+        script = Script(says(use("search_catalog", search(["TOYOTA"], ["CAMRY"],
+                                                          ["ძრავის ზეთი"]))), done())
+        run(service(script, rows=self.rows), "Toyota Camry 2015 ზეთი")
+        self.assertEqual(tool_results(script.requests[1])[0][0]["total"], 0)
+        content = self.guide({"provider": "Shell", "status": "PROVISIONAL", "items": [
+            {"kind": "oil", "product_name": "Helix Ultra 5W-30", "viscosity": "5W-30",
+             "product_code": "550046", "capacity": "4.4", "approvals": []}]})
+        self.assertEqual(content["status"], "answered")
+        self.assertGreater(len(content["rows"]), 10)
         self.assertEqual(content["needs"]["capacity_l"], 4.4)
 
 

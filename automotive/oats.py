@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from time import monotonic
 from typing import Any
 from urllib.parse import urljoin
@@ -15,6 +16,7 @@ from automotive.engine_match import (
     narrow,
     search_terms,
 )
+from automotive.oil_match import normalize_grade
 from automotive.public_http import (
     SUPPLIER_WARNING,
     PublicHttp,
@@ -27,6 +29,8 @@ from automotive.public_http import (
 from automotive.vin import validate_vin
 
 EQUIPMENT_ID = re.compile(r'^[A-Za-z0-9_-]{4,64}$')
+SEARCH_PAGE = 50  # variants one search returns; a full page may leave some out
+GROUPED = 16  # the most variants read to tell which grades each takes (a Mazda 3 2.0 has 16)
 TOKEN = re.compile(r'<find-your-oil\b[^>]*\btoken="([A-Za-z0-9_-]{8,64})"')
 
 
@@ -78,8 +82,9 @@ class OatsCatalog:
                                 warnings=['შერჩეულ წელს ცალსახა მანქანა ვერ მოიძებნა.'])
         # Choices offered on a conflict ignore the size: a supplier can list the customer's
         # 3.0 L engine as 3.5 L. Sizes near the stated one come first.
-        choices = self._choices(self._match(found, make, model, int(year),
-                                            {**vehicle, 'displacement_l': None}), vehicle)
+        offered = self._near_size(self._match(found, make, model, int(year),
+                                              {**vehicle, 'displacement_l': None}), vehicle)
+        choices = [str(i.get('display_name_long') or i.get('model') or '') for i in offered]
         # Several variants are only read when the trim already identified the engine
         # family (2WD and 4-matic), or the stated engine size leaves at most one engine code;
         # otherwise the choice stays ambiguous. Read variants must still agree.
@@ -88,8 +93,23 @@ class OatsCatalog:
             all(self._trim_decided(i, vehicle) for i in matched)
             or (len(codes - {None}) <= 1
                 and all(self._size_decided(i, vehicle) for i in matched)))
+        # A full page may have left variants out: what is read then proves nothing about them.
+        # The size a customer states decides which engines' grades count. A VIN decoder's size
+        # can disagree with the supplier's (3.0 for a listed 3.5), so then every engine
+        # offered counts.
+        counted = offered if vin is not None else matched
+        read_all = len(found) < SEARCH_PAGE and len(counted) <= GROUPED
+
+        read: dict[str, dict] = {}  # variant id -> its record, so none is fetched twice
+
+        def ambiguous() -> dict:
+            report = self._conflict(label, matched, choices)
+            if read_all:
+                self._group(report, counted, token, deadline, read)
+            return report
+
         if len(matched) > 8 or (len(matched) > 1 and not decided):
-            return self._conflict(label, matched, choices)
+            return ambiguous()
         # Variants of one engine share a recommendation; a small sample verifies it. Without
         # one engine code, every variant the customer's details name is read (power and
         # drive variants of `GLE 350 d`), and they must all agree.
@@ -100,6 +120,7 @@ class OatsCatalog:
         reports: list[dict] = []
         for item in sample:
             reports.append(self._equipment(item, token, deadline))
+            read[str(item.get('@id'))] = reports[-1]
             if not identical(reports) and not all(r.get('status') == 'EMPTY' for r in reports):
                 break
         if len(reports) == 1 or all(r.get('status') == 'EMPTY' for r in reports):
@@ -107,7 +128,7 @@ class OatsCatalog:
         if identical(reports):
             # Variants such as 2WD and 4-matic share one recommendation: it is unambiguous.
             return self._with_engine(reports[0], matched)
-        return self._conflict(label, matched, choices)
+        return ambiguous()
 
     @staticmethod
     def _with_engine(report: dict, matched: list[dict]) -> dict:
@@ -116,7 +137,9 @@ class OatsCatalog:
         return report
 
     @staticmethod
-    def _choices(pool: list[dict], vehicle: dict) -> list[str]:
+    def _near_size(pool: list[dict], vehicle: dict) -> list[dict]:
+        """The variants within half a litre of the stated size, nearest first; all of them
+        when none is, or no size is stated."""
         wanted = _number(vehicle.get('displacement_l'))
 
         def distance(item: dict) -> float:
@@ -126,8 +149,33 @@ class OatsCatalog:
             return min(known) if known else 0.0
 
         near = [item for item in pool if distance(item) <= 0.5]
-        return [str(item.get('display_name_long') or item.get('model') or '')
-                for item in sorted(near or pool, key=distance)]
+        return sorted(near or pool, key=distance)
+
+    def _group(self, report: dict, matched: list[dict], token: str | None,
+               deadline: float | None, read: dict[str, dict]) -> None:
+        """Read every variant and add `grade_groups`: the grades each set of engines takes. The
+        report stays CONFLICTED, so a reader that knows nothing of groups still picks no oil.
+        `partial` marks a read that failed for now, which must not be kept for a day."""
+        def record_of(item: dict) -> dict:
+            return read.get(str(item.get('@id'))) or self._equipment(item, token, deadline)
+
+        try:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                records = list(pool.map(record_of, matched))
+        except PublicSourceError:
+            report['partial'] = True
+            return
+        groups: dict[tuple, list[str]] = {}
+        for item, record in zip(matched, records, strict=True):
+            grades = tuple(sorted({
+                grade for oil in record.get('items') or [] if oil.get('kind') == 'oil'
+                if (grade := normalize_grade(oil.get('viscosity') or oil.get('product_name')))}))
+            if not grades:
+                return  # One engine without an oil record: the others cannot speak for it.
+            groups.setdefault(grades, []).append(
+                redact(item.get('display_name_long') or item.get('model'), 80) or '')
+        report['grade_groups'] = [{'grades': list(grades), 'engines': engines}
+                                  for grades, engines in groups.items()]
 
     def _conflict(self, label: str, matched: list[dict], choices: list[str]) -> dict:
         names = [redact(item.get('display_name_long') or item.get('model'), 80)
@@ -155,7 +203,7 @@ class OatsCatalog:
                 deadline: float | None) -> list[dict]:
         params: dict[str, Any] = {
             'q': ' '.join(part for part in (make, terms, str(year)) if part)[:80],
-            'page': 1, 'page_size': 50,
+            'page': 1, 'page_size': SEARCH_PAGE,
             'language': self.language,
         }
         if token:
@@ -170,7 +218,7 @@ class OatsCatalog:
             raise PublicSourceError('INVALID_RESPONSE') from None
         if not isinstance(equipment, list):
             raise PublicSourceError('INVALID_RESPONSE')
-        return [item for item in equipment[:50] if isinstance(item, dict)]
+        return [item for item in equipment[:SEARCH_PAGE] if isinstance(item, dict)]
 
     def _match(self, equipment: list[dict], make: str, model: str, year: int,
                vehicle: dict) -> list[dict]:
