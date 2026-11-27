@@ -92,8 +92,9 @@ class OatsVariantTests(unittest.TestCase):
         listed = [equipment('eng1'), equipment('eng2', displacement='2.4')]
         report, _ = self.lookup(listed, {'eng1': record('0W-20'), 'eng2': record('0W-20')})
         self.assertEqual((report['status'], report['items']), ('CONFLICTED', []))
-        self.assertEqual(report['grade_groups'], [
-            {'grades': ['0W-20'], 'engines': ['Example Car 2.0', 'Example Car 2.4']}])
+        self.assertEqual(report['grade_groups'], [{
+            'grades': ['0W-20'], 'engines': ['Example Car 2.0', 'Example Car 2.4'],
+            'capacities': ['4.2']}])
         report, _ = self.lookup(listed, {'eng1': record('0W-20'), 'eng2': record('5W-30')})
         self.assertEqual([group['grades'] for group in report['grade_groups']],
                          [['0W-20'], ['5W-30']])

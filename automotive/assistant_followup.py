@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 from automotive.assistant_oil_quote import requested_litres
-from automotive.dialogue import engine_details, read_vehicle
+from automotive.dialogue import read_vehicle
 from automotive.oil_match import normalize_grade
 
 IDENTITY = ("make", "model", "model_year")
@@ -66,11 +66,12 @@ def engine_question(text: str) -> bool:
     return bool(_ENGINE_QUESTION.search(text))
 
 
-def stated_engine(text: str, vehicle: dict, *, answering_engine: bool = False) -> dict:
+def stated_engine(text: str) -> dict:
+    """An engine code the customer names as one ("engine code 2AR-FE")."""
     found = list(dict.fromkeys(_ENGINE.findall(text)))
     if len(found) == 1 and re.search(r"[A-Za-z]", found[0]) and re.search(r"\d", found[0]):
         return {"engine_code": found[0].upper()}
-    return engine_details(text, vehicle.get("make")) if answering_engine and not found else {}
+    return {}
 
 
 def engine_options(variants: tuple[str, ...], language: str) -> list[dict[str, str]]:
@@ -111,7 +112,7 @@ def from_transcript(transcript: Any) -> dict:
         if not isinstance(entry, dict) or not isinstance(text := entry.get("user"), str):
             continue
         stated = stated_vehicle(text)
-        engine = stated_engine(text, stated or vehicle)
+        engine = stated_engine(text)
         if conflicts(vehicle, stated):
             vehicle, oil = {}, {}
         elif conflicts(vehicle, {**stated, **engine}, DETAILS):

@@ -2993,6 +2993,57 @@ class OilGuideRowsTests(unittest.TestCase):
         self.assertEqual(content["needs"]["capacity_l"], 4.4)
 
 
+    def test_shell_comes_first_over_its_backups(self):
+        pakelo = {"provider": "Pakelo", "status": "PROVISIONAL", "items": [
+            {"kind": "oil", "product_name": "Krypton 5W-30", "viscosity": "5W-30"}]}
+        fuchs = {"provider": "Fuchs", "status": "CONFLICTED", "items": [],
+                 "candidates": ["Jazz 1.2", "Jazz 1.4"]}
+        content = self.guide(self.engines("Shell", (["0W-30"], ["Jazz 1.3"])), pakelo, fuchs)
+        self.assertEqual((content["status"], content["needs"]["grades"]), ("answered", ["0W-30"]))
+        content = self.guide(self.engines("Shell", (["0W-20"], ["Camry 2.5"]),
+                                          (["5W-30"], ["Camry 3.5"])), pakelo)
+        self.assertEqual(content["status"], "engine_ambiguous")
+        self.assertEqual([group["grades"] for group in content["engine_groups"]],
+                         [["0W-20"], ["5W-30"]])
+
+    def test_one_fill_quantity_for_every_engine_is_reported(self):
+        report = self.engines("Shell", (["0W-20"], ["Prius 1.8"]))
+        report["grade_groups"][0]["capacities"] = ["4.2"]
+        self.assertEqual(self.guide(report)["needs"]["capacity_l"], 4.2)
+        report["grade_groups"][0]["capacities"] = ["4.4", "6.1"]
+        self.assertNotIn("capacity_l", self.guide(report)["needs"])
+
+
+class AnswerToEngineQuestionTests(unittest.TestCase):
+    """The model reads the customer's answer; code writes no engine from it."""
+
+    def test_a_grade_tapped_under_an_engine_oil_question_is_no_engine_code(self):
+        asked = done(reply="ერთი რამ.", question="ძრავის ზეთი რომელი სიბლანტის გინდათ?",
+                     options=["5W-30", "5W-40"], outcome="asked")
+        first = run(service(Script(asked)), "Toyota Camry 2015 ზეთი")
+        script = Script(done())
+        second = run(service(script), "5W-30",
+                     dialogue={"memory": first["memory"], "choice": 1})
+        self.assertNotIn("engine_code", second["memory"]["followup"]["vehicle"])
+        self.assertEqual(context_of(script.requests[0])["your_question"]["text"],
+                         "ძრავის ზეთი რომელი სიბლანტის გინდათ?")
+
+    def test_the_engine_the_model_fills_reaches_the_choosers_alone(self):
+        asked = done(reply="ერთი რამ.", question="ძრავი ბენზინია თუ დიზელი?",
+                     options=["ბენზინი", "დიზელი"], outcome="asked", notes="Camry 2015 oil")
+        first = run(service(Script(asked)), "Toyota Camry 2015 ზეთი")
+        source = Search()
+        script = Script(says(use("oil_guide", car(make="Toyota", model="Camry", year=2015,
+                                                  fuel="diesel"))), done())
+        run(service(script), "დიზელი", search_service=source,
+            dialogue={"memory": first["memory"], "choice": 2})
+        configuration = source.started[0][3]
+        self.assertEqual(configuration.get("fuel"), "diesel")
+        self.assertNotIn("engine_code", configuration)
+        self.assertNotIn("displacement_l", configuration)
+        self.assertEqual(context_of(script.requests[0])["notes"], "Camry 2015 oil")
+
+
 class CustomerHandoverTests(unittest.TestCase):
     def test_a_customer_gets_the_models_own_engine_question(self):
         source = Search(fluids=[{"provider": "Shell", "status": "CONFLICTED",

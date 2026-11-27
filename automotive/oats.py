@@ -165,17 +165,22 @@ class OatsCatalog:
         except PublicSourceError:
             report['partial'] = True
             return
-        groups: dict[tuple, list[str]] = {}
+        groups: dict[tuple, tuple[list[str], set]] = {}
         for item, record in zip(matched, records, strict=True):
+            oils = [oil for oil in record.get('items') or [] if oil.get('kind') == 'oil']
             grades = tuple(sorted({
-                grade for oil in record.get('items') or [] if oil.get('kind') == 'oil'
+                grade for oil in oils
                 if (grade := normalize_grade(oil.get('viscosity') or oil.get('product_name')))}))
             if not grades:
                 return  # One engine without an oil record: the others cannot speak for it.
-            groups.setdefault(grades, []).append(
-                redact(item.get('display_name_long') or item.get('model'), 80) or '')
-        report['grade_groups'] = [{'grades': list(grades), 'engines': engines}
-                                  for grades, engines in groups.items()]
+            engines, capacities = groups.setdefault(grades, ([], set()))
+            engines.append(redact(item.get('display_name_long') or item.get('model'), 80) or '')
+            capacities.update(oil.get('capacity') or None for oil in oils)
+        # A fill quantity an engine does not state stays None: it is then no common figure.
+        report['grade_groups'] = [
+            {'grades': list(grades), 'engines': engines,
+             'capacities': sorted(capacities, key=str)}
+            for grades, (engines, capacities) in groups.items()]
 
     def _conflict(self, label: str, matched: list[dict], choices: list[str]) -> dict:
         names = [redact(item.get('display_name_long') or item.get('model'), 80)

@@ -1018,8 +1018,9 @@ class AssistantTurn:
 
     def _followup_state(self, previous: dict, stated: dict, saved: dict, reset: bool) -> dict:
         engine_asked = bool(self.question and followup.engine_question(self.question["text"]))
-        engine = followup.stated_engine(self.message, stated or previous,
-                                        answering_engine=engine_asked and not reset)
+        # Only a code the customer labels as one. What an answer to an engine question means is
+        # the model's to read: a tapped 5W-30 under "which engine oil" is no engine.
+        engine = followup.stated_engine(self.message)
         choices = self.memory.get("engine_choices")
         if engine_asked and not reset and isinstance(choices, dict):
             options = self.question["options"]

@@ -660,10 +660,12 @@ CAR_FIELDS = {
     "model": "The model family as those catalogues list it (E-Class, Camry, 3 Series), not "
              "the trim. Empty when unknown.",
     "year": "The model year, or 0 when unknown.",
-    "trim": "The designation (E 400, 320i), or empty.",
+    "trim": "The designation (E 400, 320i) the customer, the VIN or the form states, or "
+            "empty.",
     "engine_code": "The engine code or family (M276, 2AR-FE), or empty.",
-    "engine_litres": "Engine displacement in litres (3.0), or 0 when unknown.",
-    "fuel": "The fuel, or unknown.",
+    "engine_litres": "Engine displacement in litres (3.0) as the customer, the VIN or the "
+                     "form states it; 0 when none does.",
+    "fuel": "The fuel the customer, the VIN or the form states, or unknown.",
     "body": "The body (coupe, sedan, estate, convertible, hatchback), or empty.",
 }
 

@@ -1440,6 +1440,11 @@ class Toolbox:
         snapshot, running = self._federation("engine_oil", OIL_QUERY, args, "oil_guide")
         reports = [report for report in snapshot.get("fluids") or []
                    if isinstance(report, dict)]
+        # Shell is the first catalogue and the others only back it up: once it has read the
+        # grades of every engine, what they say adds nothing and must not outvote it.
+        grouped_shell = [report for report in reports
+                         if report.get("provider") == "Shell" and report.get("grade_groups")]
+        reports = grouped_shell or reports
         answered = [report for report in reports
                     if report.get("status") == "PROVISIONAL" and report.get("items")]
         variants, codes = [], []
@@ -1470,18 +1475,22 @@ class Toolbox:
             if not groups:
                 continue
             common = set.intersection(*(set(group["grades"]) for group in groups))
-            if common:
-                variants.append({"source": report.get("provider"),
-                                 "label": report.get("vehicle_label"), "grades": sorted(common)})
-            else:
-                split.extend(groups)
+            if not common:
+                split.extend({key: group[key] for key in ("grades", "engines")}
+                             for group in groups)
+                continue
+            filled = {value for group in groups for value in group.get("capacities") or [None]}
+            try:
+                litres = float(str(filled.pop()).replace(",", ".")) if len(filled) == 1 else None
+            except ValueError:
+                litres = None
+            variants.append({"source": report.get("provider"),
+                             "label": report.get("vehicle_label"), "grades": sorted(common),
+                             **({"capacity_l": litres} if litres else {})})
         shared = set.intersection(*(set(item["grades"]) for item in variants)) \
             if variants else set()
         agreed = not variants or bool(shared)
-        # Shell is the first catalogue: once it has answered, another one that cannot tell
-        # the engines apart raises no question.
-        by_shell = agreed and not split and any(item["source"] == "Shell" for item in variants)
-        open_engines = [] if by_shell else [
+        open_engines = [
             str(label) for report in reports
             if report.get("status") == "CONFLICTED" and not report.get("grade_groups")
             for label in report.get("candidates") or []]
@@ -1536,7 +1545,7 @@ class Toolbox:
             note += (" The selectors list several engines. If the conversation decides the "
                      "engine, call oil_guide again with trim, engine_code, engine_litres "
                      "and fuel filled; otherwise ask once which engine it is.")
-        if running:
+        if running and data["status"] != "answered":
             note += (" Some selectors were still working after "
                      f"{SUPPLIER_SECONDS:g} seconds; the same call next turn returns the "
                      "finished answer.")
