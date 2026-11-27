@@ -2898,6 +2898,32 @@ class ConversationKeptTests(unittest.TestCase):
                 self.assertEqual(context_of(script.requests[0])["notes"], "Camry front pads")
 
 
+class CustomerHandoverTests(unittest.TestCase):
+    def test_a_customer_gets_the_models_own_engine_question(self):
+        source = Search(fluids=[{"provider": "Shell", "status": "CONFLICTED",
+                                 "candidates": ["Camry 2.5 133kW", "Camry 2.5 Hybrid"]}])
+        script = Script(
+            says(use("oil_guide", car(make="Toyota", model="Camry", year=2018))),
+            done(reply="ერთი დეტალი წყვეტს ზეთს.", question="ძრავი ჰიბრიდულია?",
+                 options=["ჰიბრიდი", "ჩვეულებრივი"], outcome="asked"))
+        result = run(service(script), "Toyota Camry 2018 2.5 ზეთი", search_service=source,
+                     dialogue={"audience": "public", "memory": {}})
+        self.assertEqual(result["question"]["text"], "ძრავი ჰიბრიდულია?")
+        self.assertEqual(result["quick_replies"], ["ჰიბრიდი", "ჩვეულებრივი"])
+
+    def test_a_customer_handed_to_staff_has_been_asked_for_a_phone(self):
+        public = {"audience": "public", "memory": {}}
+        script = Script(done(reply="ზეთს გუნდი შეგირჩევთ. მოგვწერეთ ტელეფონი.",
+                             outcome="handoff"))
+        result = run(service(script), "Camry ზეთი, ძრავი არ ვიცი", dialogue=public)
+        self.assertEqual(result["memory"]["phone"], "asked")
+        # A turn that failed asked for nothing.
+        failed = run(service(Script(anthropic.APITimeoutError(REQUEST))), "Camry ზეთი",
+                     dialogue=public)
+        self.assertEqual((failed["status"], failed["memory"]["phone"]), ("TIMEOUT", ""))
+        self.assertIn("or outcome is handoff", assistant_prompt.SYSTEM_PROMPT)
+
+
 class EngineSelectionTests(unittest.TestCase):
     def test_direct_settings_keep_the_engine_they_always_selected(self):
         self.assertEqual(Settings().chat_engine, "")

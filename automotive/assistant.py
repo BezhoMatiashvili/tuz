@@ -1282,8 +1282,10 @@ class AssistantTurn:
         reply = _text(raw.get("reply"))
         question, options = _asked(raw)
         engine_choices = {}
-        if (question and followup.engine_question(question) and raw.get("language") in LANGUAGES
-                and self.toolbox.engine_variants):
+        # Staff pick among the sources' own engine titles. A customer cannot, and keeps the
+        # question the model worded for them.
+        if (self.audience != "public" and question and followup.engine_question(question)
+                and raw.get("language") in LANGUAGES and self.toolbox.engine_variants):
             choices = followup.engine_options(self.toolbox.engine_variants, raw["language"])
             if choices:
                 question, options = followup.ENGINE_QUESTION[raw["language"]], choices
@@ -1814,6 +1816,11 @@ class AssistantTurn:
         if getattr(self, "phone_rejected", False) and state != "on_file":
             return ""  # what the customer typed was not taken: the next turn may ask again
         if staff["intent"] != "none" and state != "on_file":
+            return "asked"
+        # A customer handed over to the staff is asked for a number too. A failed turn
+        # (keep_question) is a hand-over that asked for nothing.
+        if (self.audience == "public" and state != "on_file" and not decision.get("keep_question")
+                and decision.get("outcome") == "handoff"):
             return "asked"
         # After hours a reply that could not offer a part asks for a number, so the staff can
         # send the details in the morning (a website visitor cannot be answered otherwise).

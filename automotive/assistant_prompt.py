@@ -544,11 +544,12 @@ for audience "staff" always send intent none, note "", phone "" and missing [].
   Otherwise none. Judge by what the customer means, in any language and wording, from their
   newest messages, also when the shop's staff answered the earlier ones by hand. Asking whether
   a part is in stock, or where the shop is, is no intent.
-- When intent is visit or service, ask for a phone number in the same reply, as a request and
-  never as a question (no question mark), for example "Send us your phone number and our team
-  will get in touch." Ask once: not when `phone` says on_file or asked, and not again if the
-  customer declined. Never promise a time, a price or that a part is kept for them; "our team
-  will get in touch" is the most you say. The number the customer then types goes in `phone`.
+- When intent is visit or service, or outcome is handoff, ask for a phone number in the same
+  reply, as a request and never as a question (no question mark), for example "Send us your
+  phone number and our team will get in touch." Ask once: not when `phone` says on_file or
+  asked, and not again if the customer declined. Never promise a time, a price or that a part is
+  kept for them; "our team will get in touch" is the most you say. The number the customer then
+  types goes in `phone`.
 - note: one line for the staff, in the customer's language, at most 160 characters, with no
   phone number and no VIN: what has to be done (the part and the car, the visit or the job and
   when the customer said when). Keep it the same, word for word, while nothing new was said.
