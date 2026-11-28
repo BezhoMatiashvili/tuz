@@ -470,6 +470,10 @@ class Toolbox:
         self.requested_oil_grades: tuple[str, ...] = ()
         self._engine_choices: set[tuple[str, ...]] = set()
         self.vin_engine_conflict = False
+        # Which car's engine the customer was already asked about, and which car this turn's
+        # oil look-up left depending on the engine.
+        self.engine_asked_car = ""
+        self.engine_split_car = ""
         self.customer_vehicle_text = ""
         self.customer_message = ""
         self._crawled_down = False
@@ -1693,8 +1697,10 @@ class Toolbox:
             data["engine_groups"] = split
             decides = ("Petrol and diesel engines are listed, and a diesel's oil must also "
                        "state its standard: ask once petrol or diesel" if by_fuel else
-                       "The engine decides the grade (engine_groups). Ask once which engine, "
-                       "in the customer's words (petrol or diesel, litres, hybrid)")
+                       "The engine decides the grade (engine_groups). Ask once, with one option "
+                       "for each entry of engine_groups: each option covers every engine of its "
+                       "own entry and none of another's, worded for a customer (new or old "
+                       "body and its years, hybrid, power, litres)")
             note = (f"{decides}, unless the conversation already says; then call oil_guide "
                     "again with it.")
         elif variants:
@@ -1705,9 +1711,29 @@ class Toolbox:
             note = ("The selectors gave no oil for this car. If you did not use the European "
                     "model name, call again with it; otherwise hand over to the shop's team, "
                     "or go on with the grade the customer names.")
+        asked_before = False
         if undecided:
             data["engine_variants"] = undecided
-        if undecided and not split:
+            car = configuration if configuration.get("make") else self.decoded_vehicle
+            self.engine_split_car = "|".join(
+                plain(car.get(key)) for key in assistant_followup.IDENTITY)
+            asked_before = self.engine_split_car == self.engine_asked_car
+        else:
+            self.engine_split_car = ""
+        if asked_before:
+            note = ("You already asked which engine this car has: do not ask again. Read every "
+                    "engine title in engine_groups: only if what the customer said can mean "
+                    "engines of one entry alone (a plain petrol answer also means every "
+                    "non-hybrid petrol title in the other entries), offer the shop's oils of "
+                    "that entry's grades from rows, as spec. Otherwise offer no oil and say the "
+                    "shop's team will check which fits, with outcome handoff and a staff note "
+                    "naming the car.")
+            if split:
+                rows = self._shop_oils(sorted({grade for group in split
+                                               for grade in group["grades"]}))
+                if rows:
+                    data["rows"] = Table(rows, [[normalize_grade(row.name)] for row in rows])
+        elif undecided and not split:
             note += (" The selectors list several engines. If the conversation decides the "
                      "engine, call oil_guide again with trim, engine_code, engine_litres "
                      "and fuel filled; otherwise ask once which engine it is.")

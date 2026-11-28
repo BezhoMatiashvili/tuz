@@ -1056,7 +1056,8 @@ class AssistantTurn:
                           if key in stated or key in engine})
         grade = followup.oil_grade(self.oil_message)
         context = {} if reset or engine_changed else {
-            key: saved[key] for key in ("oil_grade", "oil_litres", "oil_product")
+            key: saved[key] for key in ("oil_grade", "oil_litres", "oil_product",
+                                       "engine_asked")
             if key in saved}
         # The answer to the model's own question about a detail a reviewed oil depends on.
         if self.question and re.search(r"dpf|დპფ", self.question["text"], re.IGNORECASE):
@@ -1143,6 +1144,7 @@ class AssistantTurn:
         if oil_grades:
             focus["requested_oil_grades"] = oil_grades
         focus.pop("vehicle", None)  # the car is what the model reads in the conversation
+        self.toolbox.engine_asked_car = focus.pop("engine_asked", "")
         product_id = focus.pop("oil_product", None)
         if (product_id and followup.refers_to_oil(self.message)
                 and self.toolbox.index.row(product_id) is not None):
@@ -1197,7 +1199,9 @@ class AssistantTurn:
         if age is None or age <= self.rules.stale_hours:
             return ""
         return (f"stock figures last checked {int(age)} hours ago; they may have changed "
-                "since, so availability needs the shop's confirmation")
+                "since, so say nothing about stock or availability (not in stock, available, "
+                "out of stock or \"we have\"): the cards ask the customer to check with the "
+                "shop")
 
     def _earlier_numbers(self) -> dict | None:
         """The rows of part numbers the customer typed in earlier messages of this chat: in a
@@ -1842,6 +1846,9 @@ class AssistantTurn:
             context.pop("oil_product", None)
         if len(oils) == 1:
             context["oil_product"] = oils[0]
+        # A question asked while an oil look-up depended on the engine was about the engine.
+        if asked and toolbox and toolbox.engine_split_car:
+            context["engine_asked"] = toolbox.engine_split_car
         return {
             "language": decision["language"], "notes": decision["notes"],
             "car_label": decision["car_label"],

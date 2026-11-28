@@ -2479,7 +2479,9 @@ class FailureTests(unittest.TestCase):
         run(chat, "ხუნდები")
         self.assertEqual(context_of(script.requests[0])["stock_note"],
                          "stock figures last checked 40 hours ago; they may have changed "
-                         "since, so availability needs the shop's confirmation")
+                         "since, so say nothing about stock or availability (not in stock, "
+                         "available, out of stock or \"we have\"): the cards ask the "
+                         "customer to check with the shop")
 
     def test_a_customer_turn_after_hours_tells_the_model_the_shop_is_closed(self):
         public = {"memory": {"language": "en"}, "audience": "public"}
@@ -3019,6 +3021,32 @@ class OilGuideRowsTests(unittest.TestCase):
         self.assertNotIn("rows", content)
         report["grade_groups"][0]["fuels"] = ["diesel"]
         self.assertEqual(self.guide(report)["status"], "answered")
+
+    def test_an_engine_asked_about_once_is_then_handed_over(self):
+        source = Search(fluids=[self.engines("Shell", (["0W-16"], ["Camry 2.5 A25A"]),
+                                             (["0W-20"], ["Camry 2.5 2AR-FE"]))])
+        call = use("oil_guide", car(make="Toyota", model="Camry", year=2018))
+        asked = done(reply="ერთი რამ.", question="კორპუსი ახალია თუ ძველი?",
+                     options=["ახალი", "ძველი"], outcome="asked")
+        script = Script(says(call), asked)
+        first = run(service(script, rows=self.rows), "Camry 2018 ზეთი", search_service=source)
+        self.assertIn("one option for each", tool_results(script.requests[1])[0][0]["note"])
+        script = Script(says(call), done())
+        second = run(service(script, rows=self.rows), "ბენზინი", search_service=source,
+                     dialogue={"memory": first["memory"]})
+        content = tool_results(script.requests[1])[0][0]
+        self.assertIn("already asked", content["note"])
+        self.assertIn("handoff", content["note"])
+        # An answer that fits one engine group can still be served: both grades' oils come.
+        grades = {item[-1] for item in content["rows"]}
+        self.assertTrue({"0W-16", "0W-20"} & grades, grades)
+        self.assertNotIn("engine_asked", json.dumps(context_of(script.requests[0])))
+        # Another car is asked about afresh.
+        other = use("oil_guide", car(make="Toyota", model="Corolla", year=2018))
+        script = Script(says(other), done())
+        run(service(script, rows=self.rows), "Corolla 2018 ზეთიც", search_service=source,
+            dialogue={"memory": second["memory"]})
+        self.assertIn("one option for each", tool_results(script.requests[1])[0][0]["note"])
 
     def test_a_catalogue_without_an_engine_code_still_answers_a_stated_one(self):
         fuchs = {"provider": "Fuchs", "status": "PROVISIONAL", "items": [

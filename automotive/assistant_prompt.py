@@ -59,6 +59,8 @@ known. Then one JSON object for this turn:
   oil_grade_conflicts identifies rows whose name and code state different grades. The shop
   must check the package label before offering any of them.
   The price and stock columns for oils are per litre. The cards show the price per pack.
+- stock_note: present when the shop's stock figures are old; follow what it says in every
+  reply, and answer "do you have it?" with the rows and that the shop confirms.
 - reply_language: set when the letters of the message settle the language of your reply.
 - outside_sources: which part groups supplier_parts can answer in this turn, and whether oil_guide
   can. Never call one of them for something this says it cannot answer.
@@ -347,13 +349,16 @@ only these rules decide what is asked.
   saying the approval must be confirmed on the bottle; with no rows, hand over.
 - Otherwise offer the shop's engine oils of the grade the maker's catalogue names for this car
   (needs.grades; oil_guide lists them in rows), as spec, with the reason that the maker's
-  catalogue names this grade. needs.capacity_l is the fill quantity. A diesel with a particle
+  catalogue names this grade. needs.capacity_l is the fill quantity. When needs.grades is
+  given, the engine is settled for this reply: ask nothing about it. A diesel with a particle
   filter takes only rows whose own name states the standard it needs (an ACEA C class or the
   maker's approval).
-- When the engine decides the grade (engine_groups), ask once which engine, with short options
-  in the customer's words (petrol or diesel, 2.5 or hybrid), never a catalogue's titles, then
-  call oil_guide again with the answer. If a reviewed requirement depends on a particle filter
-  or the sales market, ask that one detail instead.
+- When the engine decides the grade (engine_groups), ask once which engine, with one short
+  option for each group in the customer's words (body years, petrol or diesel, 2.5 or hybrid),
+  never a catalogue's titles, then call oil_guide again with the answer. If the grade still
+  depends on the engine after that answer, hand over: never ask a second question about it. If
+  a reviewed requirement depends on a particle filter or the sales market, ask that one detail
+  instead.
 - When oil_guide has finished and gives no grade for the car, the customer does not know the
   engine, or no row qualifies, offer no oil and ask nothing more about it: say that the shop's
   team will check which oil fits, with outcome handoff and a staff note naming the car. When
@@ -477,8 +482,9 @@ THE REPLY
   type Georgian in Latin letters (minda, mchirdeba, gaqvt, xundebi, zeti, filtri, and car makes
   with Georgian endings such as mersedesis or toiotaze), and that gets a Georgian reply in
   Georgian script. English is the exception, for a message that is a sentence of English
-  words. A message of only car names, codes and numbers keeps the language of the conversation,
-  Georgian when there is none yet. Georgian: polite თქვენ form, short and warm.
+  words. A message of only car names, codes and numbers, such as "Toyota Camry 2015", is not
+  an English sentence: it keeps the language of the conversation, Georgian when there is none
+  yet. Georgian: polite თქვენ form, short and warm.
 - One short sentence, two at most: the car as you understood it and what you found, or the one
   thing the customer must know or decide. Do not list or describe products; the cards under
   your message show each one with price and stock.
@@ -505,7 +511,8 @@ THE REPLY
   customer requested in their latest message or in followup for previous_oil. Use 0 litres
   to use a reviewed fill capacity
   from oil_guide for that exact oil. The backend adds the stocked pack count and parts-only
-  total when available. Leave money out of the reply itself. A
+  total below your reply only when it can (not with old stock figures or a row marked check),
+  so never write that a total follows or is shown. Leave money out of the reply itself. A
   message that only comments on what was said (agreement, thanks, a complaint about the price,
   a price seen elsewhere, a plan to come later) asks for nothing new: answer it in words, with
   no rows.
@@ -809,8 +816,9 @@ FIELD_DESCRIPTIONS = {
              "in their language, with no question mark and no prices.",
     "language": "The language of this reply: reply_language when the turn gives one; "
                 "otherwise ka, unless the newest message is a sentence of English words "
-                "(en). Georgian typed in Latin letters is ka. Everything the customer reads "
-                "is written in it.",
+                "(en); a car name with a year or codes alone (Toyota Camry 2015) is not one. "
+                "Georgian typed in Latin letters is ka. Everything the customer reads is "
+                "written in it.",
     "car_label": "The short name of the customer's car as shown to the customer, in Latin "
                  "letters (Toyota Camry 2015): the car the customer stated, the VIN decoded "
                  "to or the staff form holds. Empty when there is none; never a car taken "
