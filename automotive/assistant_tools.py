@@ -1736,7 +1736,8 @@ class Toolbox:
             data.pop("engine_variants", None)
             note = ("You already asked which engine this car has, and the grade still depends "
                     "on it. Do not ask again: offer no oil and say the shop's team will check "
-                    "which fits, with outcome handoff and a staff note naming the car.")
+                    "which fits, with outcome handoff, a staff note naming the car, and the "
+                    "request for a phone number that the staff rules ask for.")
         elif undecided and not split:
             note += (" The selectors list several engines. If the conversation decides the "
                      "engine, call oil_guide again with trim, engine_code, engine_litres "
