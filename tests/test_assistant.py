@@ -3020,6 +3020,23 @@ class OilGuideRowsTests(unittest.TestCase):
         report["grade_groups"][0]["fuels"] = ["diesel"]
         self.assertEqual(self.guide(report)["status"], "answered")
 
+    def test_a_catalogue_without_an_engine_code_still_answers_a_stated_one(self):
+        fuchs = {"provider": "Fuchs", "status": "PROVISIONAL", "items": [
+            {"kind": "oil", "product_name": "Titan 0W-20", "viscosity": "0W-20"}]}
+        script = Script(says(use("oil_guide", car(make="Toyota", model="Camry", year=2015,
+                                                  engine_code="2AR-FE"))), done())
+        run(service(script, rows=self.rows), "Camry 2015 engine code 2AR-FE, რომელი ზეთი?",
+            search_service=Search(fluids=[fuchs]))
+        content, error = tool_results(script.requests[1])[0]
+        self.assertFalse(error, content)
+        self.assertEqual((content["status"], content["needs"]["grades"]), ("answered", ["0W-20"]))
+        other = {**fuchs, "engine_code": "2GR-FE"}
+        script = Script(says(use("oil_guide", car(make="Toyota", model="Camry", year=2015,
+                                                  engine_code="2AR-FE"))), done())
+        run(service(script, rows=self.rows), "Camry 2015 engine code 2AR-FE, რომელი ზეთი?",
+            search_service=Search(fluids=[other]))
+        self.assertEqual(tool_results(script.requests[1])[0][0]["status"], "no_answer")
+
     def test_one_fill_quantity_for_every_engine_is_reported(self):
         report = self.engines("Shell", (["0W-20"], ["Prius 1.8"]))
         report["grade_groups"][0]["capacities"] = ["4.2"]
@@ -3189,6 +3206,19 @@ class ServerOilFactsTests(unittest.TestCase):
         _, content, error = self.guide(message=f"{self.vin} ძრავი შეცვლილია, ზეთი მინდა")
         self.assertTrue(error)
         self.assertIn("differs", json.dumps(content))
+
+    def test_a_replaced_engine_also_stops_the_factory_car_typed_by_hand(self):
+        source = Search()
+        script = Script(says(use("oil_guide", car(make="Toyota", model="Tacoma", year=2025))),
+                        done())
+        chat = service(script, rows=self.rows, vin=Vin(self.TACOMA))
+        run(chat, f"{self.vin} ძრავი შეცვლილია, ზეთი მინდა", vin=self.vin, search_service=source)
+        content, error = tool_results(script.requests[1])[0]
+        self.assertFalse(error, content)
+        self.assertEqual(content["status"], "vehicle_conflict")
+        self.assertNotIn("rows", content)
+        self.assertNotIn("needs", content)
+        self.assertEqual(source.started, [])
 
     def test_a_grade_written_in_shorthand_is_searched_as_that_grade(self):
         script = Script(says(use("search_catalog", search(part=["ძრავის ზეთი", "5/30"]))),

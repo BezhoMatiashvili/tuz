@@ -1471,16 +1471,8 @@ class Toolbox:
 
     def oil_evidence(self, vin: str | None, configuration: dict) -> Output | None:
         """Reviewed and manufacturer requirements, read before any oil maker's selector."""
-        if vin and self.vin_engine_conflict:
-            return Output({"status": "vehicle_conflict",
-                           "note": "The VIN describes the factory engine. "
-                                   "Use the stated configuration or hand it to staff."})
-        same_decoded_car = all(
-            self.decoded_vehicle.get(key)
-            and plain(configuration.get(key)) == plain(self.decoded_vehicle[key])
-            for key in assistant_followup.IDENTITY)
         reference = assistant_oil_intake.manufacturer_reference(
-            vin or (self.vin if same_decoded_car else None), self.decoded_vehicle,
+            vin or (self.vin if self._decoded_car(configuration) else None), self.decoded_vehicle,
             {**self.followup_vehicle, **self.stated_vehicle})
         if reference:
             vin = vin or self.vin
@@ -1501,6 +1493,11 @@ class Toolbox:
         if reference:
             return Output({"status": "specification", "needs": reference})
         return None
+
+    def _decoded_car(self, configuration: dict) -> bool:
+        return all(self.decoded_vehicle.get(key)
+                   and plain(configuration.get(key)) == plain(self.decoded_vehicle[key])
+                   for key in assistant_followup.IDENTITY)
 
     def _with_spec_oils(self, evidence: Output) -> Output:
         """A requirement without verified products also gets the shop's oils that document it."""
@@ -1566,6 +1563,12 @@ class Toolbox:
 
     def _oil(self, args: dict) -> Output:
         vin, configuration = self._car(args, "oil_guide")
+        # The customer says the engine is not the VIN's: no factory fact may choose its oil,
+        # however the car is asked about.
+        if self.vin_engine_conflict and self._decoded_car(configuration):
+            return Output({"status": "vehicle_conflict", "note": (
+                "The VIN describes an engine the customer says is not installed. Offer no oil: "
+                "say the shop's team will check which fits, with outcome handoff.")})
         # A code the customer never gave verifies nothing, and the catalogues are asked without
         # it: it would hide the other engines they list.
         if configuration.get("engine_code") and not self._confirmed_oil_vehicle(
@@ -1591,9 +1594,11 @@ class Toolbox:
         grouped_shell = [report for report in reports
                          if report.get("provider") == "Shell" and report.get("grade_groups")]
         reports = grouped_shell or reports
+        # A report that names another engine is dropped; one that names none is no disagreement.
         answered = [report for report in reports
                     if report.get("status") == "PROVISIONAL" and report.get("items")
-                    and (not engine or plain(report.get("engine_code")) == plain(engine))]
+                    and (not engine or not report.get("engine_code")
+                         or plain(report.get("engine_code")) == plain(engine))]
         variants, matches = [], set()
         for report in answered:
             oils = [item for item in report["items"]
