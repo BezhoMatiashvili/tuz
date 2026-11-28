@@ -598,7 +598,8 @@ class VINSearchCoordinator:
                vehicle: dict, deadline: float) -> None:
         self._source(identifier, source, status='RUNNING', total_queries=1)
         # Chooser answers depend only on the vehicle, so they are shared for a day.
-        cache_key = (source, *(_key(vehicle.get(k)) for k in (
+        # v2: a report of several engines carries the grades each takes.
+        cache_key = (source, 'v2', *(_key(vehicle.get(k)) for k in (
             'make', 'model', 'model_year', 'trim', 'fuel', 'fuel_type', 'body', 'engine_code',
             'displacement_l', 'drive', 'market')))
         with self._lock:
@@ -611,8 +612,8 @@ class VINSearchCoordinator:
                 report = copy.deepcopy(hit[1])
             else:
                 report = service.lookup(vin, vehicle, deadline=deadline)
-                if isinstance(report, dict) and report.get('status') in {
-                        'PROVISIONAL', 'EMPTY', 'CONFLICTED'}:
+                if isinstance(report, dict) and not report.get('partial') and report.get(
+                        'status') in {'PROVISIONAL', 'EMPTY', 'CONFLICTED'}:
                     with self._lock:
                         if len(self._reports) > 500:
                             self._reports.clear()
@@ -789,7 +790,10 @@ class VINSearchCoordinator:
                     if job['vehicle'] and not oil_fallback_decided and (
                             shell_settled or time.monotonic() >= oil_fallback_at):
                         oil_fallback_decided = launched = True
-                        if job['sources']['shell']['status'] != 'OK':
+                        # Shell that read every engine's grade needs no backup either.
+                        grouped = any(report.get('provider') == 'Shell'
+                                      and report.get('grade_groups') for report in job['fluids'])
+                        if job['sources']['shell']['status'] != 'OK' and not grouped:
                             for name in ('pakelo', 'fuchs'):
                                 start_fluid(name, dict(job['vehicle']),
                                             FALLBACK_SECONDS[name])

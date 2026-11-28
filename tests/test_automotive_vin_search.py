@@ -115,6 +115,31 @@ class FederationTests(unittest.TestCase):
             self.assertEqual(call.args[0], VIN)  # Always repeat VIN to provider.
             self.assertIn('deadline', call.kwargs)
 
+    def test_a_report_with_an_engine_left_unread_is_asked_for_again(self):
+        shell = Mock()
+        report = {'provider': 'Shell', 'status': 'CONFLICTED', 'items': []}
+
+        def ask():
+            self.coordinator._fluid('job', 'shell', shell, None, dict(VEHICLE),
+                                    time.monotonic() + 3)
+            return shell.lookup.call_count
+
+        shell.lookup.return_value = {**report, 'partial': True}
+        self.assertEqual((ask(), ask()), (1, 2))
+        shell.lookup.return_value = report
+        self.assertEqual((ask(), ask()), (3, 3))
+
+    def test_shell_reading_every_engines_grade_needs_no_backup(self):
+        shell, pakelo, fuchs = Mock(), Mock(), Mock()
+        shell.lookup.return_value = {
+            'provider': 'Shell', 'status': 'CONFLICTED', 'items': [],
+            'grade_groups': [{'grades': ['0W-20'], 'engines': ['2.5']}]}
+        coordinator = self.create_coordinator(
+            shell_service=shell, pakelo_service=pakelo, fuchs_service=fuchs)
+        self.finish(coordinator, part_query='engine oil')
+        self.assertEqual((shell.lookup.call_count, pakelo.lookup.call_count,
+                          fuchs.lookup.call_count), (1, 0, 0))
+
     def test_query_narrows_external_categories(self):
         self.finish(part_query='oil filter')
         self.assertEqual(self.motorium.lookup.call_count, 1)

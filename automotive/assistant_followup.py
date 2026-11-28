@@ -28,8 +28,6 @@ _PRODUCT_FOLLOWUP = re.compile(
     r"\b(?:with (?:the )?filter|the same oil|that oil|და ფილტრ[ა-ჰ]*|ფილტრ[ა-ჰ]* ერთად|"
     r"ეს ზეთი|с фильтром|это масло)\b", re.IGNORECASE,
 )
-_VOLUME_FOLLOWUP = re.compile(r"\b(?:total|altogether|ჯამში|სულ|итого|вместе)\b",
-                              re.IGNORECASE)
 _OIL_GRADE = re.compile(r"(?<!\w)\d{1,2}W[- ]?\d{2}(?!\w)", re.IGNORECASE)
 _GRADE_SHORTHAND = re.compile(
     r"(?<![\w./:\-])(?P<cold>0|5|10|15|20|25)"
@@ -104,6 +102,15 @@ def stated_vehicle(text: str) -> dict:
     return parsed.as_vehicle()
 
 
+def stated_market(text: str) -> str:
+    """The sales market a whole message names, as an answer to the question about it."""
+    return {
+        "აშშ": "US", "us": "US", "usa": "US", "united states": "US", "сша": "US",
+        "ევროპა": "Europe", "europe": "Europe", "европа": "Europe", "eu": "Europe",
+        "იაპონია": "Japan", "japan": "Japan", "япония": "Japan", "jp": "Japan",
+    }.get(text.strip().casefold(), "")
+
+
 def engine_question(text: str) -> bool:
     return bool(_ENGINE_QUESTION.search(text))
 
@@ -112,11 +119,13 @@ def engine_replaced(text: str) -> bool:
     return bool(_ENGINE_REPLACED.search(text))
 
 
-def stated_engine(text: str, vehicle: dict, *, answering_engine: bool = False) -> dict:
+def stated_engine(text: str, vehicle: dict | None = None, *, replaced: bool = False) -> dict:
+    """An engine code the customer names as one ("engine code 2AR-FE"), or, when they say the
+    engine was replaced, the installed engine's details."""
     found = list(dict.fromkeys(code.rstrip(".") for code in _ENGINE.findall(text)))
     if len(found) == 1 and re.search(r"[A-Za-z]", found[0]) and re.search(r"\d", found[0]):
         return {"engine_code": found[0].upper()}
-    return engine_details(text, vehicle.get("make")) if answering_engine and not found else {}
+    return engine_details(text, (vehicle or {}).get("make")) if replaced and not found else {}
 
 
 def engine_options(variants: tuple[str, ...], language: str) -> list[dict[str, str]]:
@@ -187,10 +196,6 @@ def refers_to_oil(text: str) -> bool:
     return bool(_PRODUCT_FOLLOWUP.search(text))
 
 
-def asks_for_total(text: str) -> bool:
-    return bool(_VOLUME_FOLLOWUP.search(text))
-
-
 def from_transcript(transcript: Any) -> dict:
     """Recover explicit customer facts in saved conversations that predate this state."""
     vehicle: dict = {}
@@ -199,7 +204,7 @@ def from_transcript(transcript: Any) -> dict:
         if not isinstance(entry, dict) or not isinstance(text := entry.get("user"), str):
             continue
         stated = stated_vehicle(text)
-        engine = stated_engine(text, stated or vehicle)
+        engine = stated_engine(text)
         if conflicts(vehicle, stated):
             vehicle, oil = {}, {}
         elif conflicts(vehicle, {**stated, **engine}, DETAILS):

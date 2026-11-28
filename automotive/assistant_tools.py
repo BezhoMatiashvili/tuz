@@ -23,6 +23,7 @@ from automotive import assistant_followup, assistant_oil_intake, oil_match
 from automotive import assistant_prompt as prompt
 from automotive.assistant_catalog import CROSS_SHOWN, SearchError
 from automotive.assistant_oil_quote import (
+    is_engine_oil,
     is_oil,
     oil_grade_conflict,
     oil_pack,
@@ -31,6 +32,7 @@ from automotive.assistant_oil_quote import (
 )
 from automotive.catalog_api import CATEGORY_TERMS
 from automotive.codes import latin, normalize_code
+from automotive.oil_match import normalize_grade
 from automotive.parts_catalog import PartsCatalogService
 from automotive.recommendations import OIL_DPF_REQUIRED, OIL_MARKET_REQUIRED, RecommendationService
 
@@ -66,6 +68,7 @@ CARRIED_ROWS = 24  # rows a car_numbers or research answer carries
 CROSS_PER_PART = 8  # cross numbers shown per crawled part
 
 SUPPLIER_SECONDS = 6.0  # how long supplier_parts and oil_guide wait for outside sources
+SHOP_OILS = 24  # the shop's oils of the named grades that oil_guide returns
 SETTLE_SECONDS = 0.6  # no outside source running for this long: nothing more is coming
 POLL_SECONDS = 0.1
 SEARCH_LIMIT = 40
@@ -466,7 +469,6 @@ class Toolbox:
         self.followup_vehicle: dict = {}
         self.requested_oil_grades: tuple[str, ...] = ()
         self._engine_choices: set[tuple[str, ...]] = set()
-        self.oil_guide_result: dict = {}
         self.vin_engine_conflict = False
         self.customer_vehicle_text = ""
         self.customer_message = ""
@@ -1468,7 +1470,7 @@ class Toolbox:
         return vehicle
 
     def oil_evidence(self, vin: str | None, configuration: dict) -> Output | None:
-        """Read trusted oil requirements without asking supplier selectors."""
+        """Reviewed and manufacturer requirements, read before any oil maker's selector."""
         if vin and self.vin_engine_conflict:
             return Output({"status": "vehicle_conflict",
                            "note": "The VIN describes the factory engine. "
@@ -1487,10 +1489,6 @@ class Toolbox:
                 configuration = {**configuration, "engine_code": reference["engine_code"]}
         vehicle = self._confirmed_oil_vehicle(
             vin, configuration, reference["engine_code"] if reference else None)
-        if configuration.get("engine_code") and not vehicle.get("engine_code"):
-            return Output({"status": "needs_detail", "detail": "engine",
-                           "note": "The requested engine code is unconfirmed or conflicts "
-                                   "with the established vehicle. Ask which engine is installed."})
         verified = self._verified_oil(vehicle)
         if verified is None and vin and not vehicle.get("engine_code"):
             # vPIC's descriptive label is a lookup key. Only independently reviewed
@@ -1504,20 +1502,95 @@ class Toolbox:
             return Output({"status": "specification", "needs": reference})
         return None
 
+    def _with_spec_oils(self, evidence: Output) -> Output:
+        """A requirement without verified products also gets the shop's oils that document it."""
+        if evidence.data.get("status") != "specification":
+            return evidence
+        rows = self._spec_oils(evidence.data["needs"])
+        data = {**evidence.data, "note": (
+            "needs states what this engine requires. Offer rows as check: the approval must be "
+            "confirmed on the bottle." if rows else
+            "needs states what this engine requires, and no shop oil documents it: state it and "
+            "hand over.")}
+        if rows:
+            data["rows"] = Table(rows, [[normalize_grade(row.name)] for row in rows])
+        return Output(data, ("grade",) if rows else ())
+
+    def _spec_oils(self, needs: dict) -> list[Any]:
+        """Shop engine oils of these grades whose bottle name states the approval, or whose
+        package research, still matching the product, documents it. Stocked first."""
+        options = needs.get("approval_options") or []
+        grades = set(needs.get("grades") or [])
+        if not options or not grades:
+            return []
+        research = self._package_research(grades, options)
+        rows = [row for row in self.index.rows()
+                if normalize_grade(row.name) in grades
+                and assistant_oil_intake.oil_candidate(row.name, row.code)
+                and (assistant_oil_intake.stock_candidate(row.name, row.brand, needs)
+                     or self._researched(row, research.get(str(row.id))))]
+        rows.sort(key=lambda row: ((row.store or 0) <= 0, (row.warehouse or 0) <= 0, row.name))
+        return rows[:SHOP_OILS]
+
+    def _package_research(self, grades: set[str], options: list) -> dict[str, dict]:
+        read = getattr(self.repository, "oil_package_research", None)
+        if not callable(read):
+            return {}
+        try:
+            entries = read(sorted(grades))
+        except (OSError, RuntimeError, psycopg.Error):
+            return {}
+        matching = {}
+        for entry in entries:
+            # Industry classifications describe performance, not manufacturer approval.
+            standards = [value for value in entry["specifications"]
+                         if value.upper().startswith(("API ", "ILSAC "))]
+            approvals = assistant_oil_intake.documented_standards(
+                [*entry["approvals"], *standards])
+            if any(option and all(normalize_code(code) in approvals for code in option)
+                   for option in options):
+                matching[str(entry["source_product_id"])] = entry
+        return matching
+
+    def _researched(self, row: Any, document: dict | None) -> bool:
+        if not document:
+            return False
+        try:
+            current = self.repository.get_product(str(row.id))
+        except (OSError, RuntimeError, psycopg.Error):
+            return False
+        return bool(current
+                    and document["catalog_fingerprint"] == current.get(
+                        "approval_content_fingerprint")
+                    and document["sae_grade"] == normalize_grade(current.get("product_name") or ""))
+
     def _oil(self, args: dict) -> Output:
         vin, configuration = self._car(args, "oil_guide")
+        # A code the customer never gave verifies nothing, and the catalogues are asked without
+        # it: it would hide the other engines they list.
+        if configuration.get("engine_code") and not self._confirmed_oil_vehicle(
+                vin, configuration).get("engine_code"):
+            configuration = {key: value for key, value in configuration.items()
+                             if key != "engine_code"}
+            args = {**args, "engine_code": ""}
         if evidence := self.oil_evidence(vin, configuration):
-            return evidence
+            return self._with_spec_oils(evidence)
         if self._local_oil_configured() and (
                 self.search_service is None or self._able("engine_oil", vin is not None) == []):
             return Output({"status": "no_answer",
-                           "note": "No reviewed oil match for this exact configuration. "
-                                   "Ask for any missing engine or market details."})
+                           "note": "No reviewed oil match for this exact configuration. If "
+                                   "one engine or market detail is missing, ask it once; "
+                                   "otherwise hand over to the shop's team."})
         snapshot, running = self._federation("engine_oil", OIL_QUERY, args, "oil_guide")
         reports = [report for report in snapshot.get("fluids") or []
                    if isinstance(report, dict)]
         engine = configuration.get("engine_code") or (
             self.followup_vehicle.get("engine_code") if vin else None)
+        # Shell is the first catalogue and the others only back it up: once it has read the
+        # grades of every engine, what they say adds nothing and must not outvote it.
+        grouped_shell = [report for report in reports
+                         if report.get("provider") == "Shell" and report.get("grade_groups")]
+        reports = grouped_shell or reports
         answered = [report for report in reports
                     if report.get("status") == "PROVISIONAL" and report.get("items")
                     and (not engine or plain(report.get("engine_code")) == plain(engine))]
@@ -1543,46 +1616,112 @@ class Toolbox:
                 **summary, **({"approvals": approvals} if approvals else {}),
                 "products": list(dict.fromkeys(
                     item["name"] for item in need["recommended"]))[:4]})
-        agreed = len({(tuple(sorted(item["grades"])), item.get("capacity_l"),
-                       tuple(sorted(item.get("approvals", []))),
-                       item.get("engine_code")) for item in variants}) <= 1
+        # Catalogues agree when they share a grade. One that reports no fill quantity or engine
+        # code, or more grades than another, does not disagree.
+        # A catalogue that lists several engines still answers when all of them take a grade
+        # in common; otherwise the engine decides the grade.
+        split: list[dict] = []
+        by_fuel = False  # one grade, but a diesel's oil must also state its standard
+        for report in reports:
+            groups = report.get("grade_groups") if report.get("status") == "CONFLICTED" else None
+            if not groups:
+                continue
+            common = set.intersection(*(set(group["grades"]) for group in groups))
+            fuels = {fuel for group in groups for fuel in group.get("fuels") or []}
+            if common and {"diesel", "petrol"} <= fuels:
+                by_fuel = True
+                split.append({"grades": sorted(common),
+                              "engines": [name for group in groups for name in group["engines"]]})
+                continue
+            if not common:
+                split.extend({key: group[key] for key in ("grades", "engines")}
+                             for group in groups)
+                continue
+            filled = {value for group in groups for value in group.get("capacities") or [None]}
+            try:
+                litres = float(str(filled.pop()).replace(",", ".")) if len(filled) == 1 else None
+            except ValueError:
+                litres = None
+            variants.append({"source": report.get("provider"),
+                             "label": report.get("vehicle_label"), "grades": sorted(common),
+                             **({"capacity_l": litres} if litres else {})})
+        shared = set.intersection(*(set(item["grades"]) for item in variants)) \
+            if variants else set()
+        agreed = not variants or bool(shared)
+        open_engines = [
+            str(label) for report in reports
+            if report.get("status") == "CONFLICTED" and not report.get("grade_groups")
+            for label in report.get("candidates") or []]
         undecided = list(dict.fromkeys(
-            str(label) for report in reports if report.get("status") == "CONFLICTED"
-            for label in report.get("candidates") or []))[:12]
+            [engine for group in split for engine in group["engines"]] + open_engines))[:12]
         data: dict = {"status": "sources_disagree" if variants and not agreed else
                       "engine_ambiguous" if undecided else
                       "answered" if variants and agreed else
                       "still_running" if running else "no_answer"}
+        rows: list[Any] = []
         if variants and agreed and not undecided:
-            merged = oil_match.summary(oil_match.requirements(answered))
+            needs: dict = {"grades": [grade for grade in dict.fromkeys(
+                grade for item in variants for grade in item["grades"]) if grade in shared]}
+            for key in ("capacity_l", "engine_code"):
+                values = {item[key] for item in variants if item.get(key)}
+                if len(values) == 1:
+                    needs[key] = values.pop()
+            needs["sources"] = list(dict.fromkeys(item["source"] for item in variants))
             approvals = sorted({value for item in variants
                                 for value in item.get("approvals", [])})
-            data["needs"] = {**merged, **({"approvals": approvals} if approvals else {}),
+            data["needs"] = {**needs, **({"approvals": approvals} if approvals else {}),
                              "products": list(dict.fromkeys(
-                                 name for item in variants for name in item["products"]))[:6]}
-            data["catalogue_matches"] = [list(pair) for pair in sorted(matches)]
+                                 name for item in variants
+                                 for name in item.get("products", [])))[:6]}
             data["catalogue_codes"] = sorted({code for _, code, _ in matches})
-            note = ("Supplier-asserted. Match the exact product code and approved grade. "
-                    "Offer no oil by viscosity alone.")
+            rows = self._shop_oils(needs["grades"])
+            if rows:
+                data["rows"] = Table(rows, [[normalize_grade(row.name)] for row in rows])
+                note = ("The oil makers' catalogues name these grades for this car. Offer the "
+                        "shop's engine oils of these grades, listed in rows, as spec; no other "
+                        "search is needed. A diesel with a particle filter takes only rows "
+                        "whose own name states the standard.")
+            else:
+                note = ("The oil makers' catalogues name these grades for this car, and the "
+                        "shop lists no engine oil of them: say so and hand over.")
+        elif split:
+            data["engine_groups"] = split
+            decides = ("Petrol and diesel engines are listed, and a diesel's oil must also "
+                       "state its standard: ask once petrol or diesel" if by_fuel else
+                       "The engine decides the grade (engine_groups). Ask once which engine, "
+                       "in the customer's words (petrol or diesel, litres, hybrid)")
+            note = (f"{decides}, unless the conversation already says; then call oil_guide "
+                    "again with it.")
         elif variants:
             data["variants"] = variants
             note = ("The selectors disagree. Decide by the engine the customer has, or ask "
                     "which it is.")
         else:
-            note = ("The selectors gave no oil for this car. That says nothing about the "
-                    "car: ask for the engine or go on with the grade the customer names.")
+            note = ("The selectors gave no oil for this car. If you did not use the European "
+                    "model name, call again with it; otherwise hand over to the shop's team, "
+                    "or go on with the grade the customer names.")
         if undecided:
             data["engine_variants"] = undecided
+        if undecided and not split:
             note += (" The selectors list several engines. If the conversation decides the "
                      "engine, call oil_guide again with trim, engine_code, engine_litres "
-                     "and fuel filled; otherwise ask which engine it is.")
-        if running:
+                     "and fuel filled; otherwise ask once which engine it is.")
+        if running and data["status"] != "answered":
             note += (" Some selectors were still working after "
                      f"{SUPPLIER_SECONDS:g} seconds; the same call next turn returns the "
                      "finished answer.")
         data["sources"] = _source_lines(snapshot, ("shell", "pakelo", "fuchs"))
         data["note"] = note
-        return Output(data, sourced=tuple(data.get("catalogue_codes", ())))
+        return Output(data, ("grade",) if rows else (),
+                      sourced=tuple(data.get("catalogue_codes", ())))
+
+    def _shop_oils(self, grades: list[str]) -> list[Any]:
+        """The shop's engine oils whose name states one of these grades, stocked first."""
+        wanted = set(grades)
+        rows = [row for row in self.index.rows()
+                if normalize_grade(row.name) in wanted and is_engine_oil(row.name)]
+        rows.sort(key=lambda row: ((row.store or 0) <= 0, (row.warehouse or 0) <= 0, row.name))
+        return rows[:SHOP_OILS]
 
 
 def _bounded(repository: Any) -> Any:

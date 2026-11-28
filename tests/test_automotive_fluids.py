@@ -9,7 +9,7 @@ from unittest.mock import Mock
 from automotive.fuchs import FuchsClient
 from automotive.jsfilter import JsFilterClient
 from automotive.oats import OatsCatalog
-from automotive.public_http import redact
+from automotive.public_http import PublicSourceError, redact
 from automotive.shell_oil import ShellOilClient
 from tests.test_automotive_vin_search import VEHICLE, VIN, FederationTests
 
@@ -55,6 +55,73 @@ def equipment(identifier='eng1', displacement='2.0'):
     }
 
 
+class RoutedHttp:
+    """Answers by address, so that variants read side by side get their own records."""
+
+    def __init__(self, listed, details):
+        self.listed, self.details, self.calls = listed, details, []
+
+    def reserve(self):
+        return None
+
+    def read(self, method, url, **kwargs):
+        self.calls.append(url)
+        if url.endswith('/search'):
+            return 200, json.dumps({'equipment_list': {'equipment': self.listed}}).encode()
+        detail = self.details[url.rsplit('/', 1)[1]]
+        if isinstance(detail, Exception):
+            raise detail
+        return 200, json.dumps({'equipment': detail}).encode()
+
+
+def record(*grades):
+    return {'display_name_long': 'Example Car', 'application': [{
+        'name': 'Engine', 'display_capacity': '4.2',
+        'product': [{'name': f'Helix Ultra {grade}', 'external_id': 'OIL1'} for grade in grades]}]}
+
+
+class OatsVariantTests(unittest.TestCase):
+    """Several engines: the chooser says which grades each takes, and picks none."""
+
+    def lookup(self, listed, details):
+        client = OatsCatalog('Shell', 'https://example.test/oats', 'en_GB')
+        client.http = RoutedHttp(listed, details)
+        return client.lookup(VIN, {**VEHICLE, 'model_year': 2013}), client.http
+
+    def test_variants_are_grouped_by_the_grades_they_take(self):
+        listed = [equipment('eng1'), equipment('eng2', displacement='2.4')]
+        report, _ = self.lookup(listed, {'eng1': record('0W-20'), 'eng2': record('0W-20')})
+        self.assertEqual((report['status'], report['items']), ('CONFLICTED', []))
+        self.assertEqual(report['grade_groups'], [{
+            'grades': ['0W-20'], 'engines': ['Example Car 2.0', 'Example Car 2.4'],
+            'capacities': ['4.2'], 'fuels': []}])
+        fuels = [{**equipment('eng1'), 'display_name_long': 'Example Car 2.0 (P)'},
+                 {**equipment('eng2'), 'display_name_long': 'Example Car 2.0 d (D)'}]
+        mixed, _ = self.lookup(fuels, {'eng1': record('0W-30'), 'eng2': record('0W-30')})
+        self.assertEqual(mixed['grade_groups'][0]['fuels'], ['diesel', 'petrol'])
+        report, _ = self.lookup(listed, {'eng1': record('0W-20'), 'eng2': record('5W-30')})
+        self.assertEqual([group['grades'] for group in report['grade_groups']],
+                         [['0W-20'], ['5W-30']])
+
+    def test_a_variant_that_cannot_be_read_leaves_no_groups(self):
+        listed = [equipment('eng1'), equipment('eng2', displacement='2.4')]
+        report, _ = self.lookup(
+            listed, {'eng1': record('0W-20'), 'eng2': PublicSourceError('TIME_LIMIT')})
+        self.assertEqual(report['status'], 'CONFLICTED')
+        self.assertNotIn('grade_groups', report)
+        self.assertTrue(report['partial'])
+        # One without an oil record proves nothing about the grade, and is no passing failure.
+        report, _ = self.lookup(listed, {'eng1': record('0W-20'), 'eng2': {'application': []}})
+        self.assertNotIn('grade_groups', report)
+        self.assertNotIn('partial', report)
+
+    def test_too_many_variants_are_not_read(self):
+        listed = [equipment(f'eng{n}', displacement=f'{n}.0') for n in range(10, 27)]
+        report, http = self.lookup(listed, {})
+        self.assertEqual((report['status'], len(http.calls)), ('CONFLICTED', 1))
+        self.assertNotIn('grade_groups', report)
+
+
 class OatsTests(unittest.TestCase):
     def test_one_engine_returns_oil_and_never_sends_the_vin(self):
         client = ShellOilClient()
@@ -76,14 +143,13 @@ class OatsTests(unittest.TestCase):
 
     def test_two_engines_return_no_product(self):
         client = OatsCatalog('Shell', 'https://example.test/oats', 'en_GB')
-        client.http = FakeHttp([(200, {'equipment_list': {'equipment': [
-            equipment('eng1'), equipment('eng2', displacement='2.4'),
-        ]}})])
+        client.http = RoutedHttp(
+            [equipment('eng1'), equipment('eng2', displacement='2.4')],
+            {'eng1': record('0W-20'), 'eng2': record('5W-30')})
         result = client.lookup(VIN, {**VEHICLE, 'model_year': 2013})
         self.assertEqual(result['status'], 'CONFLICTED')
         self.assertEqual(result['items'], [])
         self.assertIn('რამდენიმე ძრავა', result['clarification'])
-        self.assertEqual(len(client.http.calls), 1)
 
 
 class FuchsTests(unittest.TestCase):
