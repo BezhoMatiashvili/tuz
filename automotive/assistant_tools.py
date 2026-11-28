@@ -1694,13 +1694,23 @@ class Toolbox:
                 note = ("The oil makers' catalogues name these grades for this car, and the "
                         "shop lists no engine oil of them: say so and hand over.")
         elif split:
-            data["engine_groups"] = split
+            kinds = [_engine_kinds(group["engines"]) for group in split]
+            data["engine_groups"] = [{**group, "kinds": held}
+                                     for group, held in zip(split, kinds, strict=True)]
             decides = ("Petrol and diesel engines are listed, and a diesel's oil must also "
                        "state its standard: ask once petrol or diesel" if by_fuel else
                        "The engine decides the grade (engine_groups). Ask once, with one option "
                        "for each entry of engine_groups: each option covers every engine of its "
                        "own entry and none of another's, worded for a customer (new or old "
                        "body and its years, hybrid, power, litres)")
+            # Entries that hold the same kind of engine cannot be told apart by that word.
+            twice = [kind for kind in ("petrol, not hybrid", "diesel")
+                     if sum(kind in held for held in kinds) > 1]
+            if twice and not by_fuel:
+                decides += (f". Several entries hold {twice[0]} engines (see kinds): give each "
+                            "of them its own option for those, named by what differs (new or "
+                            "old body and its years, power); a hybrid option never stands for "
+                            "the others")
             note = (f"{decides}, unless the conversation already says; then call oil_guide "
                     "again with it.")
         elif variants:
@@ -1747,6 +1757,19 @@ class Toolbox:
                 if normalize_grade(row.name) in wanted and is_engine_oil(row.name)]
         rows.sort(key=lambda row: ((row.store or 0) <= 0, (row.warehouse or 0) <= 0, row.name))
         return rows[:SHOP_OILS]
+
+
+def _engine_kinds(titles: list[str]) -> list[str]:
+    """What a customer would call the engines that a chooser's titles name."""
+    kinds = set()
+    for title in titles:
+        if "hybrid" in title.casefold():
+            kinds.add("hybrid")
+        elif "(D)" in title:
+            kinds.add("diesel")
+        elif "(P)" in title:
+            kinds.add("petrol, not hybrid")
+    return sorted(kinds)
 
 
 def _bounded(repository: Any) -> Any:

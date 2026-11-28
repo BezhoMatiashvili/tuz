@@ -3049,6 +3049,17 @@ class OilGuideRowsTests(unittest.TestCase):
             dialogue={"audience": "public", "memory": second["memory"]})
         self.assertIn("one option for each", tool_results(script.requests[1])[0][0]["note"])
 
+    def test_groups_that_hold_the_same_kind_of_engine_ask_an_option_each(self):
+        new = ["CAMRY (_V7_) 2.5 Hybrid 160kW (A25A-FXS) (P) (2018)", "CAMRY 2.5 152kW (P) (2018)"]
+        old = ["CAMRY 2.5 150kW (2AR-FE) (P) (2018)"]
+        content = self.guide(self.engines("Shell", (["0W-16"], new), (["0W-20"], old)))
+        self.assertEqual([group["kinds"] for group in content["engine_groups"]],
+                         [["hybrid", "petrol, not hybrid"], ["petrol, not hybrid"]])
+        self.assertIn("a hybrid option never stands for the others", content["note"])
+        # A hybrid against petrol engines needs no such warning.
+        content = self.guide(self.engines("Shell", (["0W-16"], new[:1]), (["0W-20"], old)))
+        self.assertNotIn("a hybrid option never stands", content["note"])
+
     def test_a_catalogue_without_an_engine_code_still_answers_a_stated_one(self):
         fuchs = {"provider": "Fuchs", "status": "PROVISIONAL", "items": [
             {"kind": "oil", "product_name": "Titan 0W-20", "viscosity": "0W-20"}]}
