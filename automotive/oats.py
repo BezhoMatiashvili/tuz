@@ -247,6 +247,16 @@ class OatsCatalog:
         # supplier's (3.0 vs 3.5 L for one engine), so it is only a last tie-breaker.
         matched = narrow(matched, lambda item: item.get('display_name_long') or item.get('model'),
                          vehicle)
+        # Other makers' engine codes stand in brackets ("(2AR-FE)"), which `by_engine` does not
+        # read: keep the variants that carry the stated one.
+        if code := str(vehicle.get('engine_code') or '').strip():
+            bracketed = re.compile(r'\(' + re.escape(code) + r'\)', re.IGNORECASE)
+            matched = [item for item in matched
+                       if bracketed.search(str(item.get('display_name_long') or ''))] or matched
+        # A hybrid can take another oil than its sister engines, and only some labels say so.
+        if str(vehicle.get('fuel') or '').casefold() == 'hybrid':
+            matched = [item for item in matched if 'hybrid' in str(
+                item.get('display_name_long') or item.get('model')).casefold()] or matched
         wanted = _number(vehicle.get('displacement_l'))
         if wanted is None or len(matched) < 2 or any(
                 self._trim_decided(item, vehicle) for item in matched):

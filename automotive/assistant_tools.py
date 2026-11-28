@@ -1720,19 +1720,13 @@ class Toolbox:
             asked_before = self.engine_split_car == self.engine_asked_car
         else:
             self.engine_split_car = ""
-        if asked_before:
-            note = ("You already asked which engine this car has: do not ask again. Read every "
-                    "engine title in engine_groups: only if what the customer said can mean "
-                    "engines of one entry alone (a plain petrol answer also means every "
-                    "non-hybrid petrol title in the other entries), offer the shop's oils of "
-                    "that entry's grades from rows, as spec. Otherwise offer no oil and say the "
-                    "shop's team will check which fits, with outcome handoff and a staff note "
-                    "naming the car.")
-            if split:
-                rows = self._shop_oils(sorted({grade for group in split
-                                               for grade in group["grades"]}))
-                if rows:
-                    data["rows"] = Table(rows, [[normalize_grade(row.name)] for row in rows])
+        if asked_before and self.audience == "public":
+            # One question is all a customer gets: nothing is left to guess an oil from.
+            data.pop("engine_groups", None)
+            data.pop("engine_variants", None)
+            note = ("You already asked which engine this car has, and the grade still depends "
+                    "on it. Do not ask again: offer no oil and say the shop's team will check "
+                    "which fits, with outcome handoff and a staff note naming the car.")
         elif undecided and not split:
             note += (" The selectors list several engines. If the conversation decides the "
                      "engine, call oil_guide again with trim, engine_code, engine_litres "

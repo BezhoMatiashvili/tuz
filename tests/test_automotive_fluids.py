@@ -115,6 +115,30 @@ class OatsVariantTests(unittest.TestCase):
         self.assertNotIn('grade_groups', report)
         self.assertNotIn('partial', report)
 
+    def test_a_stated_hybrid_keeps_the_hybrid_variants(self):
+        listed = [{**equipment('eng1'), 'display_name_long': 'Example Car 2.0 Hybrid (P)'},
+                  {**equipment('eng2'), 'display_name_long': 'Example Car 2.0 (P)'}]
+        client = OatsCatalog('Shell', 'https://example.test/oats', 'en_GB')
+        client.http = RoutedHttp(listed, {'eng1': record('0W-16'), 'eng2': record('0W-20')})
+        report = client.lookup(VIN, {**VEHICLE, 'model_year': 2013, 'fuel': 'hybrid'})
+        self.assertEqual((report['status'], report['items'][0]['viscosity']),
+                         ('PROVISIONAL', '0W-16'))
+        # No variant says hybrid: nothing is dropped on that word.
+        listed[0]['display_name_long'] = 'Example Car 2.0 e (P)'
+        report, _ = self.lookup(listed, {'eng1': record('0W-16'), 'eng2': record('0W-20')})
+        self.assertEqual(report['status'], 'CONFLICTED')
+
+    def test_a_stated_engine_code_in_brackets_keeps_its_variants(self):
+        listed = [{**equipment('eng1'), 'display_name_long': 'Example Car 2.0 (2AR-FE) (P)'},
+                  {**equipment('eng2'), 'display_name_long': 'Example Car 2.0 (P)'}]
+        client = OatsCatalog('Shell', 'https://example.test/oats', 'en_GB')
+        client.http = RoutedHttp(listed, {'eng1': record('0W-20'), 'eng2': record('0W-16')})
+        report = client.lookup(VIN, {**VEHICLE, 'model_year': 2013, 'engine_code': '2ar-fe'})
+        self.assertEqual((report['status'], report['items'][0]['viscosity']),
+                         ('PROVISIONAL', '0W-20'))
+        report, _ = self.lookup(listed, {'eng1': record('0W-20'), 'eng2': record('0W-16')})
+        self.assertEqual(report['status'], 'CONFLICTED')
+
     def test_too_many_variants_are_not_read(self):
         listed = [equipment(f'eng{n}', displacement=f'{n}.0') for n in range(10, 27)]
         report, http = self.lookup(listed, {})

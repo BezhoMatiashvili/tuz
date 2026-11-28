@@ -3029,23 +3029,24 @@ class OilGuideRowsTests(unittest.TestCase):
         asked = done(reply="ერთი რამ.", question="კორპუსი ახალია თუ ძველი?",
                      options=["ახალი", "ძველი"], outcome="asked")
         script = Script(says(call), asked)
-        first = run(service(script, rows=self.rows), "Camry 2018 ზეთი", search_service=source)
+        first = run(service(script, rows=self.rows), "Camry 2018 ზეთი", search_service=source,
+                    dialogue={"audience": "public"})
         self.assertIn("one option for each", tool_results(script.requests[1])[0][0]["note"])
         script = Script(says(call), done())
         second = run(service(script, rows=self.rows), "ბენზინი", search_service=source,
-                     dialogue={"memory": first["memory"]})
+                     dialogue={"audience": "public", "memory": first["memory"]})
         content = tool_results(script.requests[1])[0][0]
         self.assertIn("already asked", content["note"])
         self.assertIn("handoff", content["note"])
-        # An answer that fits one engine group can still be served: both grades' oils come.
-        grades = {item[-1] for item in content["rows"]}
-        self.assertTrue({"0W-16", "0W-20"} & grades, grades)
+        # Nothing is left to guess from: no engines, no grades, no oils.
+        for key in ("engine_groups", "engine_variants", "rows", "needs"):
+            self.assertNotIn(key, content)
         self.assertNotIn("engine_asked", json.dumps(context_of(script.requests[0])))
         # Another car is asked about afresh.
         other = use("oil_guide", car(make="Toyota", model="Corolla", year=2018))
         script = Script(says(other), done())
         run(service(script, rows=self.rows), "Corolla 2018 ზეთიც", search_service=source,
-            dialogue={"memory": second["memory"]})
+            dialogue={"audience": "public", "memory": second["memory"]})
         self.assertIn("one option for each", tool_results(script.requests[1])[0][0]["note"])
 
     def test_a_catalogue_without_an_engine_code_still_answers_a_stated_one(self):
