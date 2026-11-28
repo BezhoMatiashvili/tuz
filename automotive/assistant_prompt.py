@@ -29,6 +29,9 @@ known. Then one JSON object for this turn:
 - followup: the oil grade or amount the customer named earlier. previous_oil identifies the
   single oil you last offered when the customer refers back to it. requested_oil_grades gives
   the standard spelling of grades the customer wrote in shorthand: use it for stock searches.
+  picked_engine: your last question asked which engine, the customer chose this option, and
+  these are the grades the oil maker names for that engine (its shop oils are in rows). Offer
+  them as spec and ask nothing more about the engine.
 - your_question: the question you asked last turn with its options. tapped_option is set when
   the customer tapped one of those buttons.
 - your_suggestions: the next-step buttons you offered last turn.
@@ -840,6 +843,10 @@ FIELD_DESCRIPTIONS = {
     "group": "The heading these cards are listed under, in the customer's language.",
     "question": "The one question for the customer, in their language, or \"\" when you "
                 "are not asking.",
+    "option_groups": "Only when oil_guide returned engine_groups and your question asks which "
+                     "engine: one number per option, the engine group it stands for, or 0 for "
+                     "an option such as not sure. Every group needs an option of its own. "
+                     "Otherwise [].",
     "options": "The answer buttons of the question: 2 to 8 button texts of at most 40 "
                "characters, in the customer's language. [] when you are not asking.",
     "suggestions": "One to three button texts for optional next steps when you are not "

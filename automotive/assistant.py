@@ -22,6 +22,7 @@ the fixed part of the prompt ahead of the first message (``prepare``).
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import json
@@ -266,6 +267,37 @@ def _brief(options: list[dict]) -> list:
     return [option if option.get("meaning") else option["label"] for option in options]
 
 
+_HYBRID_WORD = re.compile(r"ჰიბრიდ|hybrid|гибрид", re.IGNORECASE)
+
+
+def _unmapped(options: list[dict], numbers: list, groups: list[dict]) -> str:
+    """Why an engine question's buttons cannot be tied to the engine groups, or ""."""
+    if len(numbers) != len(options) or not all(
+            type(number) is int and 0 <= number <= len(groups) for number in numbers):
+        return "option_groups needs one number per option: 0 or an engine group number."
+    for number, group in enumerate(groups, 1):
+        own = [option["label"] for option, given in zip(options, numbers, strict=True)
+               if given == number]
+        if not own:
+            return f"No option stands for engine group {number}."
+        elsewhere = {kind for other_number, other in enumerate(groups, 1)
+                     if other_number != number for kind in other["kinds"]}
+        shared = [kind for kind in group["kinds"] if kind != "hybrid" and kind in elsewhere]
+        if "hybrid" in group["kinds"] and shared and all(map(_HYBRID_WORD.search, own)):
+            return (f"Engine group {number} also holds {shared[0]} engines, and only a hybrid "
+                    "option stands for it.")
+    return ""
+
+
+def _group_pick(group: dict) -> dict:
+    """What a button for this engine group settles: its grades, and one fill quantity."""
+    pick: dict = {"grades": group["grades"]}
+    if len(filled := set(group["capacities"])) == 1:
+        with contextlib.suppress(ValueError):
+            pick["capacity_l"] = float(str(filled.pop()).replace(",", "."))
+    return pick
+
+
 def _question(value: Any) -> dict | None:
     """A stored question: its text and at least two options."""
     if not isinstance(value, dict):
@@ -381,6 +413,8 @@ class AssistantTurn:
         choice = state.get("choice")
         self.choice = choice if isinstance(choice, int) and not isinstance(choice, bool) else None
         self.question = _question(state.get("pending")) or _question(self.memory.get("question"))
+        self.engine_picks = None  # what each button of an open engine question stands for
+        self.mapping_rejected = False
         remembered = self.memory.get("language")
         self.replied_in = remembered if remembered in LANGUAGES else ""
         self.language = self.replied_in or (language if language in LANGUAGES else "ka")
@@ -1040,6 +1074,9 @@ class AssistantTurn:
         engine_changed = followup.conflicts(previous, {**stated, **engine}, followup.DETAILS)
         if reset:
             self._clear_fitment()
+        # Kept apart from the follow-up facts: the answer may itself change a detail.
+        picks = saved.get("engine_picks")
+        self.engine_picks = picks if self.question and isinstance(picks, dict) else None
         vehicle = {} if reset else dict(previous)
         # Another model, year or engine: the details remembered were the old one's.
         if engine_changed or followup.conflicts(previous, stated):
@@ -1145,6 +1182,11 @@ class AssistantTurn:
             focus["requested_oil_grades"] = oil_grades
         focus.pop("vehicle", None)  # the car is what the model reads in the conversation
         self.toolbox.engine_asked_car = focus.pop("engine_asked", "")
+        self.toolbox.engine_picked, answer = self._picked_engine(options)
+        if picked := self.toolbox.engine_picked:
+            focus["picked_engine"] = {"answer": answer, **{
+                key: picked[key] for key in ("grades", "capacity_l") if key in picked}}
+            known[:0] = [row.id for row in self.toolbox._shop_oils(picked["grades"])]
         product_id = focus.pop("oil_product", None)
         if (product_id and followup.refers_to_oil(self.message)
                 and self.toolbox.index.row(product_id) is not None):
@@ -1212,6 +1254,17 @@ class AssistantTurn:
         now = set(typed_tokens(self.message))
         tokens = [token for token in typed_tokens(earlier) if token not in now]
         return self.toolbox.typed_numbers(tokens, [], quiet=True) if tokens else None
+
+    def _picked_engine(self, options: list[dict]) -> tuple[dict | None, str]:
+        """The engine group behind the answer to an open engine question: a tapped button, or
+        its words typed."""
+        if not (self.engine_picks and self.question):
+            return None, ""
+        labels = [option["label"] for option in options]
+        answer = (labels[self.choice - 1] if self.choice and 0 < self.choice <= len(labels)
+                  else self.message.strip())
+        found = (self.engine_picks.get("options") or {}).get(answer) if answer in labels else None
+        return ({"car": self.engine_picks.get("car"), **found} if found else None), answer
 
     def _suggestions(self) -> list[dict]:
         return [option for option in _options(self.memory.get("suggestions"))
@@ -1408,6 +1461,21 @@ class AssistantTurn:
             if len(option["label"]) > LABEL_LIMIT:
                 bad(f"Suggestion label \"{option['label']}\" has {len(option['label'])} "
                     f"characters; the limit is {LABEL_LIMIT}.", "Shorten it.")
+        picks = None
+        groups = self.toolbox.engine_split_groups if self.toolbox else []
+        numbers = raw.get("option_groups")
+        if (self.audience == "public" and question and groups and isinstance(numbers, list)
+                and (any(numbers) or followup.engine_question(question))):
+            problem = _unmapped(options, numbers, groups)
+            if not problem:
+                picks = {"car": self.toolbox.engine_split_car, "options": {
+                    option["label"]: _group_pick(groups[number - 1])
+                    for option, number in zip(options, numbers, strict=True) if number}}
+            elif not self.mapping_rejected and self.usage["model_requests"] < self.max_requests - 1:
+                # Sent back once. Asked again unmapped, a tap hands over as before.
+                self.mapping_rejected = True
+                bad(problem, "Send option_groups with one number per option: the engine group "
+                    "of oil_guide it stands for, 0 for not sure. Every group needs an option.")
         leaked = self._handles(reply, question, *(option["label"] for option in options),
                                *(option["label"] for option in suggestions),
                                *(item.get(key) for item in named for key in ("reason", "group")))
@@ -1445,7 +1513,8 @@ class AssistantTurn:
             "question": {"text": question, "options": options} if question else None,
             "suggestions": suggestions[:MAX_SUGGESTIONS],
             "notes": _text(raw.get("notes"), NOTES_LIMIT), "outcome": raw["outcome"],
-            "staff": staff, "oil_quote": raw.get("oil_quote"), "engine_choices": engine_choices}
+            "staff": staff, "oil_quote": raw.get("oil_quote"), "engine_choices": engine_choices,
+            "engine_picks": picks}
 
     def _staff(self, value: Any, bad: Any) -> dict:
         """``finish.staff``: what the shop's staff are told about this turn (dashboard > Live
@@ -1849,6 +1918,11 @@ class AssistantTurn:
         # A question asked while an oil look-up depended on the engine was about the engine.
         if asked and toolbox and toolbox.engine_split_car:
             context["engine_asked"] = toolbox.engine_split_car
+        # A failed turn leaves the question open, and what its buttons stand for with it.
+        picks = decision.get("engine_picks") or (
+            self.engine_picks if asked is self.question else None)
+        if asked and picks:
+            context["engine_picks"] = picks
         return {
             "language": decision["language"], "notes": decision["notes"],
             "car_label": decision["car_label"],

@@ -311,6 +311,7 @@ def tool_definitions(ttl: str = "") -> list[dict]:
             },
             "question": _field("string", "question"),
             "options": _strings("options"),
+            "option_groups": _field("array", "option_groups", items={"type": "integer"}),
             "suggestions": _strings("suggestions"),
             "reply": _field("string", "reply"),
             "notes": _field("string", "notes"),
@@ -474,6 +475,9 @@ class Toolbox:
         # oil look-up left depending on the engine.
         self.engine_asked_car = ""
         self.engine_split_car = ""
+        # The engine groups a question may offer as buttons, and the group the customer chose.
+        self.engine_split_groups: list[dict] = []
+        self.engine_picked: dict | None = None
         self.customer_vehicle_text = ""
         self.customer_message = ""
         self._crawled_down = False
@@ -1498,6 +1502,10 @@ class Toolbox:
             return Output({"status": "specification", "needs": reference})
         return None
 
+    def _car_key(self, configuration: dict) -> str:
+        car = configuration if configuration.get("make") else self.decoded_vehicle
+        return "|".join(plain(car.get(key)) for key in assistant_followup.IDENTITY)
+
     def _decoded_car(self, configuration: dict) -> bool:
         return all(self.decoded_vehicle.get(key)
                    and plain(configuration.get(key)) == plain(self.decoded_vehicle[key])
@@ -1573,6 +1581,18 @@ class Toolbox:
             return Output({"status": "vehicle_conflict", "note": (
                 "The VIN describes an engine the customer says is not installed. Offer no oil: "
                 "say the shop's team will check which fits, with outcome handoff.")})
+        # The customer chose this car's engine on a button: its group's grades are the answer.
+        picked = self.engine_picked
+        if picked and picked["car"] == self._car_key(configuration):
+            self.engine_split_car, self.engine_split_groups = "", []
+            rows = self._shop_oils(picked["grades"])
+            needs = {key: picked[key] for key in ("grades", "capacity_l") if key in picked}
+            data = {"status": "answered", "needs": needs, "note": (
+                "The customer's choice names the engine. Offer the shop's engine oils of these "
+                "grades, listed in rows, as spec; ask nothing more about the engine.")}
+            if rows:
+                data["rows"] = Table(rows, [[normalize_grade(row.name)] for row in rows])
+            return Output(data, ("grade",) if rows else ())
         # A code the customer never gave verifies nothing, and the catalogues are asked without
         # it: it would hide the other engines they list.
         if configuration.get("engine_code") and not self._confirmed_oil_vehicle(
@@ -1643,8 +1663,8 @@ class Toolbox:
                               "engines": [name for group in groups for name in group["engines"]]})
                 continue
             if not common:
-                split.extend({key: group[key] for key in ("grades", "engines")}
-                             for group in groups)
+                split.extend({key: group[key] for key in ("grades", "engines", "capacities")
+                              if key in group} for group in groups)
                 continue
             filled = {value for group in groups for value in group.get("capacities") or [None]}
             try:
@@ -1695,8 +1715,9 @@ class Toolbox:
                         "shop lists no engine oil of them: say so and hand over.")
         elif split:
             kinds = [_engine_kinds(group["engines"]) for group in split]
-            data["engine_groups"] = [{**group, "kinds": held}
-                                     for group, held in zip(split, kinds, strict=True)]
+            data["engine_groups"] = [{"group": number, **group, "kinds": held}
+                                     for number, (group, held)
+                                     in enumerate(zip(split, kinds, strict=True), 1)]
             decides = ("Petrol and diesel engines are listed, and a diesel's oil must also "
                        "state its standard: ask once petrol or diesel" if by_fuel else
                        "The engine decides the grade (engine_groups). Ask once, with one option "
@@ -1713,6 +1734,15 @@ class Toolbox:
                             "the others")
             note = (f"{decides}, unless the conversation already says; then call oil_guide "
                     "again with it.")
+            if not by_fuel:
+                note += (" In finish, option_groups gives each option the number of the group "
+                         "it stands for, 0 for not sure.")
+                for number, held in enumerate(kinds, 1):
+                    if "hybrid" in held and any(
+                            kind != "hybrid" and kind in other for kind in held
+                            for place, other in enumerate(kinds, 1) if place != number):
+                        note += (f" Group {number} needs two options, both with its number: one "
+                                 "for its hybrid engines and one for its other engines.")
         elif variants:
             data["variants"] = variants
             note = ("The selectors disagree. Decide by the engine the customer has, or ask "
@@ -1722,12 +1752,15 @@ class Toolbox:
                     "model name, call again with it; otherwise hand over to the shop's team, "
                     "or go on with the grade the customer names.")
         asked_before = False
+        self.engine_split_groups = []
         if undecided:
             data["engine_variants"] = undecided
-            car = configuration if configuration.get("make") else self.decoded_vehicle
-            self.engine_split_car = "|".join(
-                plain(car.get(key)) for key in assistant_followup.IDENTITY)
+            self.engine_split_car = self._car_key(configuration)
             asked_before = self.engine_split_car == self.engine_asked_car
+            if split and not by_fuel and not asked_before:
+                self.engine_split_groups = [
+                    {"grades": group["grades"], "kinds": _engine_kinds(group["engines"]),
+                     "capacities": group.get("capacities") or []} for group in split]
         else:
             self.engine_split_car = ""
         if asked_before and self.audience == "public":

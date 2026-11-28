@@ -1797,8 +1797,8 @@ class ButtonTests(unittest.TestCase):
                          ["უკანა ხუნდები", "დისკები"])
         schema = tool_definitions()[-1]["input_schema"]["properties"]
         self.assertEqual(list(schema), ["language", "car_label", "products", "oil_quote",
-                                        "question", "options", "suggestions", "reply", "notes",
-                                        "outcome", "staff"])
+                                        "question", "options", "option_groups", "suggestions",
+                                        "reply", "notes", "outcome", "staff"])
         self.assertEqual((schema["question"]["type"], schema["options"]["items"],
                           schema["suggestions"]["items"]),
                          ("string", {"type": "string"}, {"type": "string"}))
@@ -3083,6 +3083,111 @@ class OilGuideRowsTests(unittest.TestCase):
         self.assertEqual(self.guide(report)["needs"]["capacity_l"], 4.2)
         report["grade_groups"][0]["capacities"] = ["4.4", "6.1"]
         self.assertNotIn("capacity_l", self.guide(report)["needs"])
+
+
+class EngineButtonTests(unittest.TestCase):
+    """Each engine button stands for one group of engines, and a tap gets that group's oil."""
+
+    NEW = ["CAMRY (_V7_) 2.5 Hybrid 160kW (A25A-FXS) (P) (2018)", "CAMRY 2.5 152kW (P) (2018)"]
+    OLD = ["CAMRY 2.5 150kW (2AR-FE) (P) (2018)"]
+    OPTIONS = ["ჰიბრიდი", "ახალი ძარა, ბენზინი", "ძველი ძარა, ბენზინი", "არ ვიცი"]
+
+    @classmethod
+    def setUpClass(cls):
+        names = json.loads((Path(__file__).parent / "fixtures" / "shop_oil_names.json")
+                           .read_text("utf-8"))
+        cls.rows = [row(f"o{number}", str(5000 + number), oil["name"], oil["fits"],
+                        oil["brand"].upper(), "", "", "40", "2", "0")
+                    for number, oil in enumerate(names)]
+
+    def setUp(self):
+        self.source = Search(fluids=[OilGuideRowsTests.engines(
+            "Shell", (["0W-16"], self.NEW), (["0W-20"], self.OLD))])
+        self.call = use("oil_guide", car(make="Toyota", model="Camry", year=2018))
+
+    def ask(self, options, numbers, *again, audience="public"):
+        step = done(reply="ერთი რამ.", question="რომელი ძრავია?", options=options,
+                    option_groups=numbers, outcome="asked")
+        script = Script(says(self.call), step, *again)
+        result = run(service(script, rows=self.rows), "Toyota Camry 2018 ზეთი",
+                     search_service=self.source, dialogue={"audience": audience})
+        return result, script
+
+    def answer(self, first, message, choice=None):
+        script = Script(says(self.call), done())
+        dialogue = {"audience": "public", "memory": first["memory"]}
+        if choice:
+            dialogue["choice"] = choice
+        before = len(self.source.started)
+        run(service(script, rows=self.rows), message, search_service=self.source,
+            dialogue=dialogue)
+        return (context_of(script.requests[0]), tool_results(script.requests[1])[0][0],
+                len(self.source.started) - before)
+
+    def test_a_tap_gets_the_oil_of_the_group_its_button_stands_for(self):
+        first, _ = self.ask(self.OPTIONS, [1, 1, 2, 0])
+        self.assertEqual(first["diagnostics"]["corrections"], [])
+        for choice, grade in ((1, "0W-16"), (2, "0W-16"), (3, "0W-20")):
+            context, content, looked_up = self.answer(first, self.OPTIONS[choice - 1], choice)
+            self.assertEqual(context["followup"]["picked_engine"]["grades"], [grade])
+            self.assertEqual((content["status"], content["needs"]["grades"]),
+                             ("answered", [grade]))
+            self.assertEqual(looked_up, 0)
+            for table in (content["rows"], context["rows"]["rows"]):
+                self.assertTrue(table)
+                for item in table:
+                    self.assertIn(grade.replace("-", ""), item[1].replace("-", ""))
+        # The same words typed are the same answer.
+        context, _, _ = self.answer(first, self.OPTIONS[2])
+        self.assertEqual(context["followup"]["picked_engine"]["grades"], ["0W-20"])
+
+    def test_the_note_says_which_group_needs_two_buttons(self):
+        _, script = self.ask(self.OPTIONS, [1, 1, 2, 0])
+        note = tool_results(script.requests[1])[0][0]["note"]
+        self.assertIn("Group 1 needs two options", note)
+        self.assertNotIn("Group 2 needs two options", note)
+
+    def test_not_sure_and_other_words_still_hand_over(self):
+        first, _ = self.ask(self.OPTIONS, [1, 1, 2, 0])
+        for message, choice in (("არ ვიცი", 4), ("ბენზინი", None)):
+            context, content, _ = self.answer(first, message, choice)
+            self.assertNotIn("picked_engine", context.get("followup", {}))
+            self.assertIn("handoff", content["note"])
+
+    def test_a_group_without_a_button_for_its_other_engines_is_sent_back_once(self):
+        live = ["2.5 ჰიბრიდი", "2.5 ბენზინი (2AR-FE)", "3.5 ბენზინი", "2.0 ბენზინი"]
+        bad = done(reply="ერთი რამ.", question="რომელი ძრავია?", options=live,
+                   option_groups=[1, 2, 0, 0], outcome="asked")
+        result, script = self.ask(live, [1, 2, 0, 0], bad)
+        self.assertEqual(len(result["diagnostics"]["corrections"]), 1)
+        self.assertIn("hybrid", result["diagnostics"]["corrections"][0][0])
+        # Sent again unchanged it goes out, with no mapping: a tap then hands over.
+        self.assertEqual(result["question"]["text"], "რომელი ძრავია?")
+        self.assertNotIn("engine_picks", result["memory"]["followup"])
+
+    def test_every_group_needs_a_button(self):
+        self.source.snapshot["fluids"] = [OilGuideRowsTests.engines(
+            "Shell", (["0W-16"], self.NEW[:1]), (["0W-20"], self.OLD),
+            (["5W-30"], ["CAMRY 3.5 220kW (P) (2018)"]))]
+        options = ["ჰიბრიდი", "2.5", "3.5"]
+        good, _ = self.ask(options, [1, 2, 3])
+        self.assertEqual(good["diagnostics"]["corrections"], [])
+        context, _, _ = self.answer(good, "3.5", 3)
+        self.assertEqual(context["followup"]["picked_engine"]["grades"], ["5W-30"])
+        again = done(reply="ერთი რამ.", question="რომელი ძრავია?", options=options,
+                     option_groups=[1, 2, 2], outcome="asked")
+        short, _ = self.ask(options, [1, 2, 2], again)
+        self.assertEqual(len(short["diagnostics"]["corrections"]), 1)
+
+    def test_another_car_and_staff_are_untouched(self):
+        first, _ = self.ask(self.OPTIONS, [1, 1, 2, 0])
+        script = Script(says(use("oil_guide", car(make="Toyota", model="Corolla", year=2018))),
+                        done())
+        run(service(script, rows=self.rows), self.OPTIONS[2], search_service=self.source,
+            dialogue={"audience": "public", "memory": first["memory"], "choice": 3})
+        self.assertNotEqual(tool_results(script.requests[1])[0][0].get("status"), "answered")
+        staff, _ = self.ask(self.OPTIONS, [0, 0, 0, 0], audience="staff")
+        self.assertEqual(staff["diagnostics"]["corrections"], [])
 
 
 class AnswerToEngineQuestionTests(unittest.TestCase):
