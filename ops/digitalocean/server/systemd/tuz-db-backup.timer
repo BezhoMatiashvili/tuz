@@ -1,0 +1,10 @@
+# Every night at 02:17 Tbilisi time. Enabled by ops/digitalocean/server/bootstrap.
+[Unit]
+Description=tuz: nightly database backup
+
+[Timer]
+OnCalendar=*-*-* 02:17:00 Asia/Tbilisi
+Persistent=true
+
+[Install]
+WantedBy=timers.target

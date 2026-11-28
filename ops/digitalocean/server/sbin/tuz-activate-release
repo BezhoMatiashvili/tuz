@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Runs ON THE SERVER as root; ops/digitalocean/deploy pipes a release archive into it.
+#
+#   tuz-activate-release <name> < release.tar.gz
+#
+# <name> is a full commit id, or worktree-YYYYMMDD-HHMMSS for a rehearsal. It unpacks the
+# code to /opt/tuz/releases/<name>, installs the locked dependencies, applies pending
+# database migrations and the role grants, points /opt/tuz/current at the release and
+# restarts the services that are running. A release already on the server is activated
+# again without unpacking, which is how to go back to an earlier one. Migrations are not
+# undone by going back.
+set -euo pipefail
+name="${1:?usage: tuz-activate-release <name> < release.tar.gz}"
+[[ "$name" =~ ^([0-9a-f]{40}|worktree-[0-9]{8}-[0-9]{6})$ ]] \
+    || { echo "error: not a release name: $name" >&2; exit 2; }
+[[ -f /etc/tuz/admin.env ]] \
+    || { echo "error: /etc/tuz/admin.env is missing: run push-env first" >&2; exit 1; }
+# shellcheck disable=SC1091
+. /etc/tuz/postgres.env
+
+release="/opt/tuz/releases/$name"
+# Interpreters and the download cache live outside /root so the service accounts can read
+# the interpreter a release's virtual environment points at.
+export UV_PYTHON_INSTALL_DIR=/opt/tuz/python UV_CACHE_DIR=/var/cache/tuz-uv UV_LINK_MODE=copy
+# The interpreter the laptop develops and tests with (.venv/bin/python -V there), fetched by
+# uv rather than Ubuntu's own 3.12: the same reasoning as PostgreSQL using the laptop's image.
+export UV_PYTHON=3.12.12 UV_PYTHON_PREFERENCE=only-managed
+
+if [[ -d "$release" ]]; then
+    echo "release $name is already on the server: activating it again"
+    cat > /dev/null
+else
+    trap 'rm -rf "$release"' ERR
+    mkdir -p "$release"
+    tar -xz -C "$release" --no-same-owner
+    [[ -f "$release/uv.lock" && -d "$release/migrations" ]] \
+        || { echo "error: the archive is not a release of this project" >&2; false; }
+    # The services keep their files outside the release, so a new release starts with them.
+    ln -sfn /var/lib/tuz/data "$release/data"
+    (cd "$release" && uv sync --locked --no-dev --compile-bytecode)
+    chmod -R go+rX "$release"
+    trap - ERR
+fi
+
+echo "applying database migrations..."
+systemd-run --quiet --wait --collect --pipe \
+    -p EnvironmentFile=/etc/tuz/admin.env -p WorkingDirectory="$release" \
+    "$release/.venv/bin/python" -m warehouse_sync --migrate
+# New tables need their grants for the service roles; the file is written to be run again.
+docker exec -i tuz-postgres-1 psql -X -q -v ON_ERROR_STOP=1 \
+    -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "$release/ops/sql/provision_automotive_roles.sql"
+
+previous="$(readlink /opt/tuz/current 2>/dev/null || true)"
+ln -sfn "$release" /opt/tuz/current.next
+mv -Tf /opt/tuz/current.next /opt/tuz/current
+[[ -z "$previous" || "$previous" == "$release" ]] || echo "$previous" > /opt/tuz/previous
+echo "current release: $name"
+
+systemctl try-restart tuz-site.service tuz-meta-receiver.service tuz-messenger.service \
+    tuz-parts-crawler.service
+
+# Keep the five newest releases besides the one in use and the one before it.
+find /opt/tuz/releases -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -rn \
+    | awk 'NR > 5 { print $2 }' | while IFS= read -r old; do
+        [[ "$old" == "$release" || "$old" == "$previous" ]] || rm -rf "$old"
+    done

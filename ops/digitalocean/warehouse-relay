@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Runs ON THE LAPTOP, kept alive by tuz-warehouse-relay.service. The warehouse answers only
+# to addresses in Georgia: from the Droplet every connection times out (checked 2026-11-22).
+# This keeps one SSH connection open to the Droplet and lends it the laptop's route: the
+# Droplet's 127.0.0.1:<port> leads through this laptop to the warehouse, so the sync, its
+# database login and its schedule all live on the server and the warehouse still sees the
+# laptop's address. The port is open on the server's loopback only.
+#
+# The sync works only while this laptop is on and online, as it did before the move. The
+# lasting fix is for whoever runs the warehouse to allow the Droplet's address; then set
+# TUZ_DO_WAREHOUSE_RELAY_PORT to empty, run push-env again and disable this unit.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ops/digitalocean/settings.sh
+. "$here/settings.sh"
+root="$(tuz_repo_root)"
+[[ -n "$TUZ_DO_WAREHOUSE_RELAY_PORT" ]] || tuz_die "TUZ_DO_WAREHOUSE_RELAY_PORT is empty: no relay wanted"
+
+# The warehouse's address stays in the private .env; it is not written into any unit file.
+base="$(grep -E '^WAREHOUSE_BASE_URL=' "$root/.env" | tail -n 1 | cut -d= -f2- | tr -d "\"' ")"
+target="$(sed -E 's#^https?://##; s#/.*$##' <<<"$base")"
+[[ "$target" =~ ^[A-Za-z0-9.-]+:[0-9]+$ ]] || tuz_die "WAREHOUSE_BASE_URL in .env has no host:port"
+
+host="$(tuz_host)"
+exec ssh "${tuz_ssh_options[@]}" -o ExitOnForwardFailure=yes -N \
+    -R "127.0.0.1:$TUZ_DO_WAREHOUSE_RELAY_PORT:$target" "root@$host"

@@ -1,0 +1,49 @@
+# The Garage 1886 site and dashboard on the Droplet (docs/garage-site.md), behind nginx.
+# Installed by ops/digitalocean/server/bootstrap; started with `tuz-services start web`.
+# One process only: conversations, rate limits and the sign-in throttle live in memory.
+[Unit]
+Description=Garage 1886 site and dashboard (127.0.0.1:8767, behind nginx)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=tuz-site
+Group=tuz-site
+SupplementaryGroups=tuz-data
+WorkingDirectory=/opt/tuz/current
+Environment=PYTHONUNBUFFERED=1
+# Written by ops/digitalocean/push-env: the site's own settings and database logins, never
+# the warehouse writer, the migration login or the Messenger worker's login.
+EnvironmentFile=/etc/tuz/site.env
+ExecStart=/opt/tuz/current/.venv/bin/python -m automotive --port 8767
+# A start before the database container is up is simply tried again.
+Restart=on-failure
+RestartSec=5
+UMask=0027
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+# /opt/tuz/current/data points here. The chat logs and the caches are all the site writes.
+ReadWritePaths=/var/lib/tuz/data
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+# No MemoryDenyWriteExecute: with a uv-managed CPython every new thread then fails to start
+# (checked 2026-11-19), and uvicorn's worker threads serve every synchronous route.
+
+[Install]
+WantedBy=multi-user.target

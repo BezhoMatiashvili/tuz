@@ -479,6 +479,8 @@ def turn_detail(payload: Mapping[str, Any] | None) -> dict:
     detail["searched"], searches = _searches(diagnostics)
     if searches:
         detail["searches"] = searches
+    if oil_lookup := text(diagnostics.get("oil_lookup"), 30):
+        detail["oil_lookup"] = oil_lookup
     unavailable = _unavailable(data.get("cards"))
     if unavailable:
         detail["unavailable"] = unavailable

@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# Creates the one DigitalOcean Droplet this project runs on, with weekly backups, monitoring
+# and a cloud firewall that lets in SSH, HTTP and HTTPS only. THIS COSTS MONEY: without
+# --yes it only prints what it would create and the price DigitalOcean lists for it.
+# Safe to run again: an existing key, Droplet or firewall with the same name is reused.
+#
+#   ops/digitalocean/create-droplet          # show the plan and the price, create nothing
+#   ops/digitalocean/create-droplet --yes    # create it
+#
+# Needs a signed-in doctl (`doctl auth init`). See docs/deploy-digitalocean.md.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ops/digitalocean/settings.sh
+. "$here/settings.sh"
+
+confirmed=no
+[[ "${1:-}" == "--yes" ]] && confirmed=yes
+
+command -v doctl >/dev/null || tuz_die "doctl is not installed"
+doctl account get --format Status --no-header >/dev/null 2>&1 \
+    || tuz_die "doctl is not signed in: run 'doctl auth init' with a DigitalOcean API token"
+
+mkdir -p "$TUZ_DO_STATE"
+chmod 700 "$TUZ_DO_STATE"
+
+everyone="address:0.0.0.0/0,address:::/0"
+inbound="protocol:tcp,ports:22,$everyone protocol:tcp,ports:80,$everyone"
+inbound+=" protocol:tcp,ports:443,$everyone protocol:icmp,$everyone"
+outbound="protocol:tcp,ports:1-65535,$everyone protocol:udp,ports:1-65535,$everyone"
+outbound+=" protocol:icmp,$everyone"
+
+droplet_row() {
+    doctl compute droplet list --format ID,Name,PublicIPv4 --no-header \
+        | awk -v name="$TUZ_DO_NAME" '$2 == name'
+}
+
+row="$(droplet_row)"
+if [[ -z "$row" ]]; then
+    size="$(doctl compute size list --format Slug,Memory,VCPUs,Disk,PriceMonthly --no-header \
+        | awk -v slug="$TUZ_DO_SIZE" '$1 == slug')"
+    [[ -n "$size" ]] || tuz_die "DigitalOcean does not list the size $TUZ_DO_SIZE"
+    doctl compute region list --format Slug,Available --no-header \
+        | awk -v slug="$TUZ_DO_REGION" '$1 == slug && $2 == "true" { found = 1 } END { exit !found }' \
+        || tuz_die "region $TUZ_DO_REGION is not available"
+    read -r _ memory vcpus disk price <<<"$size"
+    cat <<EOF
+Plan: one Droplet named $TUZ_DO_NAME
+  region $TUZ_DO_REGION, image $TUZ_DO_IMAGE
+  size $TUZ_DO_SIZE: $memory MB memory, $vcpus vCPU, $disk GB disk
+  listed price: \$$price a month, plus weekly backups (DigitalOcean charges 20% on top)
+  cloud firewall: inbound 22, 80, 443 and ping only
+EOF
+    if [[ "$confirmed" != yes ]]; then
+        echo "Nothing was created. Run again with --yes to create it."
+        exit 0
+    fi
+fi
+
+if [[ ! -f "$TUZ_DO_SSH_KEY" ]]; then
+    ssh-keygen -q -t ed25519 -N '' -C "$TUZ_DO_NAME-deploy" -f "$TUZ_DO_SSH_KEY"
+    echo "made a new SSH key: $TUZ_DO_SSH_KEY"
+fi
+fingerprint="$(ssh-keygen -E md5 -lf "$TUZ_DO_SSH_KEY.pub" | awk '{ print $2 }')"
+fingerprint="${fingerprint#MD5:}"
+if ! doctl compute ssh-key get "$fingerprint" >/dev/null 2>&1; then
+    doctl compute ssh-key import "$TUZ_DO_NAME-deploy" \
+        --public-key-file "$TUZ_DO_SSH_KEY.pub" >/dev/null
+    echo "registered the SSH key with DigitalOcean"
+fi
+
+if [[ -z "$row" ]]; then
+    echo "creating the Droplet (about a minute)..."
+    doctl compute droplet create "$TUZ_DO_NAME" \
+        --region "$TUZ_DO_REGION" --size "$TUZ_DO_SIZE" --image "$TUZ_DO_IMAGE" \
+        --ssh-keys "$fingerprint" --enable-backups --enable-monitoring --enable-ipv6 \
+        --tag-name "$TUZ_DO_NAME" --wait >/dev/null
+    row="$(droplet_row)"
+else
+    echo "the Droplet $TUZ_DO_NAME already exists: reusing it"
+fi
+read -r droplet_id _ address <<<"$row"
+[[ "$address" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || tuz_die "the Droplet has no public IPv4 address yet"
+
+if ! doctl compute firewall list --format Name --no-header | grep -qx "$TUZ_DO_NAME"; then
+    doctl compute firewall create --name "$TUZ_DO_NAME" --droplet-ids "$droplet_id" \
+        --inbound-rules "$inbound" --outbound-rules "$outbound" >/dev/null
+    echo "created the cloud firewall"
+fi
+
+printf '%s\n' "$address" > "$TUZ_DO_STATE/host"
+echo "waiting for SSH on $address..."
+for _ in $(seq 1 40); do
+    if tuz_ssh true 2>/dev/null; then
+        echo "ready: $address (Droplet $droplet_id). Next: ops/digitalocean/setup-server"
+        exit 0
+    fi
+    sleep 5
+done
+tuz_die "the Droplet exists at $address but SSH did not answer within 200 seconds"

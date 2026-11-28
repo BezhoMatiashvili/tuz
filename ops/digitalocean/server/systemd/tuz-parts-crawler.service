@@ -1,0 +1,45 @@
+# The parts catalogue crawler on the Droplet (docs/parts-crawler.md). One instance only,
+# on one machine: a second process would halve every site's per-host delay. Not started by
+# default. Before `tuz-services start crawler`, stop the laptop's parts-crawler.service and
+# check that each source still answers from the Droplet's address; a source that refuses a
+# data-centre address stays on the laptop (the project uses no bypass).
+[Unit]
+Description=tuz: parts catalogue crawler (MANN-FILTER API, CatCar, NGK, RockAuto, NiBK brakes)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=tuz-crawler
+Group=tuz-crawler
+SupplementaryGroups=tuz-data
+WorkingDirectory=/opt/tuz/current
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/etc/tuz/crawler.env
+ExecStart=/opt/tuz/current/.venv/bin/python -m parts_crawler run --source mann_api,catcar,ngk,rockauto,jnbk --plain
+# A finished queue exits 0 and stays stopped; a crash or a lost database restarts it.
+Restart=on-failure
+RestartSec=60
+# SIGTERM makes the scheduler stop after the request in flight (parts_crawler/term.py).
+TimeoutStopSec=120
+Nice=10
+UMask=0077
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+# Fetched pages and crawl.log (data/crawl).
+ReadWritePaths=/var/lib/tuz/data/crawl
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

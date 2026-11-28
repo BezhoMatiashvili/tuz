@@ -1,0 +1,100 @@
+# Template for /etc/nginx/conf.d/tuz.conf; tuz-enable-https replaces @DOMAIN@.
+#
+# Two applications sit behind this proxy, both on loopback:
+#   127.0.0.1:8767  the site and dashboard (tuz-site)
+#   127.0.0.1:8771  the receiver for Meta's webhooks and the pages registered with Meta
+#                   (tuz-meta-receiver)
+# Both read the caller's address from X-Forwarded-For and trust it only from this proxy, so
+# every location OVERWRITES the header with the address nginx saw. Never append a value the
+# client sent. proxy_bind gives the proxy its own loopback address (the site's
+# AUTOMOTIVE_TRUSTED_PROXIES=127.0.0.2), so a command run on the server itself is not taken
+# for a forwarded request and can still reach the loopback-only operator routes.
+server_tokens off;
+
+# A request that does not name the site gets no answer.
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    return 444;
+}
+server {
+    listen 443 ssl http2 default_server;
+    listen [::]:443 ssl http2 default_server;
+    server_name _;
+    ssl_reject_handshake on;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name @DOMAIN@ www.@DOMAIN@;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+    location / {
+        return 301 https://@DOMAIN@$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name www.@DOMAIN@;
+
+    ssl_certificate     /etc/letsencrypt/live/@DOMAIN@/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/@DOMAIN@/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    return 301 https://@DOMAIN@$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name @DOMAIN@;
+
+    ssl_certificate     /etc/letsencrypt/live/@DOMAIN@/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/@DOMAIN@/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:tuz:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    # Gallery uploads are at most 1.5 MB; the application enforces its own smaller caps.
+    client_max_body_size 2m;
+    # The applications already compress their text; compress nothing twice.
+    gzip off;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Connection "";
+    proxy_bind 127.0.0.2;
+
+    # Meta's deliveries, and the privacy and data-deletion pages registered with the Meta
+    # app. /healthz is the receiver's liveness check (python -m automotive.messenger_setup).
+    location = /meta/webhook {
+        # No access log here: Meta's handshake carries the verify token in its query string
+        # (the receiver itself runs without an access log for the same reason).
+        access_log off;
+        client_max_body_size 1m;
+        proxy_pass http://127.0.0.1:8771;
+        proxy_read_timeout 15s;
+    }
+    location ~ ^/(privacy|data-deletion)(/en)?$ {
+        proxy_pass http://127.0.0.1:8771;
+        proxy_read_timeout 15s;
+    }
+    location = /healthz {
+        proxy_pass http://127.0.0.1:8771;
+        proxy_read_timeout 15s;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8767;
+        # A chat turn is polled, never held open; nothing needs a long read timeout.
+        proxy_read_timeout 30s;
+    }
+}

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Runs ON THE SERVER as root, once the domain's DNS points at this server.
+#
+#   tuz-enable-https <domain> [contact-email]
+#
+# Gets a Let's Encrypt certificate for <domain> and www.<domain> (this accepts Let's
+# Encrypt's subscriber agreement), installs the HTTPS site from the template and reloads
+# nginx. Renewal is automatic (certbot's timer). Without an e-mail address Let's Encrypt
+# cannot warn about an expiring certificate. Safe to run again: an existing certificate is
+# kept, and a configuration nginx rejects is rolled back.
+set -euo pipefail
+domain="${1:?usage: tuz-enable-https <domain> [contact-email]}"
+email="${2:-}"
+[[ "$domain" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$ ]] \
+    || { echo "error: not a host name: $domain" >&2; exit 2; }
+
+if [[ ! -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]]; then
+    contact=(--register-unsafely-without-email)
+    [[ -z "$email" ]] || contact=(--email "$email" --no-eff-email)
+    certbot certonly --webroot -w /var/www/letsencrypt --cert-name "$domain" \
+        -d "$domain" -d "www.$domain" --non-interactive --agree-tos "${contact[@]}"
+fi
+
+install -d -m 0755 /etc/letsencrypt/renewal-hooks/deploy
+cat > /etc/letsencrypt/renewal-hooks/deploy/tuz-reload-nginx <<'EOF'
+#!/bin/sh
+# A renewed certificate is only served after nginx reads it again.
+systemctl reload nginx
+EOF
+chmod 0755 /etc/letsencrypt/renewal-hooks/deploy/tuz-reload-nginx
+
+live=/etc/nginx/conf.d/tuz.conf
+[[ ! -f "$live" ]] || cp -p "$live" /etc/tuz/nginx.previous.conf
+sed "s/@DOMAIN@/$domain/g" /etc/tuz/nginx-https.conf.template > "$live"
+if ! nginx -t; then
+    [[ ! -f /etc/tuz/nginx.previous.conf ]] || cp -p /etc/tuz/nginx.previous.conf "$live"
+    echo "error: nginx rejected the new configuration; the previous one is back" >&2
+    exit 1
+fi
+systemctl enable nginx > /dev/null
+systemctl reload-or-restart nginx
+echo "$domain" > /etc/tuz/domain
+echo "https is on for $domain"

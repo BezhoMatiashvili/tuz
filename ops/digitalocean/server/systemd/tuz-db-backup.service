@@ -1,0 +1,13 @@
+# Nightly database dump on the Droplet (/usr/local/sbin/tuz-backup), run by
+# tuz-db-backup.timer. Root, because it talks to Docker and writes a root-only folder.
+[Unit]
+Description=tuz: nightly database backup
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/tuz-backup
+TimeoutStartSec=1h
+Nice=10
+IOSchedulingClass=idle
+UMask=0077

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Runs ON THE SERVER as root, from bootstrap and after ops/digitalocean/copy-data. Makes the
+# data folders and gives each one to the single service that writes it:
+#   data/            site (caches); the Messenger worker and the crawler may pass through
+#   data/assistant   site writes, the Messenger worker reads the name and vehicle tables
+#   data/chat_logs   site only
+#   data/messenger   Messenger worker only
+#   data/crawl       crawler only
+set -euo pipefail
+data=/var/lib/tuz/data
+
+for account in tuz-messenger tuz-crawler tuz-site; do
+    usermod -aG tuz-data "$account"
+done
+# The setgid bit makes new files belong to tuz-data, so the worker can read what the site adds.
+install -d -m 2750 -o tuz-site -g tuz-data "$data" "$data/assistant"
+install -d -m 0700 -o tuz-site -g tuz-site "$data/chat_logs"
+install -d -m 0700 -o tuz-messenger -g tuz-messenger "$data/messenger"
+install -d -m 0700 -o tuz-crawler -g tuz-crawler "$data/crawl"
+
+chown -R tuz-site:tuz-data "$data/assistant"
+find "$data/assistant" -type f -exec chmod 0640 {} +
+find "$data" -maxdepth 1 -type f -exec chown tuz-site:tuz-data {} + -exec chmod 0640 {} +
+chown -R tuz-site:tuz-site "$data/chat_logs"
+chown -R tuz-messenger:tuz-messenger "$data/messenger"
+chown -R tuz-crawler:tuz-crawler "$data/crawl"
+chmod -R go-rwx "$data/chat_logs" "$data/messenger" "$data/crawl"

@@ -8,6 +8,8 @@ from itertools import product as combinations
 from time import monotonic
 from typing import Any
 
+import psycopg
+
 from automotive.evidence import (
     VEHICLE_KEYS,
     applies_to,
@@ -170,7 +172,16 @@ class RecommendationService:
                       and not isinstance(value, bool) and 0 < value <= 100}
         if len(capacities) == 1:
             result['capacity_liters'] = capacities.pop()
-        for product, approvals in self.repository.oil_approval_products():
+        result['requirements'] = {
+            'approval_options': sorted(sorted(option) for option in options),
+            'grades': sorted(viscosities),
+        }
+        try:
+            products = self.repository.oil_approval_products()
+        except (OSError, RuntimeError, psycopg.Error):
+            result['warnings'].append('Inventory oil approvals could not be checked.')
+            return result
+        for product, approvals in products:
             if deadline is not None and monotonic() >= deadline:
                 result['has_more'] = True
                 result['warnings'].append('Oil approval lookup reached the time limit.')

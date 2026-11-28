@@ -1,0 +1,171 @@
+[
+  {
+    "descriptor": "WA1LFAFP*CA",
+    "decoder": {
+      "make": "audi",
+      "model": "q5",
+      "model_year": "2012",
+      "engine_model": "2.0t",
+      "trim": "premium plus"
+    },
+    "displacement_l": "1.984",
+    "engine_code": "CAEB",
+    "capacity_l": 4.6,
+    "sources": [
+      "Audi of America"
+    ],
+    "source_url": "https://static.nhtsa.gov/odi/tsbs/2015/MC-10120901-9999.pdf#page=3",
+    "approval_options": [
+      [
+        "VW 502 00"
+      ]
+    ],
+    "grades": [
+      "5W-40",
+      "5W-30",
+      "0W-40"
+    ]
+  },
+  {
+    "descriptor": "WAUCCGFF*F1",
+    "decoder": {
+      "make": "audi",
+      "model": "a3",
+      "model_year": "2015",
+      "trim": "premium plus"
+    },
+    "displacement_l": "1.798",
+    "engine_code": "CNSB",
+    "capacity_l": 4.9,
+    "sources": [
+      "Audi of America"
+    ],
+    "source_url": "https://static.nhtsa.gov/odi/tsbs/2015/MC-10120921-9999.pdf#page=1",
+    "approval_options": [
+      [
+        "VW 502 00"
+      ]
+    ],
+    "grades": [
+      "5W-40",
+      "5W-30",
+      "0W-40"
+    ]
+  },
+  {
+    "descriptor": "5J6RT6H8*NL",
+    "decoder": {
+      "make": "honda",
+      "model": "cr-v",
+      "model_year": "2022",
+      "engine_model": "lfb2",
+      "trim": "ex-l"
+    },
+    "displacement_l": "2",
+    "engine_code": "LFB2",
+    "capacity_l": 3.8,
+    "sources": [
+      "Honda"
+    ],
+    "source_url": "https://techinfo.honda.com/rjanisis/pubs/OM/AH/ATPG2222OM/enu/ATPG2222OM.PDF",
+    "approval_options": [
+      [
+        "HONDA GENUINE MOTOR OIL"
+      ],
+      [
+        "API CERTIFICATION SEAL"
+      ]
+    ],
+    "grades": [
+      "0W-20"
+    ],
+    "fuels": [
+      "gasoline",
+      "petrol",
+      "hybrid"
+    ]
+  },
+  {
+    "descriptor": "WDDLJ9BB*CA",
+    "decoder": {
+      "make": "mercedes-benz",
+      "model": "cls-class",
+      "model_year": "2012",
+      "trim": "cls550 4-matic"
+    },
+    "displacement_l": "4.7",
+    "engine_code": "M278.922",
+    "capacity_l": 8.0,
+    "sources": [
+      "Mercedes-Benz"
+    ],
+    "source_url": "https://www.mbusa.com/content/dam/mb-nafta/us/owners/manuals/2012/operators/MY12_CLS_Operator.pdf",
+    "approval_options": [
+      [
+        "MB 229.5"
+      ]
+    ],
+    "grades": [
+      "0W-30",
+      "0W-40",
+      "5W-30",
+      "5W-40",
+      "5W-50"
+    ],
+    "aliases": [
+      "278.922",
+      "M278",
+      "278"
+    ],
+    "identity_url": "https://static.nhtsa.gov/odi/tsbs/2021/MC-10205257-9999.pdf"
+  },
+  {
+    "descriptor": "JN1EV7AR*LM",
+    "decoder": {
+      "make": "infiniti",
+      "model": "q50",
+      "model_year": "2020",
+      "drive": "4wd/4-wheel drive/4x4"
+    },
+    "displacement_l": "3",
+    "engine_code": "VR30DDTT",
+    "capacity_l": 5.9,
+    "sources": [
+      "Infiniti"
+    ],
+    "source_url": "https://www.infinitiusa.com/content/dam/Infiniti/US/manuals_guides/q50/2020/2020-infiniti-q50-owner-manual.pdf",
+    "approval_options": [
+      [
+        "API SN"
+      ]
+    ],
+    "grades": [
+      "0W-20"
+    ]
+  },
+  {
+    "descriptor": "3TMKB5FN*SM",
+    "decoder": {
+      "make": "toyota",
+      "model": "tacoma",
+      "model_year": "2025",
+      "engine_model": "t24a-fts",
+      "drive": "4x2"
+    },
+    "displacement_l": "2.4",
+    "engine_code": "T24A-FTS",
+    "capacity_l": 5.6,
+    "sources": [
+      "Toyota"
+    ],
+    "source_url": "https://cdn.dealereprocess.org/cdn/servicemanuals/toyota/2025-tacoma.pdf",
+    "approval_options": [
+      [
+        "ILSAC GF-6A"
+      ]
+    ],
+    "grades": [
+      "0W-20"
+    ]
+  }
+]

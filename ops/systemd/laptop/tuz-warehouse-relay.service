@@ -1,0 +1,20 @@
+# systemd USER unit (laptop): lends the Droplet this laptop's route to the warehouse, which
+# answers only to addresses in Georgia (ops/digitalocean/warehouse-relay,
+# docs/deploy-digitalocean.md). It must keep running AFTER the move to the server: the
+# server's warehouse sync reads through it. No secret is in this file.
+# Install: install -m 0644 ops/systemd/laptop/tuz-warehouse-relay.service ~/.config/systemd/user/
+#          systemctl --user daemon-reload && systemctl --user enable --now tuz-warehouse-relay
+[Unit]
+Description=tuz (laptop): relay from the server to the warehouse
+
+[Service]
+Type=exec
+ExecStart=/home/bezhomatiashvili/Desktop/tuz/ops/digitalocean/warehouse-relay
+# The connection drops when the laptop sleeps or changes network; come straight back.
+Restart=always
+RestartSec=15
+UMask=0077
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

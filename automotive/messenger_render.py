@@ -263,6 +263,11 @@ def late_apology(language: Any) -> str:
     return TEXTS[text_language(language)]["late"]
 
 
+def handoff_recorded_text(language: Any) -> str:
+    return ("შეტყობინება თანამშრომელს გადავეცი." if text_language(language) == "ka"
+            else "I’ve sent your request to our staff.")
+
+
 def fallback_text(language: Any, phone: Any = "", custom: Any = "") -> str:
     """The one message sent when no answer could be made. It points to the phone and never
     promises a call back. ``custom`` is the dashboard's own text (``fallback_ka`` /

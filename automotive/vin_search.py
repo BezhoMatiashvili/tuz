@@ -45,6 +45,7 @@ OIL_CHANGE_QUERY = 'ზეთის ფილტრი'
 # Seconds a fallback source may take before it is abandoned (it is only a backup).
 FALLBACK_SECONDS = {'motorium': 7.0, 'jsfilter': 5.0, 'pakelo': 4.0, 'fuchs': 4.0, 'shell': 6.0,
                     'brembo': 12.0}
+OIL_FALLBACK_DELAY = 1.0
 FALLBACK_SOURCES = {'motorium', 'jsfilter', 'pakelo', 'fuchs', 'shell', 'brembo'}
 # Source outcomes that are expected and never make an answer partial.
 QUIET_CODES = ('NOT_REQUESTED', 'VIN_REQUIRED', 'NOT_NEEDED')
@@ -666,6 +667,7 @@ class VINSearchCoordinator:
         deadline = min(time.monotonic() + self.budget_seconds,
                        turn_deadline or float('inf'))
         scope = self._scope(query)
+        oil_request = category_for_query(query) in ('engine_oil', 'oil_change')
         for name, (_service, enabled) in self._external.items():
             if not enabled:
                 self._source(identifier, name, status='DISABLED')
@@ -720,6 +722,7 @@ class VINSearchCoordinator:
                           soft(25))
             local_started = codes_started = fluids_started = False
             code_fallback_decided = oil_fallback_decided = False
+            oil_fallback_at = float('inf')
             vehicle_checked = not use_catalog
             first_pass = True
             while time.monotonic() < deadline:
@@ -777,12 +780,14 @@ class VINSearchCoordinator:
                         start('local', self._local, identifier, vehicle, deadline)
                         local_started = launched = True
                     if job['vehicle'] and not fluids_started:
-                        # Shell is the first oil chooser; the others only back it up.
                         fluids_started = launched = True
                         start_fluid('shell', dict(job['vehicle']), FALLBACK_SECONDS['shell'])
                         start_fluid('brembo', dict(job['vehicle']), FALLBACK_SECONDS['brembo'])
+                        if oil_request:
+                            oil_fallback_at = time.monotonic() + OIL_FALLBACK_DELAY
                     shell_settled = fluids_started and 'shell' not in pending.values()
-                    if job['vehicle'] and shell_settled and not oil_fallback_decided:
+                    if job['vehicle'] and not oil_fallback_decided and (
+                            shell_settled or time.monotonic() >= oil_fallback_at):
                         oil_fallback_decided = launched = True
                         if job['sources']['shell']['status'] != 'OK':
                             for name in ('pakelo', 'fuchs'):

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Runs ON THE SERVER as root. Prints "schema.table|rows" for every table, in name order, so
+# ops/digitalocean/copy-database can compare the server with the laptop.
+set -euo pipefail
+container="${TUZ_PG_CONTAINER:-tuz-postgres-1}"
+# shellcheck disable=SC1090
+. "${TUZ_POSTGRES_ENV:-/etc/tuz/postgres.env}"
+run() { docker exec -i "$container" psql -X -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"; }
+run -c "select format('select %L, count(*) from %I.%I;', schemaname || '.' || tablename,
+    schemaname, tablename) from pg_tables
+    where schemaname not in ('pg_catalog', 'information_schema') order by 1" | run

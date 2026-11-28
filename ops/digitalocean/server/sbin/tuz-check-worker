@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Runs ON THE SERVER as root, during the rehearsal. The Messenger worker's first real start
+# is the cutover itself, so this checks beforehand that it can start: as the worker's own
+# account, inside the same sandbox as tuz-messenger.service and with the same settings file,
+# it imports the worker, reads the bot's reading tables, writes to the worker's data folder
+# and signs in to both databases. It does NOT start the worker: nothing is fetched from or
+# sent to Meta, and no customer is answered.
+set -euo pipefail
+[[ -e /opt/tuz/current ]] || { echo "error: no release yet: run deploy first" >&2; exit 1; }
+
+systemd-run --quiet --wait --collect --pipe \
+    -p User=tuz-messenger -p Group=tuz-messenger -p SupplementaryGroups=tuz-data \
+    -p EnvironmentFile=/etc/tuz/messenger.env -p WorkingDirectory=/opt/tuz/current \
+    -p UMask=0077 -p NoNewPrivileges=yes -p PrivateTmp=yes -p PrivateDevices=yes \
+    -p ProtectSystem=strict -p ProtectHome=yes \
+    -p ReadWritePaths=/var/lib/tuz/data/messenger \
+    -p ProtectProc=invisible -p ProcSubset=pid \
+    -p "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX" \
+    -p SystemCallFilter=@system-service -p SystemCallErrorNumber=EPERM \
+    /opt/tuz/current/.venv/bin/python -c '
+import json, os, pathlib, threading
+
+import psycopg
+
+import automotive.messenger_worker  # noqa: F401  (the import is the check)
+from automotive.config import Settings
+from automotive.meta_config import MetaSettings
+
+meta = MetaSettings.from_env()
+missing = meta.missing_for_worker()
+assert not missing, f"settings missing: {missing}"
+print("ok  settings complete, worker imports")
+
+app = Settings.from_env()
+for path in (app.assistant_names_path, app.assistant_vehicle_readings_path,
+             app.assistant_name_readings_path):
+    json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+print("ok  reading tables load")
+
+folder = pathlib.Path(meta.data_dir)
+probe = folder / f".check-{os.getpid()}"
+probe.write_text("x")
+probe.unlink()
+print("ok  data folder is writable:", folder)
+
+for name, url in (("worker login", meta.database_url), ("catalogue login", app.database_url)):
+    with psycopg.connect(url, connect_timeout=5) as connection:
+        print(f"ok  {name}:", connection.execute("select current_user").fetchone()[0])
+
+thread = threading.Thread(target=lambda: None)
+thread.start()
+thread.join()
+print("ok  threads start inside the sandbox")
+'
+echo "worker check passed (the worker itself was not started)"

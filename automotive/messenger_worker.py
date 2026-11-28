@@ -57,6 +57,7 @@ from zoneinfo import ZoneInfo
 
 from psycopg import sql
 
+from automotive.live_alerts import TurnAlerts
 from automotive.live_store import LiveStore
 from automotive.messenger_events import (
     CommentEvent,
@@ -81,6 +82,7 @@ from automotive.messenger_render import (
     cap_notice,
     conflicting_vins_text,
     fallback_text,
+    handoff_recorded_text,
     late_apology,
     media_only_text,
     parse_choice,
@@ -1267,16 +1269,26 @@ class MessengerWorker:
                                          cancel=self._cancel_event(psid))
         finally:
             done.set()
+        alerts = getattr(result, "alerts", None) or TurnAlerts()
+        handoffs = tuple(draft for draft in alerts.drafts if draft.reason == "handoff")
+        recorded = bool(handoffs and self._raise_alerts(psid, replace(
+            alerts, drafts=handoffs, phone="")))
+        if handoffs:
+            LOGGER.info("messenger_handoff recorded=%s", recorded)
         try:
-            return self._reply_turn(burst, reply_id, reply, channel, settings, choice, result)
+            return self._reply_turn(burst, reply_id, reply, channel, settings, choice, result,
+                                    handoff_recorded=recorded)
         finally:
-            # After the reply went out (or could not): the customer never waits for the
-            # alarms' database writes, and a reply that cannot be delivered still alarms.
-            self._raise_alerts(psid, result)
+            if handoffs and not recorded:
+                thread = self.store.get_thread(psid)
+                if not (thread and thread.get("is_admin")):
+                    reply.attention = reply.attention or "handoff_unrecorded"
+            self._raise_alerts(psid, replace(alerts, drafts=tuple(
+                draft for draft in alerts.drafts if draft.reason != "handoff")))
 
     def _reply_turn(self, burst: _Burst, reply_id: int, reply: _Reply, channel: dict,
                     settings: Mapping[str, Any], choice: Any,
-                    result: Any) -> tuple[dict, dict] | None:
+                    result: Any, *, handoff_recorded: bool = False) -> tuple[dict, dict] | None:
         """Send what the engine answered (the rest of ``_answer_turn``)."""
         psid = burst.psid
         # The engine ran: a non-empty status makes the reply count as a turn for the caps.
@@ -1289,7 +1301,11 @@ class MessengerWorker:
         unsent = result.unsent_state or result.state
         apology = self._apology(burst, language)
         if result.status == "ok":
-            rendered = render(result.public, language=language, opening=apology)
+            view = result.public
+            if handoff_recorded:
+                note = "\n".join(filter(None, (view.get("note"), handoff_recorded_text(language))))
+                view = {**view, "note": note}
+            rendered = render(view, language=language, opening=apology)
             if rendered.messages:
                 sent = self._deliver(burst, rendered.messages, reply_id, reply, done="sent")
                 if not sent:
@@ -1326,20 +1342,17 @@ class MessengerWorker:
             return answered, {}
         return unsent, channel
 
-    def _raise_alerts(self, psid: str, result: Any) -> None:
-        """Record what the turn means for the staff (dashboard > Live chats): a part not found, a
-        visit or service request, a handoff, a phone number. Called once the reply is sent or
-        could not be, so a reply that cannot be delivered still alarms and the customer never
-        waits for these writes. Never raises and never logs a message or a number."""
-        turn = getattr(result, "alerts", None)
+    def _raise_alerts(self, psid: str, turn: TurnAlerts) -> bool:
+        """Return whether Live chats confirmed an alert commit, including an existing alert."""
         if self.live is None or not turn:
-            return
+            return False
         try:
             if self.live.usable():
-                self.live.record_turn("messenger", psid, turn)
+                return bool(self.live.record_turn("messenger", psid, turn))
         except Exception as error:
             LOGGER.warning("live_alert_failed psid=%s error=%s", mask_psid(psid),
                            _error_code(error))
+        return False
 
     def _settle(self, psid: str, saving: tuple[dict, dict] | None, state: dict,
                 channel: dict, cleared_at: Any = ANY_CONTEXT) -> None:

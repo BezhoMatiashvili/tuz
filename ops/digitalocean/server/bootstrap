@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Runs ON THE SERVER as root; ops/digitalocean/setup-server sends this folder and starts it.
+# Prepares an Ubuntu 24.04 Droplet for the project: packages, swap, SSH and firewall rules,
+# one account per service, folders, uv, PostgreSQL in Docker, nginx, the unit files and the
+# tuz-* scripts. Safe to run again. It starts no application service and holds no secret
+# except the database container's first password, which it makes itself.
+set -euo pipefail
+[[ "$(id -u)" -eq 0 ]] || { echo "run as root" >&2; exit 1; }
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export DEBIAN_FRONTEND=noninteractive
+# The version the laptop develops with (uv --version there).
+uv_version=0.12.8
+
+step() { printf '\n== %s\n' "$*"; }
+
+step "packages"
+apt_get() { apt-get -o DPkg::Lock::Timeout=300 -q "$@"; }
+apt_get update
+apt_get install -y --no-install-recommends \
+    ca-certificates curl git rsync openssl nginx certbot \
+    docker.io docker-compose-v2 ufw fail2ban unattended-upgrades
+systemctl enable --now docker fail2ban unattended-upgrades >/dev/null
+
+step "swap"
+if ! swapon --show --noheadings | grep -q .; then
+    fallocate -l 2G /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile >/dev/null
+    swapon /swapfile
+    grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
+step "ssh: keys only"
+cat > /etc/ssh/sshd_config.d/10-tuz.conf <<'EOF'
+# Installed by ops/digitalocean/server/bootstrap. The first value sshd reads wins, and this
+# file sorts before the image's own drop-ins.
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin prohibit-password
+EOF
+sshd -t
+systemctl reload ssh
+
+step "firewall"
+ufw default deny incoming >/dev/null
+ufw default allow outgoing >/dev/null
+for port in 22 80 443; do ufw allow "$port/tcp" >/dev/null; done
+ufw --force enable >/dev/null
+ufw status | sed -n '1,12p'
+
+step "service accounts"
+getent group tuz-data >/dev/null || groupadd --system tuz-data
+for account in tuz-site tuz-messenger tuz-webhook tuz-sync tuz-crawler; do
+    id "$account" >/dev/null 2>&1 || useradd --system --no-create-home \
+        --home-dir /nonexistent --shell /usr/sbin/nologin "$account"
+done
+
+step "folders"
+install -d -m 0755 /opt/tuz /opt/tuz/releases /opt/tuz/python /opt/tuz/postgres
+install -d -m 0755 /etc/tuz /var/lib/tuz /var/cache/tuz-uv /var/www/letsencrypt
+install -d -m 0700 /var/backups/tuz /var/backups/tuz/incoming
+
+step "uv $uv_version"
+if [[ "$(uv --version 2>/dev/null || true)" != "uv $uv_version"* ]]; then
+    curl -LsSf "https://astral.sh/uv/$uv_version/install.sh" \
+        | env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 INSTALLER_NO_MODIFY_PATH=1 sh
+fi
+uv --version
+
+step "scripts and units"
+install -m 0755 "$here"/sbin/* /usr/local/sbin/
+install -m 0644 "$here"/systemd/* /etc/systemd/system/
+systemctl daemon-reload
+tuz-data-permissions
+
+step "database server"
+install -m 0644 "$here/postgres.compose.yaml" /opt/tuz/postgres/compose.yaml
+if [[ ! -f /etc/tuz/postgres.env ]]; then
+    (
+        umask 077
+        printf 'POSTGRES_DB=warehouse_sync\nPOSTGRES_USER=warehouse_sync\nPOSTGRES_PASSWORD=%s\n' \
+            "$(openssl rand -hex 32)" > /etc/tuz/postgres.env
+    )
+fi
+chmod 600 /etc/tuz/postgres.env
+docker compose -p tuz --env-file /etc/tuz/postgres.env \
+    -f /opt/tuz/postgres/compose.yaml up -d --wait
+systemctl enable --now tuz-db-backup.timer >/dev/null
+
+step "web server"
+install -m 0644 "$here/nginx/tuz-https.conf.template" /etc/tuz/nginx-https.conf.template
+rm -f /etc/nginx/sites-enabled/default
+if [[ -s /etc/tuz/domain ]]; then
+    # HTTPS is already on: render the site again from the new template.
+    tuz-enable-https "$(cat /etc/tuz/domain)"
+else
+    install -m 0644 "$here/nginx/tuz-http.conf" /etc/nginx/conf.d/tuz.conf
+    nginx -t
+    systemctl enable nginx >/dev/null
+    systemctl reload-or-restart nginx
+fi
+
+step "done"
+tuz-services status

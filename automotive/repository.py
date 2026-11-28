@@ -466,6 +466,19 @@ class AutomotiveRepository:
             "price_raw", "sae_grades", "catalog_review_status",
         )}} for row in rows]
 
+    def oil_package_research(self, grades: list[str]) -> list[dict]:
+        """Documented leads for a package check. The caller rechecks the current fingerprint."""
+        with self._connect() as conn:
+            return conn.execute(
+                """SELECT source_product_id, catalog_fingerprint, sae_grade, approvals,
+                          specifications
+                   FROM automotive.oil_product_research
+                   WHERE sae_grade = ANY(%s) AND cardinality(source_urls) > 0
+                     AND status IN ('APPROVAL_DOCUMENTED', 'SPECIFICATION_DOCUMENTED')
+                   ORDER BY source_product_id""",
+                (grades,),
+            ).fetchall()
+
     def get_cached_vin(self, vin_hash: str) -> dict | None:
         with self._connect() as conn:
             row = conn.execute(

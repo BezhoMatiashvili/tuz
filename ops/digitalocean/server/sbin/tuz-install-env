@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Runs ON THE SERVER as root; ops/digitalocean/push-env pipes a tar stream into it.
+# Installs one settings file per service under /etc/tuz, each readable by root and that
+# service's account only, and gives the database logins the passwords those files hold.
+# The stream is unpacked in memory (/run) and never reaches the disk as a whole.
+set -euo pipefail
+umask 077
+# shellcheck disable=SC1091
+. /etc/tuz/postgres.env
+
+declare -A reader=(
+    [admin.env]=root
+    [site.env]=tuz-site
+    [messenger.env]=tuz-messenger
+    [receiver.env]=tuz-webhook
+    [sync.env]=tuz-sync
+    [index.env]=tuz-sync
+    [crawler.env]=tuz-crawler
+)
+
+work="$(mktemp -d /run/tuz-env.XXXXXX)"
+trap 'rm -rf "$work"' EXIT
+tar -x -C "$work" --no-same-owner --no-same-permissions
+
+for file in "${!reader[@]}" roles.sql; do
+    [[ -f "$work/$file" ]] || { echo "error: $file is missing from the stream" >&2; exit 1; }
+done
+unexpected="$(find "$work" -mindepth 1 ! -name '*.env' ! -name roles.sql -print -quit)"
+[[ -z "$unexpected" ]] || { echo "error: unexpected entry in the stream" >&2; exit 1; }
+
+# Passwords first: if a role is missing the SQL changes nothing and the old files stay.
+docker exec -i tuz-postgres-1 psql -X -q -v ON_ERROR_STOP=1 \
+    -U "$POSTGRES_USER" -d postgres < "$work/roles.sql" > /dev/null
+
+for file in "${!reader[@]}"; do
+    install -m 0640 -o root -g "${reader[$file]}" "$work/$file" "/etc/tuz/$file"
+done
+chmod 0600 /etc/tuz/admin.env
+echo "installed: $(printf '%s ' "${!reader[@]}" | tr ' ' '\n' | sort | tr '\n' ' ')"
+
+# Running services pick the new settings up; stopped ones stay stopped.
+systemctl try-restart tuz-site.service tuz-meta-receiver.service tuz-messenger.service \
+    tuz-parts-crawler.service

@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Runs ON THE SERVER as root. Starts, stops or shows the application services by group.
+#
+#   tuz-services status
+#   tuz-services start web            # site and dashboard + Meta webhook receiver
+#   tuz-services start bot            # Messenger worker. NEVER while the laptop's worker
+#                                     # runs: two workers answer every customer twice.
+#   tuz-services start jobs           # warehouse sync (09:00, 21:00) and hourly index
+#   tuz-services start crawler        # parts catalogue crawler
+#   tuz-services stop [group...]      # no group: everything
+#
+# "start" also enables the units so they come back after a reboot; "stop" disables them.
+# The nightly database backup timer is always on and is not part of any group.
+set -euo pipefail
+
+declare -A units=(
+    [web]="tuz-site.service tuz-meta-receiver.service"
+    [bot]="tuz-messenger.service"
+    [jobs]="tuz-warehouse-sync.timer tuz-automotive-index.timer"
+    [crawler]="tuz-parts-crawler.service"
+)
+order=(web bot jobs crawler)
+# Stopping "jobs" also stops a run in flight, not only its timer.
+jobs_in_flight="tuz-warehouse-sync.service tuz-automotive-index.service"
+
+usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+action="${1:-status}"
+shift || true
+for group in "$@"; do
+    [[ -n "${units[$group]:-}" ]] || { echo "error: unknown group $group" >&2; usage; }
+done
+
+case "$action" in
+    start)
+        [[ $# -gt 0 ]] || { echo "error: name the group(s) to start" >&2; usage; }
+        [[ -e /opt/tuz/current ]] || { echo "error: no release yet: run deploy first" >&2; exit 1; }
+        for group in "$@"; do
+            # shellcheck disable=SC2086
+            systemctl enable --now ${units[$group]}
+        done
+        ;;
+    stop)
+        [[ $# -gt 0 ]] || set -- "${order[@]}"
+        for group in "$@"; do
+            # shellcheck disable=SC2086
+            systemctl disable --now ${units[$group]} 2>/dev/null || true
+            # shellcheck disable=SC2086
+            [[ "$group" != jobs ]] || systemctl stop $jobs_in_flight
+        done
+        ;;
+    status) ;;
+    *) usage ;;
+esac
+
+release="$(readlink /opt/tuz/current 2>/dev/null || true)"
+if [[ -n "$release" ]]; then
+    echo "release: $(basename "$release")"
+else
+    echo "release: none yet"
+fi
+printf '%-8s %-32s %-9s %s\n' GROUP UNIT ENABLED STATE
+for group in "${order[@]}"; do
+    for unit in ${units[$group]}; do
+        printf '%-8s %-32s %-9s %s\n' "$group" "$unit" \
+            "$(systemctl is-enabled "$unit" 2>/dev/null || true)" \
+            "$(systemctl is-active "$unit" 2>/dev/null || true)"
+    done
+done
+printf '%-8s %-32s %-9s %s\n' always tuz-db-backup.timer \
+    "$(systemctl is-enabled tuz-db-backup.timer 2>/dev/null || true)" \
+    "$(systemctl is-active tuz-db-backup.timer 2>/dev/null || true)"
+failed="$(systemctl list-units --plain --no-legend --state=failed 'tuz-*' | awk '{ print $1 }' | tr '\n' ' ')"
+[[ -z "${failed// /}" ]] || echo "FAILED: $failed (journalctl -u <unit> -n 50)"
+newest="$(find /var/backups/tuz -maxdepth 1 -name '*.dump' -printf '%T+ %f\n' 2>/dev/null | sort -r | head -n 1)"
+echo "newest backup: ${newest:-none yet}"

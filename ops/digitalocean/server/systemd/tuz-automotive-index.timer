@@ -1,0 +1,10 @@
+# Hourly at ten past, as on the laptop. Enabled with `tuz-services start jobs`.
+[Unit]
+Description=tuz: parts index refresh every hour
+
+[Timer]
+OnCalendar=*:10:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

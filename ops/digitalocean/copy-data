@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Copies the files under data/ that the services need and git does not hold: the bot's name
+# and vehicle reading tables, the chat logs and the caches. Evaluation and bench folders stay
+# on the laptop. Safe to run again; only changed files are sent.
+#
+#   ops/digitalocean/copy-data                # everything except the crawler's page cache
+#   ops/digitalocean/copy-data --with-crawl   # also data/crawl (about 1 GB)
+#
+# The server's services must be stopped (tuz-services stop). For the cutover copy, retire
+# the laptop services first so the SQLite files are at rest.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ops/digitalocean/settings.sh
+. "$here/settings.sh"
+tuz_log_to_file copy-data
+root="$(tuz_repo_root)"
+host="$(tuz_host)"
+
+wanted=(
+    data/assistant/part_names.json
+    data/assistant/vehicle_readings.json
+    data/assistant/name_readings.json
+    data/assistant/research_cache.sqlite3
+    data/automotive-cache.sqlite3
+    data/chat_logs
+    data/messenger
+)
+[[ "${1:-}" == "--with-crawl" ]] && wanted+=(data/crawl)
+
+cd "$root"
+present=()
+for path in "${wanted[@]}"; do
+    if [[ -e "$path" ]]; then
+        present+=("./$path")
+    else
+        echo "skipping $path (not on this laptop)"
+    fi
+done
+
+busy="$(tuz_ssh "systemctl is-active tuz-site.service tuz-messenger.service \
+    tuz-parts-crawler.service 2>/dev/null | grep -c '^active' || true")"
+[[ "$busy" == 0 ]] || tuz_die "services are running on the server: run 'tuz-services stop' \
+there first, so no SQLite file is replaced under a running process"
+# A -wal or -shm file a rehearsal run left on the server must not be paired with a newly
+# copied database file.
+tuz_ssh "find /var/lib/tuz/data -path '*/crawl' -prune -o -type f \
+    \( -name '*.sqlite3-wal' -o -name '*.sqlite3-shm' \) -exec rm -f {} +"
+
+# --relative keeps the data/... layout under /var/lib/tuz/.
+tuz_rsync -a --relative --partial --info=progress2 --no-owner --no-group \
+    "${present[@]}" "root@$host:/var/lib/tuz/"
+tuz_ssh tuz-data-permissions
+echo "data copied"

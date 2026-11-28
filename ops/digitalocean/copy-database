@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Copies the laptop's PostgreSQL database to the Droplet: dump, resumable upload, restore,
+# then a table-by-table row count comparison. Role passwords are NOT copied; push-env gives
+# the server its own. Everything it prints also goes to a log file.
+#
+#   ops/digitalocean/copy-database             # first copy, into an empty server database
+#   ops/digitalocean/copy-database --replace   # overwrite the server's database (it is
+#                                              # backed up on the server first)
+#   ops/digitalocean/copy-database --final     # the cutover copy: also refuses to run
+#                                              # while a laptop service can still write
+#   ops/digitalocean/copy-database --reuse     # after a broken upload: send the newest
+#                                              # dump again instead of making a new one
+#
+# The server's application services must be stopped (tuz-services stop). See
+# docs/deploy-digitalocean.md.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ops/digitalocean/settings.sh
+. "$here/settings.sh"
+
+replace=""
+final=no
+reuse=no
+for argument in "$@"; do
+    case "$argument" in
+        --replace) replace="--replace" ;;
+        --final) final=yes; replace="--replace" ;;
+        --reuse) reuse=yes ;;
+        *) tuz_die "unknown option $argument" ;;
+    esac
+done
+tuz_log_to_file copy-database
+
+container="${TUZ_LOCAL_PG_CONTAINER:-tuz-postgres-1}"
+writers=(garage-messenger garage-meta-receiver garage-site-local parts-crawler
+         tuz-warehouse-sync tuz-automotive-index)
+running=()
+for unit in "${writers[@]}"; do
+    if systemctl --user is-active --quiet "$unit.service" 2>/dev/null; then
+        running+=("$unit")
+    fi
+done
+if [[ ${#running[@]} -gt 0 ]]; then
+    if [[ "$final" == yes ]]; then
+        tuz_die "still running on the laptop: ${running[*]}. Stop them before the final copy."
+    fi
+    echo "note: laptop services are running (${running[*]}), so this copy is a snapshot."
+fi
+
+host="$(tuz_host)"
+work="$TUZ_DO_STATE/transfer"
+mkdir -p "$work"
+chmod 700 "$work"
+user="$(docker exec "$container" printenv POSTGRES_USER)"
+database="$(docker exec "$container" printenv POSTGRES_DB)"
+
+dump="$(ls -1t "$work"/"$database"_*.dump 2>/dev/null | head -n 1 || true)"
+if [[ "$reuse" != yes || -z "$dump" ]]; then
+    stamp="$(date +%Y-%m-%d_%H%M%S)"
+    dump="$work/${database}_${stamp}.dump"
+    echo "dumping $database from $container..."
+    docker exec "$container" pg_dump -U "$user" -d "$database" -Fc -Z 6 > "$dump.partial"
+    # The archive must be readable before it goes anywhere.
+    docker exec -i "$container" pg_restore --list < "$dump.partial" > /dev/null
+    mv "$dump.partial" "$dump"
+else
+    echo "reusing $dump"
+fi
+globals="${dump%.dump}.globals.sql"
+docker exec "$container" pg_dumpall -U "$user" --globals-only --no-role-passwords > "$globals"
+echo "dump: $(du -h "$dump" | cut -f1)"
+
+echo "uploading to $host (resumes if interrupted)..."
+tuz_rsync --partial --info=progress2 "$dump" "$globals" "root@$host:/var/backups/tuz/incoming/"
+
+remote="/var/backups/tuz/incoming"
+echo "restoring on the server..."
+tuz_ssh "tuz-restore-database '$remote/$(basename "$dump")' '$remote/$(basename "$globals")' $replace"
+
+echo "comparing row counts, table by table..."
+count_query="select format('select %L, count(*) from %I.%I;', schemaname || '.' || tablename,
+    schemaname, tablename) from pg_tables
+    where schemaname not in ('pg_catalog', 'information_schema') order by 1"
+local_psql() { docker exec -i "$container" psql -X -At -U "$user" -d "$database" "$@"; }
+local_counts="$(local_psql -c "$count_query" | local_psql)"
+# tuz-table-counts on the server runs the same two steps.
+remote_counts="$(tuz_ssh tuz-table-counts)"
+if [[ "$local_counts" == "$remote_counts" ]]; then
+    echo "row counts match: $(wc -l <<<"$local_counts") tables"
+    rm -f "$dump" "$globals"
+elif [[ "$final" == yes ]]; then
+    diff <(echo "$local_counts") <(echo "$remote_counts") | head -n 40 || true
+    tuz_die "row counts differ after the final copy. The dump is kept: $dump"
+else
+    echo "row counts differ (expected while laptop services keep writing):"
+    diff <(echo "$local_counts") <(echo "$remote_counts") | head -n 20 || true
+    rm -f "$dump" "$globals"
+fi

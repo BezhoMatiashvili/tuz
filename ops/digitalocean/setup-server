@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Sends ops/digitalocean/server/ to the Droplet and runs its bootstrap there: packages,
+# firewall, service accounts, folders, PostgreSQL, nginx, the unit files and the server-side
+# scripts. Safe to run again after changing anything under server/. It starts no application
+# service and copies no data or secret. See docs/deploy-digitalocean.md.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ops/digitalocean/settings.sh
+. "$here/settings.sh"
+tuz_log_to_file setup-server
+
+tar -C "$here" -cz server | tuz_ssh '
+    set -e
+    rm -rf /root/tuz-server
+    mkdir -p /root/tuz-server
+    tar -xz -C /root/tuz-server --no-same-owner
+    bash /root/tuz-server/server/bootstrap
+'

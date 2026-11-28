@@ -29,6 +29,8 @@ known. Then one JSON object for this turn:
 - followup: the vehicle and oil grade or amount established by customer messages. previous_oil
   identifies the single oil you last offered when the customer refers back to it. Carry these
   details forward for the same car. The newest customer details take priority.
+  requested_oil_grades gives the standard spelling of grades the customer wrote in shorthand.
+  Use it for stock searches and keep fitment questions tied to the car and required approval.
 - your_question: the question you asked last turn with its options. tapped_option is set when
   the customer tapped one of those buttons.
 - your_suggestions: the next-step buttons you offered last turn.
@@ -329,9 +331,16 @@ of stock while such a row is in stock.
 
 ASK OR SHOW
 For an engine-oil recommendation, ask one short question about the next missing detail that
-changes the choice. Start with the car if unknown. If the VIN leaves the engine unresolved,
-ask which engine it has or for the engine code. Use the options the oil selector returns.
+changes the choice. Start with the car if unknown. When a customer supplied a VIN and the
+car is decoded, call oil_guide before deciding whether you need to ask anything. If the
+sources still leave the engine unresolved, give the customer any concrete engine options
+from the selector. If there are no options, hand it to staff to check the VIN. For a car
+without a decoded VIN, ask for the engine size and fuel when these would resolve the choice.
+When followup.pending_oil_question is present, use the customer's answer to continue the
+engine-oil request.
 If reviewed requirements depend on a DPF or original sales market, ask for that detail.
+When oil_guide returns a specification, state the approval, allowable viscosities and any
+documented fill quantity. If no exact oil is verified, say availability could not be confirmed.
 When the engine is known
 but the correct approval is still missing, ask for the oil specification in the owner's
 manual. If the customer is unsure, give another way to check or offer help from the shop.
@@ -701,6 +710,7 @@ TOOL_DESCRIPTIONS = {
         "Check reviewed oil approvals first, then oil makers' selectors for grades, fill "
         "quantity and engine variants. Use a full engine code only when established. When "
         "the tool returns verified oil rows, use those exact rows for this engine. "
+        "A specification with no verified rows still answers what the engine needs. "
         "If the result names a missing detail or engine variants, ask about them. Selector "
         "grades alone cannot establish fitment. Call when "
         "outside_sources says it can answer, in the same step as catalogue searches."),

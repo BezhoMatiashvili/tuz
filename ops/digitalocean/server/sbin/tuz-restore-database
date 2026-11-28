@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Runs ON THE SERVER as root; ops/digitalocean/copy-database calls it after the upload.
+#
+#   tuz-restore-database <dump> <globals.sql> [--replace]
+#
+# Loads the roles (the globals file carries no passwords), then restores the dump into a
+# newly made database. It refuses while an application service is running, and refuses to
+# overwrite a database that has tables unless --replace is given; with --replace the
+# existing database is backed up first. The two input files are removed on success.
+set -euo pipefail
+dump="${1:?usage: tuz-restore-database <dump> <globals.sql> [--replace]}"
+globals="${2:?usage: tuz-restore-database <dump> <globals.sql> [--replace]}"
+replace="${3:-}"
+container="${TUZ_PG_CONTAINER:-tuz-postgres-1}"
+# shellcheck disable=SC1090
+. "${TUZ_POSTGRES_ENV:-/etc/tuz/postgres.env}"
+
+fail() { echo "error: $*" >&2; exit 1; }
+[[ -f "$dump" && -f "$globals" ]] || fail "the dump or the globals file is missing"
+
+running="$(systemctl list-units --plain --no-legend --state=active,activating \
+    'tuz-site.service' 'tuz-meta-receiver.service' 'tuz-messenger.service' \
+    'tuz-parts-crawler.service' 'tuz-warehouse-sync.service' 'tuz-automotive-index.service' \
+    | awk '{ print $1 }' | tr '\n' ' ')"
+[[ -z "${running// /}" ]] || fail "stop the services first (tuz-services stop): $running"
+
+in_container() { docker exec -i "$container" "$@"; }
+admin() { in_container psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres "$@"; }
+
+tables="$(in_container psql -X -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+    "select count(*) from pg_tables where schemaname not in ('pg_catalog', 'information_schema')" \
+    2>/dev/null || echo 0)"
+if [[ "$tables" -gt 0 ]]; then
+    [[ "$replace" == "--replace" ]] \
+        || fail "the server database already has $tables tables: pass --replace to overwrite it"
+    echo "backing up the existing database first..."
+    TUZ_BACKUP_LABEL=before-restore tuz-backup
+fi
+
+echo "checking the archive..."
+in_container pg_restore --list < "$dump" > /dev/null
+
+echo "loading roles..."
+# The owner role exists already (the container made it), and on a second restore so does
+# every role and membership; those messages are expected and left out.
+in_container psql -X -q -U "$POSTGRES_USER" -d postgres < "$globals" 2>&1 \
+    | grep -v 'already exists\|has already been granted' || true
+
+echo "restoring $(du -h "$dump" | cut -f1)..."
+admin -c "DROP DATABASE IF EXISTS \"$POSTGRES_DB\" WITH (FORCE)"
+admin -c "CREATE DATABASE \"$POSTGRES_DB\" OWNER \"$POSTGRES_USER\" TEMPLATE template0"
+docker cp -q "$dump" "$container:/tmp/tuz-restore.dump"
+trap 'docker exec "$container" rm -f /tmp/tuz-restore.dump' EXIT
+docker exec "$container" pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+    --jobs 2 --exit-on-error /tmp/tuz-restore.dump
+in_container psql -X -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "ANALYZE"
+
+in_container psql -X -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+    "select 'restored: ' || count(*) || ' tables, ' || pg_size_pretty(pg_database_size(current_database()))
+     from pg_tables where schemaname not in ('pg_catalog', 'information_schema')"
+rm -f "$dump" "$globals"

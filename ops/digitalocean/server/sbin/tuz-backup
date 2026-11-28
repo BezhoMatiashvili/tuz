@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Runs ON THE SERVER as root, nightly from tuz-db-backup.timer and before a database
+# replacement. Dumps the database and the roles to /var/backups/tuz (root only) and keeps
+# the newest 14. This protects against a broken or wiped database. Losing the whole Droplet
+# is covered by DigitalOcean's weekly Droplet backups, which include this folder; a copy
+# outside DigitalOcean is still an open decision (docs/deploy-digitalocean.md).
+set -euo pipefail
+umask 077
+container="${TUZ_PG_CONTAINER:-tuz-postgres-1}"
+destination="${TUZ_BACKUP_DIR:-/var/backups/tuz}"
+keep="${TUZ_BACKUP_KEEP:-14}"
+label="${TUZ_BACKUP_LABEL:-nightly}"
+# shellcheck disable=SC1090
+. "${TUZ_POSTGRES_ENV:-/etc/tuz/postgres.env}"
+
+mkdir -p "$destination"
+stamp="$(date -u +%Y-%m-%d_%H%M%S)"
+dump="$destination/${POSTGRES_DB}_${stamp}_${label}.dump"
+globals="$destination/globals_${stamp}_${label}.sql"
+trap 'rm -f "$dump.partial" "$globals.partial"' EXIT
+
+docker exec "$container" pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc -Z 6 > "$dump.partial"
+# The archive must be readable before it counts as a backup.
+docker exec -i "$container" pg_restore --list < "$dump.partial" > /dev/null
+docker exec "$container" pg_dumpall -U "$POSTGRES_USER" --globals-only > "$globals.partial"
+mv "$dump.partial" "$dump"
+mv "$globals.partial" "$globals"
+
+# Keep the newest $keep nightly files of each kind; labelled safety copies age out with them.
+find "$destination" -maxdepth 1 -name "${POSTGRES_DB}_*.dump" -printf '%T@ %p\n' | sort -rn \
+    | awk -v keep="$keep" 'NR > keep { print $2 }' | xargs -r rm -f --
+find "$destination" -maxdepth 1 -name 'globals_*.sql' -printf '%T@ %p\n' | sort -rn \
+    | awk -v keep="$keep" 'NR > keep { print $2 }' | xargs -r rm -f --
+echo "backup ok: $(basename "$dump") $(du -h "$dump" | cut -f1)"

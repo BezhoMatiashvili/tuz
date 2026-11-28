@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Splits the laptop's .env into one settings file per server service and installs them on
+# the Droplet, each readable by its own service account only. Every database login gets a
+# fresh password that exists only on the server; the laptop's passwords are not sent.
+# Nothing is written to the laptop's disk. Run it after copy-database (the roles must exist).
+#
+#   ops/digitalocean/push-env --plan         # show which setting goes where; names only
+#   ops/digitalocean/push-env --rehearsal    # install, but keep the laptop's public address
+#   ops/digitalocean/push-env                # install for https://$TUZ_DO_DOMAIN
+#
+# See docs/deploy-digitalocean.md and ops/digitalocean/server_env.py for the rules.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ops/digitalocean/settings.sh
+. "$here/settings.sh"
+root="$(tuz_repo_root)"
+
+mode=()
+plan=no
+for argument in "$@"; do
+    case "$argument" in
+        --plan) plan=yes ;;
+        --rehearsal) mode+=(--rehearsal) ;;
+        *) tuz_die "unknown option $argument" ;;
+    esac
+done
+
+build=(uv run --project "$root" --no-sync python "$here/server_env.py"
+       --env "$root/.env" --domain "$TUZ_DO_DOMAIN" "${mode[@]}")
+if [[ -n "$TUZ_DO_WAREHOUSE_RELAY_PORT" ]]; then
+    build+=(--warehouse-relay-port "$TUZ_DO_WAREHOUSE_RELAY_PORT")
+fi
+
+if [[ "$plan" == yes ]]; then
+    exec "${build[@]}" --plan
+fi
+"${build[@]}" --tar | tuz_ssh tuz-install-env

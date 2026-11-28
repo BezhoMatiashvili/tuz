@@ -1,0 +1,31 @@
+# PostgreSQL on the Droplet: the same image and port as the laptop's compose.yaml, so the
+# engine, its text ordering and every connection string behave as they do in development.
+# Bound to loopback only; nothing outside the server can reach it. Started by
+# ops/digitalocean/server/bootstrap with the project name "tuz", which names the container
+# tuz-postgres-1, as on the laptop.
+services:
+  postgres:
+    image: postgres:16.6-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set in /etc/tuz/postgres.env}
+      POSTGRES_USER: ${POSTGRES_USER:?set in /etc/tuz/postgres.env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in /etc/tuz/postgres.env}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - warehouse-postgres:/var/lib/postgresql/data
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    restart: unless-stopped
+
+volumes:
+  warehouse-postgres:

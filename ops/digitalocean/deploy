@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Releases one version of the code to the Droplet: sends it, installs the locked
+# dependencies, applies pending database migrations, switches /opt/tuz/current to it and
+# restarts the services that are running. No GitHub secret is involved: the code goes
+# straight from this laptop over SSH.
+#
+#   ops/digitalocean/deploy              # the commit HEAD points at
+#   ops/digitalocean/deploy <commit>     # any commit, also an older one to go back
+#   ops/digitalocean/deploy --worktree   # REHEARSAL ONLY: the files as they are on disk,
+#                                        # committed or not
+#
+# A real release is always a commit, so what runs on the server can be named and repeated.
+# See docs/deploy-digitalocean.md.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ops/digitalocean/settings.sh
+. "$here/settings.sh"
+tuz_log_to_file deploy
+root="$(tuz_repo_root)"
+cd "$root"
+
+# Only what the server runs: no tests, fixtures, docs or code graph.
+paths=(automotive warehouse_sync parts_crawler db_ui migrations ops
+       pyproject.toml uv.lock .python-version README.md)
+
+if [[ "${1:-}" == "--worktree" ]]; then
+    name="worktree-$(date +%Y%m%d-%H%M%S)"
+    echo "REHEARSAL release $name from the working tree (uncommitted files included)"
+    list="$(mktemp)"
+    trap 'rm -f "$list"' EXIT
+    while IFS= read -r -d '' file; do
+        [[ -f "$file" ]] && printf '%s\0' "$file"
+    done < <(git ls-files -z --cached --others --exclude-standard -- "${paths[@]}") > "$list"
+    tar --null --files-from="$list" -cz | tuz_ssh "tuz-activate-release $name"
+else
+    name="$(git rev-parse --verify "${1:-HEAD}^{commit}")"
+    echo "release $name: $(git log -1 --format=%s "$name")"
+    git archive --format=tar.gz "$name" -- "${paths[@]}" | tuz_ssh "tuz-activate-release $name"
+fi
+tuz_ssh "tuz-services status"
