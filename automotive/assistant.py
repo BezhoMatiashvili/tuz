@@ -291,7 +291,7 @@ def _unmapped(options: list[dict], numbers: list, groups: list[dict]) -> str:
 
 def _group_pick(group: dict) -> dict:
     """What a button for this engine group settles: its grades, and one fill quantity."""
-    pick: dict = {"grades": group["grades"]}
+    pick: dict = {"grades": group["grades"], "engines": group["engines"]}
     if len(filled := set(group["capacities"])) == 1:
         with contextlib.suppress(ValueError):
             pick["capacity_l"] = float(str(filled.pop()).replace(",", "."))
@@ -1094,8 +1094,10 @@ class AssistantTurn:
         grade = followup.oil_grade(self.oil_message)
         context = {} if reset or engine_changed else {
             key: saved[key] for key in ("oil_grade", "oil_litres", "oil_product",
-                                       "engine_asked")
+                                       "engine_asked", "engine_pick")
             if key in saved}
+        if replacement:
+            context.pop("engine_pick", None)  # the engine that was chosen is gone
         # The answer to the model's own question about a detail a reviewed oil depends on.
         if self.question and re.search(r"dpf|დპფ", self.question["text"], re.IGNORECASE):
             answer = self.message.strip().casefold()
@@ -1182,8 +1184,14 @@ class AssistantTurn:
             focus["requested_oil_grades"] = oil_grades
         focus.pop("vehicle", None)  # the car is what the model reads in the conversation
         self.toolbox.engine_asked_car = focus.pop("engine_asked", "")
+        focus.pop("engine_pick", None)
+        earlier = self.followup.pop("engine_pick", None)  # kept again by _memory
         self.toolbox.engine_picked, answer = self._picked_engine(options)
-        if picked := self.toolbox.engine_picked:
+        # While an engine question is open, only its own answer counts.
+        if earlier and not self.engine_picks:
+            self.toolbox.engine_picked = {**earlier, "earlier": True}
+        elif picked := self.toolbox.engine_picked:
+            picked["answer"] = answer
             focus["picked_engine"] = {"answer": answer, **{
                 key: picked[key] for key in ("grades", "capacity_l") if key in picked}}
             known[:0] = [row.id for row in self.toolbox._shop_oils(picked["grades"])]
@@ -1915,6 +1923,12 @@ class AssistantTurn:
             context.pop("oil_product", None)
         if len(oils) == 1:
             context["oil_product"] = oils[0]
+        # The chosen engine answers the chat's later look-ups for that car, unless a turn that
+        # read it handed over: the customer may have taken the choice back.
+        if toolbox and toolbox.engine_picked and not (
+                toolbox.engine_pick_read and decision.get("outcome") == "handoff"):
+            context["engine_pick"] = {key: value for key, value in toolbox.engine_picked.items()
+                                      if key != "earlier"}
         # A question asked while an oil look-up depended on the engine was about the engine.
         if asked and toolbox and toolbox.engine_split_car:
             context["engine_asked"] = toolbox.engine_split_car

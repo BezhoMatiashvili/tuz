@@ -3189,6 +3189,102 @@ class EngineButtonTests(unittest.TestCase):
         staff, _ = self.ask(self.OPTIONS, [0, 0, 0, 0], audience="staff")
         self.assertEqual(staff["diagnostics"]["corrections"], [])
 
+    def turn(self, memory, message, choice=None, finish=None, **named):
+        """One more turn that looks the oil up: its tool result, context, memory, look-ups."""
+        asked = car(**{"make": "Toyota", "model": "Camry", "year": 2018, **named})
+        script = Script(says(use("oil_guide", asked)), done(**(finish or {})))
+        dialogue = {"audience": "public", "memory": memory}
+        if choice:
+            dialogue["choice"] = choice
+        before = len(self.source.started)
+        result = run(service(script, rows=self.rows), message, search_service=self.source,
+                     dialogue=dialogue)
+        return SimpleNamespace(
+            content=tool_results(script.requests[1])[0][0], memory=result["memory"],
+            context=context_of(script.requests[0]),
+            looked_up=len(self.source.started) - before)
+
+    def tapped(self, choice):
+        first, _ = self.ask(self.OPTIONS, [1, 1, 2, 0])
+        return self.turn(first["memory"], self.OPTIONS[choice - 1], choice).memory
+
+    def test_later_look_ups_answer_from_the_chosen_engine(self):
+        memory = self.tapped(3)
+        for named in ({}, {"engine_litres": 2.5, "fuel": "petrol"}, {}):
+            later = self.turn(memory, "რამდენი ლიტრი სჭირდება?", **named)
+            self.assertEqual((later.content["status"], later.content["needs"]["grades"]),
+                             ("answered", ["0W-20"]))
+            self.assertIn(self.OPTIONS[2], later.content["note"])
+            self.assertNotIn("picked_engine", later.context.get("followup", {}))
+            self.assertNotIn("engine_pick", later.context.get("followup", {}))
+            memory = later.memory
+
+    def test_a_catalogue_that_now_answers_is_read_instead_of_the_choice(self):
+        memory = self.tapped(3)
+        self.source.snapshot["fluids"] = [{"provider": "Shell", "status": "PROVISIONAL", "items": [
+            {"kind": "oil", "product_name": "Helix Ultra 0W-20", "viscosity": "0W-20",
+             "capacity": "4.4", "approvals": []}]}]
+        later = self.turn(memory, "რამდენი ლიტრი სჭირდება?")
+        self.assertEqual((later.content["status"], later.content["needs"]["capacity_l"]),
+                         ("answered", 4.4))
+        self.assertNotIn(self.OPTIONS[2], later.content["note"])
+
+    def test_a_look_up_naming_another_engine_forgets_the_choice(self):
+        for message, named in (("არა, ჰიბრიდია", {"fuel": "hybrid"}),
+                               ("არა, 3.0-ია", {"engine_litres": 3.0}),
+                               ("ძრავის კოდი A25A-FXS", {"engine_code": "A25A-FXS"})):
+            later = self.turn(self.tapped(3), message, **named)
+            self.assertNotEqual(later.content["status"], "answered", message)
+            self.assertNotIn("engine_pick", later.memory["followup"], message)
+            after = self.turn(later.memory, "რამდენი ლიტრი სჭირდება?")
+            self.assertIn("handoff", after.content["note"], message)
+
+    def test_another_car_leaves_the_choice_to_its_own_car(self):
+        corolla = self.turn(self.tapped(2), "Corolla-ზე?", model="Corolla")
+        self.assertNotEqual(corolla.content["status"], "answered")
+        back = self.turn(corolla.memory, "Camry-ზე რამდენი ლიტრი?")
+        self.assertEqual(back.content["needs"]["grades"], ["0W-16"])
+        other_make = self.turn(self.tapped(2), "BMW X5 2018 ზეთი", make="BMW", model="X5")
+        self.assertNotIn("engine_pick", other_make.memory["followup"])
+
+    def test_the_choice_answers_when_the_catalogue_now_reads_nothing(self):
+        memory = self.tapped(3)
+        self.source.snapshot["fluids"] = []
+        later = self.turn(memory, "რამდენი ლიტრი სჭირდება?", engine_litres=2.5)
+        self.assertEqual((later.content["status"], later.content["needs"]["grades"]),
+                         ("answered", ["0W-20"]))
+        self.assertIn(self.OPTIONS[2], later.content["note"])
+
+    def test_a_handoff_made_after_reading_the_choice_forgets_it(self):
+        later = self.turn(self.tapped(2), "არა, ძველი ძარაა",
+                          finish={"outcome": "handoff"})
+        self.assertEqual(later.content["status"], "answered")
+        self.assertNotIn("engine_pick", later.memory["followup"])
+        after = self.turn(later.memory, "აბა რომელი ზეთი?")
+        self.assertIn("handoff", after.content["note"])
+
+    def test_titles_that_state_no_size_or_code_do_not_contradict(self):
+        self.source.snapshot["fluids"] = [OilGuideRowsTests.engines(
+            "Shell", (["0W-16"], ["CAMRY XV70 (P)"]), (["0W-20"], ["CAMRY XV50 (P)"]))]
+        options = ["ახალი ძარა", "ძველი ძარა"]
+        first, _ = self.ask(options, [1, 2])
+        memory = self.turn(first["memory"], options[1], 2).memory
+        later = self.turn(memory, "ლიტრი?", engine_litres=2.5, fuel="petrol")
+        self.assertEqual(later.content["needs"]["grades"], ["0W-20"])
+
+    def test_a_replaced_engine_or_not_sure_forgets_the_choice(self):
+        replaced = self.turn(self.tapped(3), "ძრავი შევცვალე")
+        self.assertIn("handoff", replaced.content["note"])
+        self.assertNotIn("engine_pick", replaced.memory["followup"])
+        # A failed tap turn leaves the question open: "not sure" then beats the earlier tap.
+        first, _ = self.ask(self.OPTIONS, [1, 1, 2, 0])
+        open_again = {**first["memory"], "followup": {
+            **first["memory"]["followup"],
+            "engine_pick": self.tapped(3)["followup"]["engine_pick"]}}
+        unsure = self.turn(open_again, self.OPTIONS[3], 4)
+        self.assertIn("handoff", unsure.content["note"])
+        self.assertNotIn("engine_pick", unsure.memory["followup"])
+
 
 class AnswerToEngineQuestionTests(unittest.TestCase):
     """The model reads the customer's answer; code writes no engine from it."""

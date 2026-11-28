@@ -478,6 +478,7 @@ class Toolbox:
         # The engine groups a question may offer as buttons, and the group the customer chose.
         self.engine_split_groups: list[dict] = []
         self.engine_picked: dict | None = None
+        self.engine_pick_read = False  # an earlier choice answered a look-up of this turn
         self.customer_vehicle_text = ""
         self.customer_message = ""
         self._crawled_down = False
@@ -1581,18 +1582,6 @@ class Toolbox:
             return Output({"status": "vehicle_conflict", "note": (
                 "The VIN describes an engine the customer says is not installed. Offer no oil: "
                 "say the shop's team will check which fits, with outcome handoff.")})
-        # The customer chose this car's engine on a button: its group's grades are the answer.
-        picked = self.engine_picked
-        if picked and picked["car"] == self._car_key(configuration):
-            self.engine_split_car, self.engine_split_groups = "", []
-            rows = self._shop_oils(picked["grades"])
-            needs = {key: picked[key] for key in ("grades", "capacity_l") if key in picked}
-            data = {"status": "answered", "needs": needs, "note": (
-                "The customer's choice names the engine. Offer the shop's engine oils of these "
-                "grades, listed in rows, as spec; ask nothing more about the engine.")}
-            if rows:
-                data["rows"] = Table(rows, [[normalize_grade(row.name)] for row in rows])
-            return Output(data, ("grade",) if rows else ())
         # A code the customer never gave verifies nothing, and the catalogues are asked without
         # it: it would hide the other engines they list.
         if configuration.get("engine_code") and not self._confirmed_oil_vehicle(
@@ -1600,10 +1589,21 @@ class Toolbox:
             configuration = {key: value for key, value in configuration.items()
                              if key != "engine_code"}
             args = {**args, "engine_code": ""}
+        # The customer chose this car's engine on a button. On that turn its group's grades are
+        # the answer; later they stand in when the catalogues do not name one grade.
+        picked = self.engine_picked
+        if picked and picked["car"] != self._car_key(configuration):
+            picked = None
+        if picked and not picked.get("earlier"):
+            return self._chosen_oil(picked)
+        if picked and _other_engine(picked, configuration):
+            self.engine_picked = picked = None  # the car is now said to have another engine
         if evidence := self.oil_evidence(vin, configuration):
             return self._with_spec_oils(evidence)
         if self._local_oil_configured() and (
                 self.search_service is None or self._able("engine_oil", vin is not None) == []):
+            if picked:
+                return self._chosen_oil(picked)
             return Output({"status": "no_answer",
                            "note": "No reviewed oil match for this exact configuration. If "
                                    "one engine or market detail is missing, ask it once; "
@@ -1751,6 +1751,8 @@ class Toolbox:
             note = ("The selectors gave no oil for this car. If you did not use the European "
                     "model name, call again with it; otherwise hand over to the shop's team, "
                     "or go on with the grade the customer names.")
+        if picked and data["status"] != "answered":
+            return self._chosen_oil(picked)
         asked_before = False
         self.engine_split_groups = []
         if undecided:
@@ -1760,6 +1762,7 @@ class Toolbox:
             if split and not by_fuel and not asked_before:
                 self.engine_split_groups = [
                     {"grades": group["grades"], "kinds": _engine_kinds(group["engines"]),
+                     "engines": group["engines"],
                      "capacities": group.get("capacities") or []} for group in split]
         else:
             self.engine_split_car = ""
@@ -1784,6 +1787,27 @@ class Toolbox:
         return Output(data, ("grade",) if rows else (),
                       sourced=tuple(data.get("catalogue_codes", ())))
 
+    def _chosen_oil(self, picked: dict) -> Output:
+        """The oil of the engine the customer chose on a button."""
+        self.engine_split_car, self.engine_split_groups = "", []
+        rows = self._shop_oils(picked["grades"])
+        needs = {key: picked[key] for key in ("grades", "capacity_l") if key in picked}
+        note = ("The customer's choice names the engine. Offer the shop's engine oils of these "
+                "grades, listed in rows, as spec; ask nothing more about the engine.")
+        if picked.get("earlier"):
+            self.engine_pick_read = True
+            note = (f"Earlier in this chat the customer chose \"{picked['answer']}\" as this "
+                    "car's engine: needs and rows are that engine's. Answer from them and ask "
+                    "nothing more about the engine. State a fill quantity only from needs or a "
+                    "research finding. If the customer has since said the car has another engine "
+                    "or body, offer no oil: say the shop's team will check which fits, with "
+                    "outcome handoff and the request for a phone number that the staff rules "
+                    "ask for.")
+        data = {"status": "answered", "needs": needs, "note": note}
+        if rows:
+            data["rows"] = Table(rows, [[normalize_grade(row.name)] for row in rows])
+        return Output(data, ("grade",) if rows else ())
+
     def _shop_oils(self, grades: list[str]) -> list[Any]:
         """The shop's engine oils whose name states one of these grades, stocked first."""
         wanted = set(grades)
@@ -1791,6 +1815,25 @@ class Toolbox:
                 if normalize_grade(row.name) in wanted and is_engine_oil(row.name)]
         rows.sort(key=lambda row: ((row.store or 0) <= 0, (row.warehouse or 0) <= 0, row.name))
         return rows[:SHOP_OILS]
+
+
+def _other_engine(pick: dict, configuration: dict) -> bool:
+    """Whether a look-up names an engine that the chosen group of engines does not hold, judged
+    only by what the group's titles state: their fuel, litres and bracketed codes."""
+    titles = pick.get("engines") or []
+    kinds = _engine_kinds(titles)
+    kind = {"petrol": "petrol, not hybrid", "diesel": "diesel", "hybrid": "hybrid",
+            "electric": "electric"}.get(configuration.get("fuel"))
+    text = " ".join(titles)
+    sizes = set(re.findall(r"(?<![\d.])\d\.\d(?![\d.])", text))
+    codes = [plain(code) for code in re.findall(r"\(([A-Z0-9-]{3,})\)", text)
+             if re.search(r"\d", code) and re.search(r"[A-Z]", code)]
+    litres = configuration.get("displacement_l")
+    code = configuration.get("engine_code")
+    return bool(
+        (kind and kinds and kind not in kinds)
+        or (litres and sizes and f"{float(litres):.1f}" not in sizes)
+        or (code and codes and not any(plain(code) in held for held in codes)))
 
 
 def _engine_kinds(titles: list[str]) -> list[str]:
